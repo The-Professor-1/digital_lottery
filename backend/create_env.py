@@ -23,7 +23,7 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 
 # Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=8271818999:AAEaiKyeze_B5Af_FoCi43kecf3X__dDEQw
+TELEGRAM_BOT_TOKEN=8545113402:AAFpojDzSfQY7QQSG1VK6Co6WJiLDFezn6s
 TELEGRAM_WEB_APP_URL=https://markos-bingo.fly.dev
 
 # JWT Configuration
