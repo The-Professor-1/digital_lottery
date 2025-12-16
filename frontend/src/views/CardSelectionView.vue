@@ -567,6 +567,38 @@ export default {
         this.startingGame = false
       }
     },
+    // Helper function to create temporary card layout with all 0s
+    createTemporaryCardLayout() {
+      const layout = []
+      const letters = ['B', 'I', 'N', 'G', 'O']
+      
+      for (let row = 0; row < 5; row++) {
+        const layoutRow = []
+        for (let col = 0; col < 5; col++) {
+          // Center cell (row 2, col 2) is FREE
+          if (row === 2 && col === 2) {
+            layoutRow.push({
+              number: null,
+              letter: 'FREE',
+              marked: true,
+              row: row,
+              col: col
+            })
+          } else {
+            layoutRow.push({
+              number: 0, // Temporary placeholder
+              letter: letters[col],
+              marked: false,
+              row: row,
+              col: col
+            })
+          }
+        }
+        layout.push(layoutRow)
+      }
+      
+      return layout
+    },
     async handleSelectCard(cardNumber) {
       if (!this.game) return
       
@@ -587,11 +619,21 @@ export default {
       
       // OPTIMISTIC UPDATE: Update UI immediately before API call
       const previousCard = this.selectedCard
+      const previousUserCard = this.userCard
       
       // If selecting a new card (not unselecting)
       if (!isUnselecting) {
-        // Immediately update UI
+        // Immediately update UI - turn card green
         this.selectedCard = cardNumber
+        
+        // Show temporary layout with all 0s immediately
+        this.userCard = {
+          card_number: cardNumber,
+          card_layout: this.createTemporaryCardLayout(),
+          selected_numbers: [],
+          is_winner: false
+        }
+        
         // Remove from available, add to taken
         if (!this.takenCards.includes(cardNumber)) {
           this.takenCards.push(cardNumber)
@@ -645,9 +687,9 @@ export default {
             return
           }
           
-          // Card was selected - update with server response
+          // Card was selected - update with server response (real layout)
           this.selectedCard = cardNumber
-          this.userCard = response
+          this.userCard = response // This contains the real card layout from server
           
           // Update balance from response
           if (response.balance !== undefined) {
@@ -670,6 +712,8 @@ export default {
           // Revert optimistic update on error
           if (!isUnselecting) {
             this.selectedCard = previousCard
+            this.userCard = previousUserCard // Restore previous card or null
+            
             // Revert taken/available cards
             if (this.takenCards.includes(cardNumber)) {
               this.takenCards = this.takenCards.filter(num => num !== cardNumber)

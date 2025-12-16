@@ -1,6 +1,6 @@
 # fly.toml app configuration file
 
-app = 'markos-bingo'
+app = 'arif-bingo'
 primary_region = 'iad'
 console_command = '/code/manage.py shell'
 
