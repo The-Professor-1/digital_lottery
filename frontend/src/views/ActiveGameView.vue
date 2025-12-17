@@ -148,6 +148,7 @@ export default {
       showStartCountdown: false, // Show countdown when game just started
       startCountdownSeconds: 0,
       countdownInterval: null, // Store countdown interval reference
+      _countdownInitialized: false, // Flag to prevent countdown from starting multiple times
       isMarkingNumber: false, // Prevent duplicate number marking
       lastMarkedNumber: null, // Track last marked number to prevent duplicates
       lastMarkedTime: 0, // Track when number was last marked
@@ -188,6 +189,9 @@ export default {
     if (this.visibilityHandler) {
       document.removeEventListener('visibilitychange', this.visibilityHandler)
     }
+    // Reset all flags
+    this._countdownInitialized = false
+    this._winnerBannerActive = false
   },
   methods: {
     async loadGame() {
@@ -328,9 +332,18 @@ export default {
             }
           }
           
+          // Reset countdown and frozen player count if game status changed from active
+          if (game.status !== 'active') {
+            if (this._countdownInitialized) {
+              this._countdownInitialized = false
+            }
+          }
+          
           // Check if game just started and no numbers called yet - show countdown
-          if (game.status === 'active' && (!game.called_numbers || game.called_numbers.length === 0) && !this.showStartCountdown && !this.countdownInterval) {
+          // Use _countdownInitialized flag to prevent multiple countdown starts
+          if (game.status === 'active' && (!game.called_numbers || game.called_numbers.length === 0) && !this.showStartCountdown && !this.countdownInterval && !this._countdownInitialized) {
             // Game just started, show 3-second countdown
+            this._countdownInitialized = true // Mark as initialized to prevent duplicate starts
             this.showStartCountdown = true
             this.startCountdownSeconds = 3
             this.countdownInterval = setInterval(() => {

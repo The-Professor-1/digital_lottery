@@ -1015,8 +1015,8 @@ def task_select_fake_card_with_changes(self, game_id: int, fake_user_id: int):
             # Schedule card change simulation (reduced chance and faster timing)
             # Only 20% chance to change, and with much shorter delay to ensure completion before timer
             if game.status == 'waiting' and random.random() < 0.2:  # 20% chance (reduced from 40%)
-                # Schedule a card change after 2-4 seconds (minimum 2 seconds for reselection)
-                change_delay = random.uniform(2.0, 4.0)
+                # Schedule a card change after 1.0-2.0 seconds (minimized to ensure players are added faster)
+                change_delay = random.uniform(1.0, 2.0)
                 task_select_fake_card_with_changes.apply_async(
                     args=[game_id, fake_user_id],
                     countdown=change_delay

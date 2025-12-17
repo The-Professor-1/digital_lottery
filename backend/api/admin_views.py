@@ -128,10 +128,22 @@ def admin_dashboard(request):
     completed_games = Game.objects.filter(status='completed')
     
     def calculate_revenue(games_queryset):
+        """
+        Calculate revenue from games, excluding fake users.
+        Revenue = (real_users_count * bet_amount) * percentage_cut / 100
+        Only counts real users who paid - fake users don't generate revenue
+        """
         total = Decimal('0')
+        from .models import GameCard
+        
         for game in games_queryset:
-            total_collected = game.derash_amount
-            if total_collected > 0:
+            # Count only real users (exclude fake users)
+            real_users_count = GameCard.objects.filter(game=game).count()
+            
+            # Only calculate revenue if there are real users
+            if real_users_count > 0:
+                # Calculate revenue from real users only (using game's bet_amount)
+                total_collected = Decimal(str(real_users_count)) * game.bet_amount
                 cut = (total_collected * percentage_cut) / Decimal('100')
                 total += cut
         return total
@@ -184,6 +196,12 @@ def admin_dashboard(request):
             if phone not in winner_phones:
                 winner_phones.append(phone)
         
+        # Count real and system users
+        from .fake_user_manager import get_fake_user_count_for_game
+        from .models import GameCard
+        real_users_count = GameCard.objects.filter(game=game).count()
+        system_users_count = get_fake_user_count_for_game(game)
+        
         today_games_data.append({
             'game': game,
             'players': game.total_players,
@@ -191,6 +209,8 @@ def admin_dashboard(request):
             'automatic_count': automatic_count,
             'manual_count': manual_count,
             'winner_phones': winner_phones,
+            'real_users': real_users_count,
+            'system_users': system_users_count,
         })
     
     # Get game details for the game detail section (max 200, newest first)
@@ -908,10 +928,22 @@ def second_admin_dashboard(request):
     completed_games = Game.objects.filter(status='completed')
     
     def calculate_revenue(games_queryset):
+        """
+        Calculate revenue from games, excluding fake users.
+        Revenue = (real_users_count * bet_amount) * percentage_cut / 100
+        Only counts real users who paid - fake users don't generate revenue
+        """
         total = Decimal('0')
+        from .models import GameCard
+        
         for game in games_queryset:
-            total_collected = game.derash_amount
-            if total_collected > 0:
+            # Count only real users (exclude fake users)
+            real_users_count = GameCard.objects.filter(game=game).count()
+            
+            # Only calculate revenue if there are real users
+            if real_users_count > 0:
+                # Calculate revenue from real users only (using game's bet_amount)
+                total_collected = Decimal(str(real_users_count)) * game.bet_amount
                 cut = (total_collected * percentage_cut) / Decimal('100')
                 total += cut
         return total
@@ -962,6 +994,12 @@ def second_admin_dashboard(request):
             else:
                 manual_count += 1
         
+        # Count real and system users
+        from .fake_user_manager import get_fake_user_count_for_game
+        from .models import GameCard
+        real_users_count = GameCard.objects.filter(game=game).count()
+        system_users_count = get_fake_user_count_for_game(game)
+        
         today_games_data.append({
             'game': game,
             'players': game.total_players,
@@ -969,6 +1007,8 @@ def second_admin_dashboard(request):
             'automatic_count': automatic_count,
             'manual_count': manual_count,
             'winner_phones': winner_phones,
+            'real_users': real_users_count,
+            'system_users': system_users_count,
         })
     
     # Get game details for the game detail section (max 200, newest first)
@@ -1162,10 +1202,22 @@ def admin_dashboard_api(request):
     completed_games = Game.objects.filter(status='completed')
     
     def calculate_revenue(games_queryset):
+        """
+        Calculate revenue from games, excluding fake users.
+        Revenue = (real_users_count * bet_amount) * percentage_cut / 100
+        Only counts real users who paid - fake users don't generate revenue
+        """
         total = Decimal('0')
+        from .models import GameCard
+        
         for game in games_queryset:
-            total_collected = game.derash_amount
-            if total_collected > 0:
+            # Count only real users (exclude fake users)
+            real_users_count = GameCard.objects.filter(game=game).count()
+            
+            # Only calculate revenue if there are real users
+            if real_users_count > 0:
+                # Calculate revenue from real users only (using game's bet_amount)
+                total_collected = Decimal(str(real_users_count)) * game.bet_amount
                 cut = (total_collected * percentage_cut) / Decimal('100')
                 total += cut
         return total
@@ -1228,6 +1280,12 @@ def admin_dashboard_api(request):
             if phone not in winner_phones:
                 winner_phones.append(phone)
         
+        # Count real and system users
+        from .fake_user_manager import get_fake_user_count_for_game
+        from .models import GameCard
+        real_users_count = GameCard.objects.filter(game=game).count()
+        system_users_count = get_fake_user_count_for_game(game)
+        
         today_games_data.append({
             'id': game.id,
             'players': game.total_players,
@@ -1235,6 +1293,8 @@ def admin_dashboard_api(request):
             'automatic_count': automatic_count,
             'manual_count': manual_count,
             'winner_phones': winner_phones,
+            'real_users': real_users_count,
+            'system_users': system_users_count,
             'status': game.status,
             'created_at': game.created_at.strftime('%H:%M'),
         })
@@ -1436,10 +1496,22 @@ def second_admin_dashboard_api(request):
     completed_games = Game.objects.filter(status='completed')
     
     def calculate_revenue(games_queryset):
+        """
+        Calculate revenue from games, excluding fake users.
+        Revenue = (real_users_count * bet_amount) * percentage_cut / 100
+        Only counts real users who paid - fake users don't generate revenue
+        """
         total = Decimal('0')
+        from .models import GameCard
+        
         for game in games_queryset:
-            total_collected = game.derash_amount
-            if total_collected > 0:
+            # Count only real users (exclude fake users)
+            real_users_count = GameCard.objects.filter(game=game).count()
+            
+            # Only calculate revenue if there are real users
+            if real_users_count > 0:
+                # Calculate revenue from real users only (using game's bet_amount)
+                total_collected = Decimal(str(real_users_count)) * game.bet_amount
                 cut = (total_collected * percentage_cut) / Decimal('100')
                 total += cut
         return total

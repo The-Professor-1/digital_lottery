@@ -644,6 +644,8 @@
                         <tr>
                             <th>Game ID</th>
                             <th>Players</th>
+                            <th>Real Users</th>
+                            <th>System Users</th>
                             <th>Bid Amount</th>
                             <th>Automatic</th>
                             <th>Manual</th>
@@ -656,6 +658,8 @@
                         <tr v-for="(game, index) in dashboardData.today_games" :key="game.id" :class="{ 'hidden-row': index >= 5 && !showAllTodayGames }">
                             <td>{{ game.id }}</td>
                             <td>{{ game.players }}</td>
+                            <td style="color: #2e7d32; font-weight: bold;">{{ game.real_users || 0 }}</td>
+                            <td style="color: #ff9800; font-weight: bold;">{{ game.system_users || 0 }}</td>
                             <td>{{ game.bid_amount }} ETB</td>
                             <td>{{ game.automatic_count }}</td>
                             <td>{{ game.manual_count }}</td>
@@ -664,7 +668,7 @@
                             <td>{{ game.created_at }}</td>
                         </tr>
                         <tr v-if="!dashboardData.today_games || dashboardData.today_games.length === 0">
-                            <td colspan="8" style="text-align: center;">No games played today</td>
+                            <td colspan="10" style="text-align: center;">No games played today</td>
                         </tr>
                     </tbody>
                 </table>
