@@ -1111,8 +1111,24 @@ export default {
         return
       }
       
-      // Check full card
-      if (layout.every(row => row.every(cell => isCellMarked(cell)))) {
+      // Check corner bingo (4 corners + FREE cell: top-left, top-right, bottom-left, bottom-right, center)
+      const corners = [
+        layout[0][0],  // Top-left
+        layout[0][4],  // Top-right
+        layout[4][0],  // Bottom-left
+        layout[4][4],  // Bottom-right
+        layout[2][2]   // FREE cell (center) - included for visual appeal
+      ]
+      if (corners.every(cell => isCellMarked(cell))) {
+        this.canClaimBingo = true
+        // ONLY auto-claim in automatic mode - in manual mode, user must click button
+        this.tryAutoClaimBingo()
+        return
+      }
+      
+      // Check full card (all cells marked)
+      const allCellsMarked = layout.every(row => row.every(cell => isCellMarked(cell)))
+      if (allCellsMarked) {
         this.canClaimBingo = true
         // ONLY auto-claim in automatic mode - in manual mode, user must click button
         this.tryAutoClaimBingo()

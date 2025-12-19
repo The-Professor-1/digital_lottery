@@ -137,6 +137,15 @@ def task_check_bingo_for_all_cards(self, game_id: int):
                 
                 # Get all winner cards
                 winner_cards = GameCard.objects.filter(game=game, is_winner=True)
+                
+                # Get last called number for winner data (to match fake user format)
+                from .models import CalledNumber
+                last_called = CalledNumber.objects.filter(game=game).order_by('-called_at').first()
+                last_called_number = last_called.number if last_called else None
+                
+                # Get all called numbers for winner data
+                called_numbers = list(CalledNumber.objects.filter(game=game).order_by('called_at').values_list('number', flat=True))
+                
                 for winner_card in winner_cards:
                     # Recalculate winning pattern for this card
                     has_bingo, winning_pattern = check_bingo(winner_card, game)
@@ -148,6 +157,9 @@ def task_check_bingo_for_all_cards(self, game_id: int):
                         'card_number': winner_card.card_number,
                         'card_layout': winner_card.card_layout,
                         'winning_pattern': winning_pattern if has_bingo else None,
+                        'selected_numbers': winner_card.selected_numbers or [],
+                        'called_numbers': called_numbers,
+                        'last_called_number': last_called_number,
                         'prize': float(game.total_derash) / winner_cards.count() if winner_cards.count() > 0 else 0
                     })
                 
@@ -248,6 +260,14 @@ def task_process_bingo_winners(self, game_id: int):
         # Broadcast final winners list with correct prize split
         from .serializers import UserSerializer
         from .game_logic import check_bingo
+        from .models import CalledNumber
+        
+        # Get last called number for winner data (to match fake user format)
+        last_called = CalledNumber.objects.filter(game=game).order_by('-called_at').first()
+        last_called_number = last_called.number if last_called else None
+        
+        # Get all called numbers for winner data
+        called_numbers = list(CalledNumber.objects.filter(game=game).order_by('called_at').values_list('number', flat=True))
         
         winners_data = []
         for winner_card in winner_cards:
@@ -258,6 +278,9 @@ def task_process_bingo_winners(self, game_id: int):
                 'card_id': winner_card.id,
                 'card_layout': winner_card.card_layout,
                 'winning_pattern': pattern if has_bingo else None,
+                'selected_numbers': winner_card.selected_numbers or [],
+                'called_numbers': called_numbers,
+                'last_called_number': last_called_number,
                 'prize': float(prize_per_winner)
             })
         
@@ -444,8 +467,8 @@ def task_auto_call_numbers(self, game_id: int):
                 called_numbers_set.add(number)
                 for fake_card in fake_cards:
                     mark_number_on_fake_card(fake_card, number)
-                    # Check if fake user won
-                    has_bingo, pattern = check_fake_user_bingo(fake_card, called_numbers_set)
+                    # Check if fake user won (pass game to get enabled patterns)
+                    has_bingo, pattern = check_fake_user_bingo(fake_card, called_numbers_set, game)
                     if has_bingo:
                         # Fake user won!
                         fake_card.is_winner = True
@@ -866,8 +889,18 @@ def task_select_single_fake_card(self, game_id: int, fake_user_id: int):
         if not available_cards:
             return {'error': 'No available cards', 'stopped': True}
         
-        # Randomly select a card
-        card_number = random.choice(available_cards)
+        # Prefer cards from 1-100 range (70% chance) for more realistic selection
+        preferred_cards = [c for c in available_cards if c <= 100]
+        other_cards = [c for c in available_cards if c > 100]
+        
+        if preferred_cards and random.random() < 0.7:
+            card_number = random.choice(preferred_cards)
+        elif preferred_cards:
+            card_number = random.choice(preferred_cards)
+        elif other_cards:
+            card_number = random.choice(other_cards)
+        else:
+            card_number = random.choice(available_cards)
         
         try:
             card = create_fake_user_card(game, fake_user, card_number)
@@ -902,7 +935,18 @@ def task_select_single_fake_card(self, game_id: int, fake_user_id: int):
             if available_cards:
                 available_cards.remove(card_number)
                 if available_cards:
-                    card_number = random.choice(available_cards)
+                    # Prefer cards from 1-100 range (70% chance) for more realistic selection
+                    preferred_cards = [c for c in available_cards if c <= 100]
+                    other_cards = [c for c in available_cards if c > 100]
+                    
+                    if preferred_cards and random.random() < 0.7:
+                        card_number = random.choice(preferred_cards)
+                    elif preferred_cards:
+                        card_number = random.choice(preferred_cards)
+                    elif other_cards:
+                        card_number = random.choice(other_cards)
+                    else:
+                        card_number = random.choice(available_cards)
                     try:
                         card = create_fake_user_card(game, fake_user, card_number)
                         return {
@@ -955,22 +999,32 @@ def task_simulate_fake_user_selections(self, game_id: int, fake_user_ids: List[i
         timer_seconds = settings.card_selection_timer
         
         # Calculate max delay per user to ensure all finish before timer ends
-        # Reserve 5 seconds buffer at the end, and distribute remaining time across all users
-        # For 20-30 users, this gives ~0.5-1 second per user (with some randomness)
-        max_total_time = timer_seconds - 5  # Reserve 5 seconds buffer
+        # Reserve 10 seconds buffer at the end to ensure all selections complete
+        # Distribute remaining time across all users evenly
+        max_total_time = timer_seconds - 10  # Reserve 10 seconds buffer to ensure completion
         num_users = len(fake_users)
-        max_delay_per_user = max_total_time / num_users if num_users > 0 else 1.0
-        # Clamp between 0.2 and 1.5 seconds per user
-        max_delay_per_user = min(max(max_delay_per_user, 0.2), 1.5)
         
-        cumulative_delay = 0
+        if num_users == 0:
+            return {'error': 'No fake users to schedule', 'stopped': True}
+        
+        # Calculate base delay per user (distribute evenly)
+        base_delay_per_user = max_total_time / num_users
+        
+        # Clamp between 0.2 and 0.8 seconds per user to ensure faster completion
+        # This ensures all users complete well before timer ends and cards show up quickly
+        base_delay_per_user = min(max(base_delay_per_user, 0.2), 0.8)
+        
+        # Schedule all fake users with evenly distributed delays
+        # This ensures all selections complete before timer ends and are visible quickly
         for i, fake_user in enumerate(fake_users):
-            # Add small random delay (0.2 to max_delay_per_user seconds) for each user
-            delay_increment = random.uniform(0.2, max_delay_per_user)
-            cumulative_delay += delay_increment
+            # Calculate delay: base delay * index, with small random variation
+            delay = (i * base_delay_per_user) + random.uniform(0.0, 0.2)
+            # Ensure delay doesn't exceed max_total_time
+            delay = min(delay, max_total_time)
+            
             task_select_fake_card_with_changes.apply_async(
                 args=[game_id, fake_user.id],
-                countdown=cumulative_delay
+                countdown=delay
             )
         
         return {
@@ -1015,8 +1069,22 @@ def task_select_fake_card_with_changes(self, game_id: int, fake_user_id: int):
         if not available_cards:
             return {'error': 'No available cards', 'stopped': True}
         
-        # Select initial card
-        card_number = random.choice(available_cards)
+        # Prefer cards from 1-100 range (70% chance) for more realistic selection
+        preferred_cards = [c for c in available_cards if c <= 100]
+        other_cards = [c for c in available_cards if c > 100]
+        
+        if preferred_cards and random.random() < 0.7:
+            # 70% chance to pick from preferred range (1-100)
+            card_number = random.choice(preferred_cards)
+        elif preferred_cards:
+            # 30% chance to pick from preferred if available
+            card_number = random.choice(preferred_cards)
+        elif other_cards:
+            # Fallback to other cards if preferred is empty
+            card_number = random.choice(other_cards)
+        else:
+            # Last resort - any available card
+            card_number = random.choice(available_cards)
         
         try:
             # Check if fake user already has a card (from previous change)
@@ -1026,8 +1094,11 @@ def task_select_fake_card_with_changes(self, game_id: int, fake_user_id: int):
                 old_card_number = existing_card.card_number
                 existing_card.delete()
                 
-                # Broadcast unselection
+                # Broadcast unselection immediately
                 try:
+                    from channels.layers import get_channel_layer
+                    from asgiref.sync import async_to_sync
+                    channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
                         f'game_{game.id}',
                         {
@@ -1044,14 +1115,35 @@ def task_select_fake_card_with_changes(self, game_id: int, fake_user_id: int):
                 except Exception as e:
                     print(f"WebSocket broadcast error for fake user unselection: {e}")
                 
-                # Delay before selecting new card - at least 2 seconds to make it less obvious
-                time.sleep(random.uniform(2.0, 2.5))
+                # IMPORTANT: Immediately select new card (no delay) to keep synchronized
+                # This ensures for every unselect, there's a new select right away
+                # Get fresh available cards after unselection
+                available_cards = get_available_card_numbers_for_fake(game)
+                if available_cards:
+                    # Prefer cards from 1-100 range (70% chance) for more realistic selection
+                    preferred_cards = [c for c in available_cards if c <= 100]
+                    other_cards = [c for c in available_cards if c > 100]
+                    
+                    if preferred_cards and random.random() < 0.7:
+                        card_number = random.choice(preferred_cards)
+                    elif preferred_cards:
+                        card_number = random.choice(preferred_cards)
+                    elif other_cards:
+                        card_number = random.choice(other_cards)
+                    else:
+                        card_number = random.choice(available_cards)
+                else:
+                    # No cards available, return error
+                    return {'error': 'No available cards after unselection', 'stopped': True}
             
-            # Create new card
+            # Create new card (this handles both initial selection and reselection after unselect)
             card = create_fake_user_card(game, fake_user, card_number)
             
-            # Broadcast card selection
+            # Broadcast card selection immediately
             try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+                channel_layer = get_channel_layer()
                 async_to_sync(channel_layer.group_send)(
                     f'game_{game.id}',
                     {
@@ -1152,9 +1244,8 @@ def task_adjust_fake_users_before_game_start(self, game_id: int):
         if game.status != 'waiting':
             return {'error': 'Game is not in waiting status', 'skipped': True}
         
-        from .models import GameCard
+        from .models import GameCard, FakeUser, FakeUserGameCard
         from .fake_user_manager import get_fake_user_count_for_game
-        from .models import FakeUserGameCard
         
         # Count real players (only those who have selected cards - GameCard)
         real_player_count = GameCard.objects.filter(game=game).count()
@@ -1162,9 +1253,94 @@ def task_adjust_fake_users_before_game_start(self, game_id: int):
         # Count current fake users
         fake_user_count = get_fake_user_count_for_game(game)
         
-        # Calculate how many fake users to remove
-        # For every real player, remove one fake user
-        fake_users_to_remove = min(real_player_count, fake_user_count)
+        # Get minimum and maximum system accounts from settings
+        from .models import GameSettings
+        settings = GameSettings.get_settings()
+        min_system_accounts = getattr(settings, 'system_accounts_min', 15)
+        max_system_accounts = getattr(settings, 'system_accounts_max', 30)
+        
+        # FIRST: Ensure we have at least the minimum number of fake users
+        # If we're below minimum, add more (this handles cases where some selections failed)
+        if fake_user_count < min_system_accounts:
+            # Need to add more fake users to reach minimum
+            fake_users_needed = min_system_accounts - fake_user_count
+            print(f"Game {game_id}: Only {fake_user_count} fake users, need {fake_users_needed} more to reach minimum {min_system_accounts}")
+            
+            # Add the needed fake users immediately (synchronously to ensure they're added)
+            from .fake_user_manager import get_random_fake_users, get_available_card_numbers_for_fake, create_fake_user_card
+            import random
+            
+            # Get fake users that don't already have cards for this game
+            existing_fake_user_ids = set(FakeUserGameCard.objects.filter(game=game).values_list('fake_user_id', flat=True))
+            all_fake_users = list(FakeUser.objects.filter(is_active=True).exclude(id__in=existing_fake_user_ids))
+            
+            if len(all_fake_users) >= fake_users_needed:
+                # Select random fake users that don't have cards yet
+                fake_users_to_add = random.sample(all_fake_users, fake_users_needed)
+                
+                # Get available cards
+                available_cards = get_available_card_numbers_for_fake(game)
+                
+                if len(available_cards) >= fake_users_needed:
+                    # Add cards for these fake users immediately
+                    for fake_user in fake_users_to_add:
+                        if available_cards:
+                            # Prefer cards from 1-100 range (70% chance) for more realistic selection
+                            preferred_cards = [c for c in available_cards if c <= 100]
+                            other_cards = [c for c in available_cards if c > 100]
+                            
+                            if preferred_cards and random.random() < 0.7:
+                                card_number = random.choice(preferred_cards)
+                            elif preferred_cards:
+                                card_number = random.choice(preferred_cards)
+                            elif other_cards:
+                                card_number = random.choice(other_cards)
+                            else:
+                                card_number = random.choice(available_cards)
+                            
+                            available_cards.remove(card_number)
+                            try:
+                                create_fake_user_card(game, fake_user, card_number)
+                                
+                                # Broadcast card selection immediately via WebSocket
+                                try:
+                                    from channels.layers import get_channel_layer
+                                    from asgiref.sync import async_to_sync
+                                    channel_layer = get_channel_layer()
+                                    from .game_logic import get_available_card_numbers
+                                    async_to_sync(channel_layer.group_send)(
+                                        f'game_{game.id}',
+                                        {
+                                            'type': 'card_selected',
+                                            'data': {
+                                                'card_number': card_number,
+                                                'user_id': None,  # Fake user
+                                                'username': fake_user.name,
+                                                'is_fake': True,
+                                                'available_cards': get_available_card_numbers(game)
+                                            }
+                                        }
+                                    )
+                                except Exception as e:
+                                    print(f"WebSocket broadcast error for adjustment fake user card: {e}")
+                                
+                                print(f"Added fake user {fake_user.name} with card {card_number} to game {game_id}")
+                            except Exception as e:
+                                print(f"Error adding fake user {fake_user.name}: {e}")
+                    
+                    # Refresh fake user count after adding
+                    fake_user_count = get_fake_user_count_for_game(game)
+                else:
+                    print(f"Game {game_id}: Not enough available cards ({len(available_cards)}) to add {fake_users_needed} fake users")
+            else:
+                print(f"Game {game_id}: Not enough available fake users ({len(all_fake_users)}) to add {fake_users_needed}")
+        
+        # SECOND: Calculate how many fake users to remove (if we have more than needed)
+        # For every real player, remove one fake user, BUT never go below minimum
+        # Calculate: fake_users_to_remove = min(real_player_count, fake_user_count - min_system_accounts)
+        # This ensures we always keep at least min_system_accounts
+        max_removable = max(0, fake_user_count - min_system_accounts)
+        fake_users_to_remove = min(real_player_count, max_removable)
         
         if fake_users_to_remove > 0:
             # Get fake user cards (randomly select which ones to remove)

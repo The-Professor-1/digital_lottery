@@ -542,6 +542,48 @@
                             </label>
                             <p style="margin: 5px 0 0 28px; font-size: 12px; color: #666;">Allow real users to win even when system accounts are active (only available if system accounts are enabled)</p>
                         </div>
+                        <div style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 5px; border-left: 4px solid #2196f3;">
+                            <label><strong>System Accounts Range:</strong></label>
+                            <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px;">
+                                <div>
+                                    <label style="font-size: 12px; color: #666;">Min:</label>
+                                    <input type="number" id="system_accounts_min" min="1" max="100" value="{{ game_settings.system_accounts_min|default:15 }}" style="width: 80px; padding: 6px; border: 1px solid #ddd; border-radius: 5px;">
+                                </div>
+                                <span style="font-weight: bold;">-</span>
+                                <div>
+                                    <label style="font-size: 12px; color: #666;">Max:</label>
+                                    <input type="number" id="system_accounts_max" min="1" max="100" value="{{ game_settings.system_accounts_max|default:30 }}" style="width: 80px; padding: 6px; border: 1px solid #ddd; border-radius: 5px;">
+                                </div>
+                            </div>
+                            <p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">Number of system accounts to randomly join each game (only available if system accounts are enabled)</p>
+                        </div>
+                        
+                        <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107;">
+                            <label><strong>Winning Patterns:</strong></label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;">
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="checkbox" id="pattern_horizontal" {% if not game_settings.winning_patterns or 'horizontal' in game_settings.winning_patterns %}checked{% endif %} style="width: 18px; height: 18px; margin-right: 6px; cursor: pointer;">
+                                    <span>Horizontal (Rows)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="checkbox" id="pattern_vertical" {% if not game_settings.winning_patterns or 'vertical' in game_settings.winning_patterns %}checked{% endif %} style="width: 18px; height: 18px; margin-right: 6px; cursor: pointer;">
+                                    <span>Vertical (Columns)</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="checkbox" id="pattern_diagonal" {% if not game_settings.winning_patterns or 'diagonal' in game_settings.winning_patterns %}checked{% endif %} style="width: 18px; height: 18px; margin-right: 6px; cursor: pointer;">
+                                    <span>Diagonal</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="checkbox" id="pattern_corner" {% if game_settings.winning_patterns and 'corner' in game_settings.winning_patterns %}checked{% endif %} style="width: 18px; height: 18px; margin-right: 6px; cursor: pointer;">
+                                    <span>Corner Bingo</span>
+                                </label>
+                                <label style="display: flex; align-items: center; cursor: pointer;">
+                                    <input type="checkbox" id="pattern_full_card" {% if game_settings.winning_patterns and 'full_card' in game_settings.winning_patterns %}checked{% endif %} style="width: 18px; height: 18px; margin-right: 6px; cursor: pointer;">
+                                    <span>Full Card</span>
+                                </label>
+                            </div>
+                            <p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">Select which patterns are valid for winning. Only selected patterns will be checked during gameplay.</p>
+                        </div>
                     </div>
                     
                     <h3 style="margin-top: 30px; margin-bottom: 15px;">🏦 Deposit Account Information</h3>
@@ -595,7 +637,7 @@
             </div>
         </div>
         
-        <!-- Active Games Section (with Start/End and Call Number) -->
+        <!-- Active Games Section (with Start/End but NO Call Number) -->
         <div class="section">
             <h2>🎮 Active Games</h2>
                 <table>
@@ -619,8 +661,6 @@
                             {% if game.status == 'waiting' %}
                             <button onclick="startGame('{{ game.id }}')" style="background: #2ecc71; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer;">Start Game</button>
                             {% elif game.status == 'active' %}
-                            <input type="number" id="number_{{ game.id }}" min="1" max="75" placeholder="Number" style="padding: 8px; width: 100px; border: 1px solid #ddd; border-radius: 5px; margin-right: 5px;">
-                            <button onclick="callNumber('{{ game.id }}')" style="background: #3498db; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer;">Call Number</button>
                             <button onclick="endGame('{{ game.id }}')" style="background: #e74c3c; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer;">End Game</button>
                             {% endif %}
                         </td>
@@ -1507,6 +1547,15 @@
                 automatic_mode_enabled: document.getElementById('automatic_mode_enabled').checked,
                 allow_system_account: document.getElementById('allow_system_account').checked,
                 free_play: document.getElementById('free_play').checked,
+                system_accounts_min: parseInt(document.getElementById('system_accounts_min').value) || 15,
+                system_accounts_max: parseInt(document.getElementById('system_accounts_max').value) || 30,
+                winning_patterns: [
+                    ...(document.getElementById('pattern_horizontal').checked ? ['horizontal'] : []),
+                    ...(document.getElementById('pattern_vertical').checked ? ['vertical'] : []),
+                    ...(document.getElementById('pattern_diagonal').checked ? ['diagonal'] : []),
+                    ...(document.getElementById('pattern_corner').checked ? ['corner'] : []),
+                    ...(document.getElementById('pattern_full_card').checked ? ['full_card'] : [])
+                ],
                 deposit_accounts: {
                     BOA: {
                         name: document.getElementById('boa_name').value,
@@ -1581,52 +1630,6 @@
                 if (freePlayLabel) {
                     freePlayLabel.style.opacity = '1';
                 }
-            }
-        }
-        
-        async function callNumber(gameId) {
-            const number = parseInt(document.getElementById(`number_${gameId}`).value);
-            if (!number || number < 1 || number > 75) {
-                alert('Please enter a valid number (1-75)');
-                return;
-            }
-            
-            try {
-                const csrftoken = getCSRFToken();
-                if (!csrftoken) {
-                    alert('CSRF token not found. Please refresh the page and try again.');
-                    return;
-                }
-                
-                const response = await fetch(`/api/admin/games/${parseInt(gameId)}/call-number/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrftoken
-                    },
-                    credentials: 'same-origin',
-                    body: JSON.stringify({ number })
-                });
-                
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    const text = await response.text();
-                    console.error('Non-JSON response:', text.substring(0, 500));
-                    alert('Server returned an error. Please refresh the page and try again.');
-                    return;
-                }
-                
-                const data = await response.json();
-                if (response.ok) {
-                    alert(`Number ${data.letter}-${data.number} called!`);
-                    document.getElementById(`number_${gameId}`).value = '';
-                    location.reload();
-                } else {
-                    alert(data.error || 'Failed to call number');
-                }
-            } catch (error) {
-                console.error('Error calling number:', error);
-                alert('Error: ' + error.message);
             }
         }
         

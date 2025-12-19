@@ -224,6 +224,7 @@ def check_bingo(card: GameCard, game: Game) -> Tuple[bool, str]:
     
     Optimized: Early exit for cards with < 5 marked numbers. No database queries needed.
     Pattern checking only uses card layout (already in memory).
+    Only checks patterns enabled in game settings.
     """
     # Early exit optimization: if card has less than 5 numbers marked, it can't have bingo
     # Minimum bingo requires 5 numbers in a line (row, column, or diagonal)
@@ -235,33 +236,65 @@ def check_bingo(card: GameCard, game: Game) -> Tuple[bool, str]:
     if not layout:
         return (False, None)
     
+    # Get enabled winning patterns from settings
+    from .models import GameSettings
+    settings = GameSettings.get_settings(game_id=game.id if game else None)
+    enabled_patterns = getattr(settings, 'winning_patterns', [])
+    
+    # If no patterns specified, default to all patterns (backward compatibility)
+    if not enabled_patterns:
+        enabled_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
+    
+    # Convert to set for faster lookup
+    enabled_patterns_set = set(enabled_patterns)
+    
     # Helper function to check if a cell is marked (including FREE space)
     def is_cell_marked(cell):
         if cell.get('letter') == 'FREE':
             return True  # FREE is always considered marked
         return cell.get('marked', False)
     
-    # Check horizontal lines (any row)
-    for row_idx, row in enumerate(layout):
-        if all(is_cell_marked(cell) for cell in row):
-            return (True, f'row_{row_idx}')
+    # IMPORTANT: If only 'full_card' is enabled, skip all other pattern checks
+    # This ensures full_card only wins when ALL cells are marked, not when other patterns are complete
+    only_full_card = enabled_patterns_set == {'full_card'}
     
-    # Check vertical lines (any column)
-    for col_idx in range(5):
-        if all(is_cell_marked(layout[row_idx][col_idx]) for row_idx in range(5)):
-            return (True, f'col_{col_idx}')
+    # Check horizontal lines (any row) - skip if only full_card is enabled
+    if not only_full_card and 'horizontal' in enabled_patterns_set:
+        for row_idx, row in enumerate(layout):
+            if all(is_cell_marked(cell) for cell in row):
+                return (True, f'row_{row_idx}')
     
-    # Check diagonal (top-left to bottom-right)
-    if all(is_cell_marked(layout[i][i]) for i in range(5)):
-        return (True, 'diagonal_1')
+    # Check vertical lines (any column) - skip if only full_card is enabled
+    if not only_full_card and 'vertical' in enabled_patterns_set:
+        for col_idx in range(5):
+            if all(is_cell_marked(layout[row_idx][col_idx]) for row_idx in range(5)):
+                return (True, f'col_{col_idx}')
     
-    # Check diagonal (top-right to bottom-left)
-    if all(is_cell_marked(layout[i][4-i]) for i in range(5)):
-        return (True, 'diagonal_2')
+    # Check diagonal (top-left to bottom-right) - skip if only full_card is enabled
+    if not only_full_card and 'diagonal' in enabled_patterns_set:
+        if all(is_cell_marked(layout[i][i]) for i in range(5)):
+            return (True, 'diagonal_1')
+        
+        # Check diagonal (top-right to bottom-left)
+        if all(is_cell_marked(layout[i][4-i]) for i in range(5)):
+            return (True, 'diagonal_2')
     
-    # Check full card
-    if all(is_cell_marked(cell) for row in layout for cell in row):
-        return (True, 'full_card')
+    # Check corner bingo (4 corners + FREE cell) - skip if only full_card is enabled
+    if not only_full_card and 'corner' in enabled_patterns_set:
+        corners = [
+            layout[0][0],  # Top-left
+            layout[0][4],  # Top-right
+            layout[4][0],  # Bottom-left
+            layout[4][4],  # Bottom-right
+            layout[2][2]   # FREE cell (center) - included for visual appeal
+        ]
+        if all(is_cell_marked(cell) for cell in corners):
+            return (True, 'corner')
+    
+    # Check full card - ONLY wins if ALL cells are marked
+    if 'full_card' in enabled_patterns_set:
+        if all(is_cell_marked(cell) for row in layout for cell in row):
+            return (True, 'full_card')
     
     return (False, None)
 
@@ -407,6 +440,9 @@ def start_game(game: Game) -> bool:
         'percentage_cut': float(settings.percentage_cut),
         'card_selection_timer': settings.card_selection_timer,
         'total_cards': settings.total_cards,
+        'system_accounts_min': getattr(settings, 'system_accounts_min', 15),
+        'system_accounts_max': getattr(settings, 'system_accounts_max', 30),
+        'winning_patterns': getattr(settings, 'winning_patterns', ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']),
     }, 3600)  # Cache for 1 hour (game won't last that long)
     
     # Check if system accounts are enabled (use cached settings)
@@ -427,7 +463,80 @@ def start_game(game: Game) -> bool:
     # Total players (real + fake)
     total_player_count = real_player_count + fake_player_count
     
+    # CRITICAL: If system accounts are enabled, ensure we have at least the minimum
+    # This is a final check right before game starts to catch any edge cases
+    if allow_system_account:
+        min_system_accounts = getattr(settings, 'system_accounts_min', 15)
+        # If we have fewer fake users than minimum, add more immediately
+        if fake_player_count < min_system_accounts:
+            try:
+                from .fake_user_manager import get_random_fake_users, get_available_card_numbers_for_fake, create_fake_user_card
+                from .models import FakeUser, FakeUserGameCard
+                import random
+                
+                fake_users_needed = min_system_accounts - fake_player_count
+                print(f"Game {game.id}: Final check - only {fake_player_count} fake users before start, adding {fake_users_needed} more to reach minimum {min_system_accounts}")
+                
+                # Get fake users that don't already have cards
+                existing_fake_user_ids = set(FakeUserGameCard.objects.filter(game=game).values_list('fake_user_id', flat=True))
+                all_fake_users = list(FakeUser.objects.filter(is_active=True).exclude(id__in=existing_fake_user_ids))
+                
+                if len(all_fake_users) >= fake_users_needed:
+                    fake_users_to_add = random.sample(all_fake_users, fake_users_needed)
+                    available_cards = get_available_card_numbers_for_fake(game)
+                    
+                    if len(available_cards) >= fake_users_needed:
+                        for fake_user in fake_users_to_add:
+                            if available_cards:
+                                # Prefer cards from 1-100 range (70% chance) for more realistic selection
+                                preferred_cards = [c for c in available_cards if c <= 100]
+                                other_cards = [c for c in available_cards if c > 100]
+                                
+                                if preferred_cards and random.random() < 0.7:
+                                    card_number = random.choice(preferred_cards)
+                                elif preferred_cards:
+                                    card_number = random.choice(preferred_cards)
+                                elif other_cards:
+                                    card_number = random.choice(other_cards)
+                                else:
+                                    card_number = random.choice(available_cards)
+                                
+                                available_cards.remove(card_number)
+                                try:
+                                    create_fake_user_card(game, fake_user, card_number)
+                                    fake_player_count += 1
+                                    
+                                    # Broadcast card selection immediately via WebSocket
+                                    try:
+                                        from channels.layers import get_channel_layer
+                                        from asgiref.sync import async_to_sync
+                                        channel_layer = get_channel_layer()
+                                        async_to_sync(channel_layer.group_send)(
+                                            f'game_{game.id}',
+                                            {
+                                                'type': 'card_selected',
+                                                'data': {
+                                                    'card_number': card_number,
+                                                    'user_id': None,  # Fake user
+                                                    'username': fake_user.name,
+                                                    'is_fake': True,
+                                                    'available_cards': get_available_card_numbers(game)
+                                                }
+                                            }
+                                        )
+                                    except Exception as e:
+                                        print(f"WebSocket broadcast error for final check fake user card: {e}")
+                                    
+                                    print(f"Added fake user {fake_user.name} with card {card_number} to game {game.id} (final check)")
+                                except Exception as e:
+                                    print(f"Error adding fake user {fake_user.name}: {e}")
+            except Exception as e:
+                print(f"Error in final fake user check for game {game.id}: {e}")
+                import traceback
+                traceback.print_exc()
+    
     # Require at least 2 total players to start the game
+    total_player_count = real_player_count + fake_player_count
     if total_player_count < 2:
         return False
     
@@ -450,6 +559,78 @@ def start_game(game: Game) -> bool:
     
     # Refresh again after derash calculation to ensure latest values are synced
     game.refresh_from_db()
+    
+    # FINAL CHECK: Ensure we have at least minimum fake users before starting
+    # This is the absolute last check before game starts
+    if allow_system_account:
+        min_system_accounts = getattr(settings, 'system_accounts_min', 15)
+        current_fake_count = get_fake_user_count_for_game(game)
+        if current_fake_count < min_system_accounts:
+            print(f"Game {game.id}: CRITICAL - Only {current_fake_count} fake users before start, need {min_system_accounts}. Adding more...")
+            try:
+                from .fake_user_manager import get_random_fake_users, get_available_card_numbers_for_fake, create_fake_user_card
+                from .models import FakeUser, FakeUserGameCard
+                import random
+                
+                fake_users_needed = min_system_accounts - current_fake_count
+                existing_fake_user_ids = set(FakeUserGameCard.objects.filter(game=game).values_list('fake_user_id', flat=True))
+                all_fake_users = list(FakeUser.objects.filter(is_active=True).exclude(id__in=existing_fake_user_ids))
+                
+                if len(all_fake_users) >= fake_users_needed:
+                    fake_users_to_add = random.sample(all_fake_users, fake_users_needed)
+                    available_cards = get_available_card_numbers_for_fake(game)
+                    
+                    if len(available_cards) >= fake_users_needed:
+                        for fake_user in fake_users_to_add:
+                            if available_cards:
+                                # Prefer cards from 1-100 range (70% chance) for more realistic selection
+                                preferred_cards = [c for c in available_cards if c <= 100]
+                                other_cards = [c for c in available_cards if c > 100]
+                                
+                                if preferred_cards and random.random() < 0.7:
+                                    card_number = random.choice(preferred_cards)
+                                elif preferred_cards:
+                                    card_number = random.choice(preferred_cards)
+                                elif other_cards:
+                                    card_number = random.choice(other_cards)
+                                else:
+                                    card_number = random.choice(available_cards)
+                                
+                                available_cards.remove(card_number)
+                                try:
+                                    create_fake_user_card(game, fake_user, card_number)
+                                    
+                                    # Broadcast card selection immediately via WebSocket
+                                    try:
+                                        from channels.layers import get_channel_layer
+                                        from asgiref.sync import async_to_sync
+                                        channel_layer = get_channel_layer()
+                                        async_to_sync(channel_layer.group_send)(
+                                            f'game_{game.id}',
+                                            {
+                                                'type': 'card_selected',
+                                                'data': {
+                                                    'card_number': card_number,
+                                                    'user_id': None,  # Fake user
+                                                    'username': fake_user.name,
+                                                    'is_fake': True,
+                                                    'available_cards': get_available_card_numbers(game)
+                                                }
+                                            }
+                                        )
+                                    except Exception as e:
+                                        print(f"WebSocket broadcast error for pre-start fake user card: {e}")
+                                    
+                                    print(f"CRITICAL: Added fake user {fake_user.name} with card {card_number} to game {game.id} (final pre-start check)")
+                                except Exception as e:
+                                    print(f"Error in final pre-start fake user addition: {e}")
+                        # Recalculate derash after adding fake users
+                        game.refresh_from_db()
+                        game.recalculate_derash()
+            except Exception as e:
+                print(f"Error in final pre-start fake user check: {e}")
+                import traceback
+                traceback.print_exc()
     
     # CRITICAL: Double-check game is still waiting before setting to active
     # This prevents race conditions where multiple requests try to start the game

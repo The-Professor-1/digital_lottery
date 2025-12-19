@@ -138,6 +138,13 @@ export default {
         return rowIdx === colIdx
       } else if (this.winningPattern === 'diagonal_2') {
         return rowIdx === 4 - colIdx
+      } else if (this.winningPattern === 'corner') {
+        // Corner bingo: 4 corners + FREE cell (center)
+        return (rowIdx === 0 && colIdx === 0) ||  // Top-left
+               (rowIdx === 0 && colIdx === 4) ||  // Top-right
+               (rowIdx === 4 && colIdx === 0) ||  // Bottom-left
+               (rowIdx === 4 && colIdx === 4) ||  // Bottom-right
+               (rowIdx === 2 && colIdx === 2)     // FREE cell (center) - included for visual appeal
       } else if (this.winningPattern === 'full_card') {
         return true
       }
@@ -241,6 +248,7 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.1;
+  color: #000; /* Default black text for normal cells */
 }
 
 .card-cell:hover:not(.marked):not(.free) {
@@ -252,6 +260,11 @@ export default {
   background: var(--green);
   color: white;
   border-color: var(--green);
+}
+
+/* Last called number must override marked class - higher specificity */
+.card-cell.last-called.marked {
+  /* This will be handled by .card-cell.last-called rule below */
 }
 
 .card-cell.free {
@@ -272,45 +285,50 @@ export default {
   animation: pulse 1s infinite;
 }
 
-/* Last called number - MUST override marked class - blink between green and yellow */
-.card-cell.last-called {
+/* FREE cell that is part of winning pattern (e.g., corner bingo) should also be yellow */
+.card-cell.free.winning-cell {
+  background: #f1c40f !important;
+  border: 2px solid #f39c12 !important;
+  box-shadow: 0 0 8px rgba(241, 196, 15, 0.8);
+  animation: pulse 1s infinite;
+  color: white !important;
+}
+
+/* Last called number - Use darker yellow with pulse animation like winning line */
+/* CRITICAL: Must come after .marked to override it */
+.card-cell.last-called,
+.card-cell.last-called.marked,
+.card-cell.last-called.winning-cell,
+.card-cell.last-called.marked.winning-cell {
   color: white !important;
   font-weight: bold !important;
-  animation: blink-green-yellow 0.8s infinite !important;
+  animation: pulse-last-called 1s infinite !important;
   z-index: 10 !important;
   position: relative !important;
-  /* Override marked background */
-  background: #4caf50 !important; /* Will be animated */
-  border: 3px solid #2e7d32 !important; /* Will be animated */
+  background: #d4a017 !important; /* Darker yellow */
+  border: 3px solid #b8860b !important;
+  box-shadow: 0 0 15px rgba(212, 160, 23, 0.8) !important;
+  will-change: transform, box-shadow;
 }
 
-/* Last called number that is also marked - still blink */
-.card-cell.last-called.marked {
-  animation: blink-green-yellow 0.8s infinite !important;
-  /* Override marked background */
-  background: #4caf50 !important; /* Will be animated */
+/* Last called number that is also in winning line - stronger shadow */
+.card-cell.last-called.winning-cell,
+.card-cell.last-called.marked.winning-cell {
+  box-shadow: 0 0 20px rgba(212, 160, 23, 1) !important;
 }
 
-/* Last called number that is also in winning line - should still blink green/yellow */
-.card-cell.last-called.winning-cell {
-  animation: blink-green-yellow 0.8s infinite !important;
-  /* Override winning-cell background */
-  background: #4caf50 !important; /* Will be animated */
-  border: 3px solid #2e7d32 !important; /* Will be animated */
-}
-
-@keyframes blink-green-yellow {
+@keyframes pulse-last-called {
   0%, 100% {
-    background: #4caf50 !important; /* Green */
-    border: 3px solid #2e7d32 !important;
-    box-shadow: 0 0 15px rgba(76, 175, 80, 1) !important;
-    transform: scale(1.1) !important;
+    background: #d4a017 !important; /* Darker yellow */
+    border-color: #b8860b !important;
+    box-shadow: 0 0 15px rgba(212, 160, 23, 0.8) !important;
+    transform: scale(1.1);
   }
   50% {
-    background: #f1c40f !important; /* Yellow */
-    border: 3px solid #f39c12 !important;
-    box-shadow: 0 0 20px rgba(241, 196, 15, 1) !important;
-    transform: scale(1.15) !important;
+    background: #f4d03f !important; /* Lighter yellow for pulse effect */
+    border-color: #d4a017 !important;
+    box-shadow: 0 0 20px rgba(244, 208, 63, 1) !important;
+    transform: scale(1.15);
   }
 }
 

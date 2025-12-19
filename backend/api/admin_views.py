@@ -169,6 +169,13 @@ def admin_dashboard(request):
     
     # Game settings
     game_settings = GameSettings.get_settings()
+    # Ensure new fields exist with defaults (for backward compatibility if migration not run)
+    if not hasattr(game_settings, 'system_accounts_min'):
+        game_settings.system_accounts_min = 15
+    if not hasattr(game_settings, 'system_accounts_max'):
+        game_settings.system_accounts_max = 30
+    if not hasattr(game_settings, 'winning_patterns') or not game_settings.winning_patterns:
+        game_settings.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
     
     # Get today's games with details for clickable total games
     today_games = Game.objects.filter(created_at__gte=today_start).order_by('-created_at')
@@ -750,6 +757,9 @@ def game_settings_api(request):
             'support_phone': settings.support_phone,
             'allow_system_account': settings.allow_system_account,
             'free_play': settings.free_play,
+            'system_accounts_min': getattr(settings, 'system_accounts_min', 15),
+            'system_accounts_max': getattr(settings, 'system_accounts_max', 30),
+            'winning_patterns': getattr(settings, 'winning_patterns', ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']),
         }
         return JsonResponse(response_data)
     
@@ -790,6 +800,26 @@ def game_settings_api(request):
                 if bool(data['free_play']) and not settings_obj.allow_system_account:
                     return JsonResponse({'error': 'Free play can only be enabled when system accounts are allowed'}, status=400)
                 settings_obj.free_play = bool(data['free_play'])
+            if 'system_accounts_min' in data:
+                min_val = int(data['system_accounts_min'])
+                if min_val < 1:
+                    min_val = 1
+                settings_obj.system_accounts_min = min_val
+            if 'system_accounts_max' in data:
+                max_val = int(data['system_accounts_max'])
+                if max_val < settings_obj.system_accounts_min:
+                    max_val = settings_obj.system_accounts_min
+                settings_obj.system_accounts_max = max_val
+            if 'winning_patterns' in data:
+                # Validate winning patterns
+                valid_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
+                patterns = data['winning_patterns']
+                if isinstance(patterns, list):
+                    # Filter to only valid patterns
+                    settings_obj.winning_patterns = [p for p in patterns if p in valid_patterns]
+                    # Ensure at least one pattern is enabled
+                    if not settings_obj.winning_patterns:
+                        settings_obj.winning_patterns = ['horizontal']  # Default to horizontal if none selected
             
             settings_obj.save()
             
@@ -973,6 +1003,13 @@ def second_admin_dashboard(request):
     
     # Game settings
     game_settings = GameSettings.get_settings()
+    # Ensure new fields exist with defaults (for backward compatibility if migration not run)
+    if not hasattr(game_settings, 'system_accounts_min'):
+        game_settings.system_accounts_min = 15
+    if not hasattr(game_settings, 'system_accounts_max'):
+        game_settings.system_accounts_max = 30
+    if not hasattr(game_settings, 'winning_patterns') or not game_settings.winning_patterns:
+        game_settings.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
     
     # Get today's games with winner info (limit to 5 for initial display)
     today_games_all = Game.objects.filter(created_at__gte=today_start).order_by('-created_at')

@@ -319,6 +319,14 @@ class GameSettings(models.Model):
     # Fake user system settings
     allow_system_account = models.BooleanField(default=False, help_text="Enable fake system accounts to join games")
     free_play = models.BooleanField(default=False, help_text="Allow real users to win even when fake accounts are active (only available if allow_system_account is on)")
+    system_accounts_min = models.IntegerField(default=15, help_text="Minimum number of system accounts to join each game")
+    system_accounts_max = models.IntegerField(default=30, help_text="Maximum number of system accounts to join each game")
+    
+    # Winning patterns (stored as JSON list of enabled patterns)
+    winning_patterns = models.JSONField(
+        default=list,
+        help_text="List of enabled winning patterns: ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']"
+    )
     
     # Deposit account information (stored as JSON)
     deposit_accounts = models.JSONField(
@@ -373,6 +381,13 @@ class GameSettings(models.Model):
                             setattr(self, key, value)
                         # Keep reference to original for methods that need it
                         self._original = None
+                        # Ensure new fields exist with defaults (for backward compatibility)
+                        if not hasattr(self, 'system_accounts_min'):
+                            self.system_accounts_min = 15
+                        if not hasattr(self, 'system_accounts_max'):
+                            self.system_accounts_max = 30
+                        if not hasattr(self, 'winning_patterns'):
+                            self.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
                 
                 cached_obj = CachedSettings(cached_game_settings)
                 # Also fetch original for any methods that might be called
@@ -394,7 +409,27 @@ class GameSettings(models.Model):
                 'CBE': {'name': '', 'number': ''},
                 'Telebirr': {'name': '', 'number': ''}
             }
+            # Initialize default winning patterns (all enabled by default)
+            if not obj.winning_patterns:
+                obj.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
             obj.save()
+        
+        # Ensure new fields exist with defaults (for backward compatibility if migration not run)
+        try:
+            if not hasattr(obj, 'system_accounts_min') or getattr(obj, 'system_accounts_min', None) is None:
+                obj.system_accounts_min = 15
+            if not hasattr(obj, 'system_accounts_max') or getattr(obj, 'system_accounts_max', None) is None:
+                obj.system_accounts_max = 30
+            if not hasattr(obj, 'winning_patterns') or not obj.winning_patterns:
+                obj.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
+        except (AttributeError, Exception):
+            # If accessing fields fails (migration not run), set defaults on object
+            try:
+                obj.system_accounts_min = 15
+                obj.system_accounts_max = 30
+                obj.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
+            except:
+                pass  # If we can't set attributes, continue anyway
         
         # Cache for 60 seconds (settings don't change often)
         cache.set(cache_key, obj, 60)

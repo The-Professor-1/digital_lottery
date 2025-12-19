@@ -79,7 +79,8 @@ def create_fake_user_card(game: Game, fake_user: FakeUser, card_number: int) -> 
 
 
 def get_available_card_numbers_for_fake(game: Game) -> List[int]:
-    """Get available card numbers for fake users (excluding real user cards)"""
+    """Get available card numbers for fake users (excluding real user cards)
+    Prefers cards from 1-100 range for more realistic selection"""
     from .models import GameSettings
     settings = GameSettings.get_settings()
     total_cards = settings.total_cards
@@ -89,8 +90,20 @@ def get_available_card_numbers_for_fake(game: Game) -> List[int]:
     fake_taken = set(FakeUserGameCard.objects.filter(game=game).values_list('card_number', flat=True))
     all_taken = real_taken | fake_taken
     
-    all_numbers = list(range(1, total_cards + 1))
-    return [num for num in all_numbers if num not in all_taken]
+    # Prefer cards from 1-100 range (more realistic)
+    preferred_range = list(range(1, min(101, total_cards + 1)))
+    other_range = list(range(101, total_cards + 1)) if total_cards > 100 else []
+    
+    # Get available cards in preferred range first
+    preferred_available = [num for num in preferred_range if num not in all_taken]
+    other_available = [num for num in other_range if num not in all_taken]
+    
+    # Return preferred range first, then others (70% chance to pick from preferred)
+    # But if preferred is empty, return others
+    if preferred_available:
+        return preferred_available + other_available
+    else:
+        return other_available
 
 
 def select_fake_user_cards(game: Game, fake_users: List[FakeUser], delay_range: tuple = (0.5, 2.0)):
@@ -168,10 +181,11 @@ def get_total_player_count(game: Game) -> int:
     return real_count + fake_count
 
 
-def check_fake_user_bingo(card: FakeUserGameCard, called_numbers: set) -> tuple:
+def check_fake_user_bingo(card: FakeUserGameCard, called_numbers: set, game=None) -> tuple:
     """
     Check if a fake user card has a winning BINGO pattern
     Returns (has_bingo, pattern_type)
+    Only checks patterns enabled in game settings.
     """
     if len(card.selected_numbers) < 5:
         return (False, None)
@@ -179,6 +193,18 @@ def check_fake_user_bingo(card: FakeUserGameCard, called_numbers: set) -> tuple:
     layout = card.card_layout
     if not layout:
         return (False, None)
+    
+    # Get enabled winning patterns from settings
+    from .models import GameSettings
+    settings = GameSettings.get_settings(game_id=game.id if game else None)
+    enabled_patterns = getattr(settings, 'winning_patterns', [])
+    
+    # If no patterns specified, default to all patterns (backward compatibility)
+    if not enabled_patterns:
+        enabled_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
+    
+    # Convert to set for faster lookup
+    enabled_patterns_set = set(enabled_patterns)
     
     # Helper function to check if a cell is marked (including FREE space)
     def is_cell_marked(cell):
@@ -189,27 +215,47 @@ def check_fake_user_bingo(card: FakeUserGameCard, called_numbers: set) -> tuple:
             return False
         return number in called_numbers
     
-    # Check horizontal lines
-    for row_idx, row in enumerate(layout):
-        if all(is_cell_marked(cell) for cell in row):
-            return (True, f'row_{row_idx}')
+    # IMPORTANT: If only 'full_card' is enabled, skip all other pattern checks
+    # This ensures full_card only wins when ALL cells are marked, not when other patterns are complete
+    only_full_card = enabled_patterns_set == {'full_card'}
     
-    # Check vertical lines
-    for col_idx in range(5):
-        if all(is_cell_marked(layout[row_idx][col_idx]) for row_idx in range(5)):
-            return (True, f'col_{col_idx}')
+    # Check horizontal lines - skip if only full_card is enabled
+    if not only_full_card and 'horizontal' in enabled_patterns_set:
+        for row_idx, row in enumerate(layout):
+            if all(is_cell_marked(cell) for cell in row):
+                return (True, f'row_{row_idx}')
     
-    # Check diagonal (top-left to bottom-right)
-    if all(is_cell_marked(layout[i][i]) for i in range(5)):
-        return (True, 'diagonal_1')
+    # Check vertical lines - skip if only full_card is enabled
+    if not only_full_card and 'vertical' in enabled_patterns_set:
+        for col_idx in range(5):
+            if all(is_cell_marked(layout[row_idx][col_idx]) for row_idx in range(5)):
+                return (True, f'col_{col_idx}')
     
-    # Check diagonal (top-right to bottom-left)
-    if all(is_cell_marked(layout[i][4-i]) for i in range(5)):
-        return (True, 'diagonal_2')
+    # Check diagonal (top-left to bottom-right) - skip if only full_card is enabled
+    if not only_full_card and 'diagonal' in enabled_patterns_set:
+        if all(is_cell_marked(layout[i][i]) for i in range(5)):
+            return (True, 'diagonal_1')
+        
+        # Check diagonal (top-right to bottom-left)
+        if all(is_cell_marked(layout[i][4-i]) for i in range(5)):
+            return (True, 'diagonal_2')
     
-    # Check full card
-    if all(is_cell_marked(cell) for row in layout for cell in row):
-        return (True, 'full_card')
+    # Check corner bingo (4 corners + FREE cell) - skip if only full_card is enabled
+    if not only_full_card and 'corner' in enabled_patterns_set:
+        corners = [
+            layout[0][0],  # Top-left
+            layout[0][4],  # Top-right
+            layout[4][0],  # Bottom-left
+            layout[4][4],  # Bottom-right
+            layout[2][2]   # FREE cell (center) - included for visual appeal
+        ]
+        if all(is_cell_marked(cell) for cell in corners):
+            return (True, 'corner')
+    
+    # Check full card - ONLY wins if ALL cells are marked
+    if 'full_card' in enabled_patterns_set:
+        if all(is_cell_marked(cell) for row in layout for cell in row):
+            return (True, 'full_card')
     
     return (False, None)
 
@@ -318,9 +364,13 @@ def adjust_fake_users_for_real_player_change(game: Game, is_selection: bool):
     # Count current fake users
     fake_user_count = get_fake_user_count_for_game(game)
     
+    # Get minimum system accounts from settings
+    min_system_accounts = getattr(settings, 'system_accounts_min', 15)
+    
     if is_selection:
         # Real player selected a card - remove one fake user
-        if fake_user_count > 0:
+        # BUT only if we won't drop below the minimum
+        if fake_user_count > min_system_accounts:
             # Get a random fake user card to remove
             fake_cards = list(FakeUserGameCard.objects.filter(game=game))
             if fake_cards:
@@ -363,6 +413,17 @@ def adjust_fake_users_for_real_player_change(game: Game, is_selection: bool):
                     'real_players': real_player_count,
                     'remaining_fake': fake_user_count - 1
                 }
+        else:
+            # Cannot remove fake user - would drop below minimum
+            print(f"Cannot remove fake user - would drop below minimum of {min_system_accounts} (current: {fake_user_count})")
+            return {
+                'success': False,
+                'action': 'skipped',
+                'reason': f'Would drop below minimum of {min_system_accounts}',
+                'real_players': real_player_count,
+                'current_fake': fake_user_count,
+                'min_required': min_system_accounts
+            }
     else:
         # Real player unselected a card - add one fake user back
         # Check if we can add a fake user (don't exceed original count)
