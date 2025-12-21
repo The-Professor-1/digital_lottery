@@ -122,9 +122,9 @@ export default {
   },
   data() {
     return {
-      timer: 5,
+      timer: 8,
       timerInterval: null,
-      minDisplayTime: 5000,
+      minDisplayTime: 8000,
       startTime: null,
       canRedirect: false
     }
@@ -159,8 +159,8 @@ export default {
   mounted() {
     this.startTime = Date.now()
     this.canRedirect = false
-    // Ensure banner shows for minimum 5 seconds total
-    // Start timer immediately, but don't allow redirect until 5 seconds have passed
+    // Ensure banner shows for minimum 8 seconds total
+    // Start timer immediately, but don't allow redirect until 8 seconds have passed
     this.startTimer()
     setTimeout(() => {
       this.canRedirect = true
@@ -168,7 +168,7 @@ export default {
       if (this.timer <= 0) {
         this.$emit('redirect')
       }
-    }, this.minDisplayTime) // Wait 5 seconds before allowing redirect
+    }, this.minDisplayTime) // Wait 8 seconds before allowing redirect
   },
   beforeUnmount() {
     if (this.timerInterval) {
@@ -177,7 +177,7 @@ export default {
   },
   methods: {
     startTimer() {
-      this.timer = 5 // Start at 5 seconds
+      this.timer = 8 // Start at 8 seconds
       this.timerInterval = setInterval(() => {
         if (this.timer > 0) {
           this.timer--

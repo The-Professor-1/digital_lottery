@@ -343,7 +343,26 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
             ).order_by('-created_at').first()
         
         # If no game exists, create a new one
+        # CRITICAL: Only create new game if the last completed game finished at least 8 seconds ago
+        # This ensures users have time to see the winner banner before a new game is created
         if not game:
+            from django.utils import timezone
+            from datetime import timedelta
+            
+            # Check when the last game completed
+            last_completed = Game.objects.filter(status='completed').order_by('-completed_at').first()
+            
+            if last_completed and last_completed.completed_at:
+                time_since_completion = timezone.now() - last_completed.completed_at
+                # Don't create new game if winner banner is still showing (8 seconds)
+                # Add 2 seconds buffer for navigation
+                min_time_since_completion = 10  # 8s banner + 2s buffer
+                
+                if time_since_completion.total_seconds() < min_time_since_completion:
+                    # Too soon after completion, return 404 to let frontend handle it
+                    return Response({'message': 'No active game'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Safe to create new game now
             game = check_and_create_new_game()
             if not game:
                 return Response({'message': 'No active game'}, status=status.HTTP_404_NOT_FOUND)
@@ -407,15 +426,21 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                 elapsed_time = timezone.now() - game.created_at
                 timer_seconds = getattr(settings, 'card_selection_timer', 30)
                 
-                # Since we fixed fake user timing to complete within timer, no buffer needed
-                # Start game when timer elapses (fake users should already be selected)
-                # If timer has elapsed and we have at least 2 players (real + fake), start the game
-                if elapsed_time.total_seconds() >= timer_seconds:
+                # CRITICAL: Also check grace period to prevent premature starts
+                # The grace period ensures users have time to see winner banner and navigate to card selection
+                min_game_age_seconds = 10  # 10 second grace period (8s banner + 2s buffer)
+                game_age = elapsed_time.total_seconds()
+                
+                # Only start if BOTH conditions are met:
+                # 1. Card selection timer has elapsed
+                # 2. Game is old enough (grace period passed)
+                if elapsed_time.total_seconds() >= timer_seconds and game_age >= min_game_age_seconds:
                     from .game_logic import start_game
                     from .fake_user_manager import get_fake_user_count_for_game
                     
                     # When timer runs down, always start the game (no matter the player count)
                     # This ensures game starts consistently when timer expires
+                    # Note: start_game() will also check grace period, but we check here too to avoid unnecessary calls
                     success = start_game(game)
                     if success:
                         game.refresh_from_db()
@@ -440,6 +465,10 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                         # Start automatic number calling
                         from .tasks import task_auto_call_numbers
                         task_auto_call_numbers.delay(game.id)
+                elif elapsed_time.total_seconds() >= timer_seconds and game_age < min_game_age_seconds:
+                    # Timer elapsed but grace period not passed - log and skip
+                    print(f"Game {game.id}: Timer elapsed ({elapsed_time.total_seconds():.1f}s) but grace period not passed ({game_age:.1f}s < {min_game_age_seconds}s). Waiting...")
+                    success = False
         
         # Refresh game before returning
         game.refresh_from_db()

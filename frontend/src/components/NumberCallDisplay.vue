@@ -19,7 +19,7 @@
       </div>
     </div>
     <div v-else class="no-calls">
-      <p>ቁጥሮች እንዲጠሩ በመጠባበቅ ላይ...</p>
+      <p>...</p>
     </div>
   </div>
 </template>

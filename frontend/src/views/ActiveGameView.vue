@@ -152,7 +152,7 @@ export default {
       isMarkingNumber: false, // Prevent duplicate number marking
       lastMarkedNumber: null, // Track last marked number to prevent duplicates
       lastMarkedTime: 0, // Track when number was last marked
-      winnerBannerShownAt: null, // Timestamp when winner banner was shown (to enforce 5-second display)
+      winnerBannerShownAt: null, // Timestamp when winner banner was shown (to enforce 8-second display)
       _winnerBannerActive: false // Flag to prevent loadGame from interfering with winner banner
     }
   },
@@ -202,8 +202,8 @@ export default {
         // Use the independent showWinnerBanner flag instead of checking winner data
         const isBannerShowing = this.showWinnerBanner || this._winnerBannerActive
         
-        // If banner was shown less than 5 seconds ago, stop all polling and preserve state
-        if (isBannerShowing && timeSinceBannerShown < 5000) {
+        // If banner was shown less than 8 seconds ago, stop all polling and preserve state
+        if (isBannerShowing && timeSinceBannerShown < 8000) {
           // Stop interval to prevent any interference
           if (this.interval) {
             clearInterval(this.interval)
@@ -213,8 +213,8 @@ export default {
           return // Don't do anything that might affect the banner
         }
         
-        // Clear the flag if 5 seconds have passed
-        if (this._winnerBannerActive && timeSinceBannerShown >= 5000) {
+        // Clear the flag if 8 seconds have passed
+        if (this._winnerBannerActive && timeSinceBannerShown >= 8000) {
           this._winnerBannerActive = false
         }
         
@@ -225,18 +225,18 @@ export default {
           // Only redirect if game status actually changed
           // Don't redirect immediately if winner banner is showing - let it show first
           if (game.status === 'completed') {
-            // Check if winner banner was shown recently (within last 5 seconds)
+            // Check if winner banner was shown recently (within last 8 seconds)
             
-            // If we have a winner, don't redirect - let the banner show for minimum 5 seconds
+            // If we have a winner, don't redirect - let the banner show for minimum 8 seconds
             if (this.winner && this.winner !== null) {
-              // Stop interval but don't redirect - banner will handle it after 5 seconds
+              // Stop interval but don't redirect - banner will handle it after 8 seconds
               if (this.interval) {
                 clearInterval(this.interval)
                 this.interval = null
               }
-              // Prevent any state changes if banner was shown less than 5 seconds ago
-              if (timeSinceBannerShown < 5000) {
-                console.log('Game completed with winner, keeping banner visible (enforcing 5-second display)')
+              // Prevent any state changes if banner was shown less than 8 seconds ago
+              if (timeSinceBannerShown < 8000) {
+                console.log('Game completed with winner, keeping banner visible (enforcing 8-second display)')
                 return
               }
               console.log('Game completed with winner, keeping banner visible')
@@ -248,9 +248,9 @@ export default {
                 clearInterval(this.interval)
                 this.interval = null
               }
-              // Prevent any state changes if banner was shown less than 5 seconds ago
-              if (timeSinceBannerShown < 5000) {
-                console.log('Game completed with winners, keeping banner visible (enforcing 5-second display)')
+              // Prevent any state changes if banner was shown less than 8 seconds ago
+              if (timeSinceBannerShown < 8000) {
+                console.log('Game completed with winners, keeping banner visible (enforcing 8-second display)')
                 return
               }
               console.log('Game completed with winners, keeping banner visible')
@@ -265,7 +265,7 @@ export default {
             setTimeout(() => {
               // Check again if banner was shown during the wait
               const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : Infinity
-              if (timeSinceBannerShown < 5000) {
+              if (timeSinceBannerShown < 8000) {
                 // Banner was shown, wait for it to finish
                 return
               }
@@ -273,7 +273,7 @@ export default {
                 console.log('No winner after delay, redirecting')
                 this.$router.push('/completed')
               }
-            }, 5000) // Increased wait time to 5 seconds
+            }, 8000) // Wait time to 8 seconds
             return
           } else if (game.status === 'waiting') {
             // Only redirect if we don't have a card
@@ -289,7 +289,7 @@ export default {
           }
           
           // CRITICAL: If winner banner is showing, don't load card or do anything that might affect state
-          if (isBannerShowing && timeSinceBannerShown < 5000) {
+          if (isBannerShowing && timeSinceBannerShown < 8000) {
             console.log('Winner banner is showing, skipping card load and state updates')
             return
           }
@@ -310,7 +310,7 @@ export default {
             
             // Don't check bingo pattern if winner banner is showing
             // Only check pattern (to update canClaimBingo), but don't auto-claim unless in automatic mode
-            if (!isBannerShowing || timeSinceBannerShown >= 5000) {
+            if (!isBannerShowing || timeSinceBannerShown >= 8000) {
               this.checkBingoPattern()
             }
           } catch (error) {
@@ -603,7 +603,7 @@ export default {
         if (this.gameMode === 'automatic' && this.userCard &&
             !this.winner && !(this.winners && this.winners.length > 0) &&
             this.game && this.game.status === 'active' && !this.userCard.is_winner &&
-            timeSinceBannerShown >= 5000) {
+            timeSinceBannerShown >= 8000) {
           this.autoMarkNumber(data.number)
         }
         
@@ -670,7 +670,7 @@ export default {
       this.ws.on('winner_declared', (data) => {
         console.log('Winner declared via WebSocket:', data)
         
-        // Record when winner banner is shown - enforce 5-second minimum display
+        // Record when winner banner is shown - enforce 8-second minimum display
         this.winnerBannerShownAt = Date.now()
         
         // CRITICAL: Set banner visibility flag IMMEDIATELY - this is independent of winner data
@@ -797,7 +797,7 @@ export default {
         // Force Vue to update
         this.$forceUpdate()
         
-        // Redirect to completed view after 10 seconds (handled by WinnerBanner timer)
+        // Redirect to completed view after 8 seconds (handled by WinnerBanner timer)
       })
       
       this.ws.connect()
@@ -917,7 +917,7 @@ export default {
       this.automaticallyMarkedNumbers.clear()
       
       // OPTIMISTIC UPDATE: Show winner banner immediately
-      // Record when winner banner is shown - enforce 5-second minimum display
+      // Record when winner banner is shown - enforce 8-second minimum display
       this.winnerBannerShownAt = Date.now()
       
       // CRITICAL: Set banner visibility flag IMMEDIATELY - independent of winner data
