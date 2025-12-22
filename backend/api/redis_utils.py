@@ -318,3 +318,127 @@ def get_called_numbers_list_from_redis(game_id: int) -> list:
         from .models import CalledNumber
         return list(CalledNumber.objects.filter(game_id=game_id).order_by('called_at').values_list('number', flat=True))
 
+
+# PHASE 3 OPTIMIZATION: Redis-based card marked numbers tracking for faster bingo checking
+def get_card_marked_numbers_key(card_id: int):
+    """Get Redis key for card marked numbers set"""
+    return f"card:{card_id}:marked_numbers"
+
+
+def get_card_marked_count_key(card_id: int):
+    """Get Redis key for card marked count (for early exit optimization)"""
+    return f"card:{card_id}:marked_count"
+
+
+def mark_number_on_card_redis(card_id: int, number: int):
+    """
+    Mark a number on a card in Redis (for faster bingo checking).
+    This is called when a number is marked on a card.
+    """
+    r = get_redis_client()
+    if not r:
+        return False
+    
+    try:
+        # Add number to marked numbers set
+        marked_key = get_card_marked_numbers_key(card_id)
+        r.sadd(marked_key, str(number))
+        
+        # Update marked count
+        count_key = get_card_marked_count_key(card_id)
+        count = r.incr(count_key)
+        
+        # Set expiry to 1 hour (game won't last that long, but safe cleanup)
+        r.expire(marked_key, 3600)
+        r.expire(count_key, 3600)
+        
+        return True
+    except Exception as e:
+        print(f"Error marking number on card in Redis: {e}")
+        return False
+
+
+def get_card_marked_count_redis(card_id: int) -> int:
+    """
+    Get the count of marked numbers on a card from Redis.
+    Returns 0 if Redis unavailable or card not found.
+    Used for early exit optimization (skip cards with < 5 marked numbers).
+    """
+    r = get_redis_client()
+    if not r:
+        return 0
+    
+    try:
+        count_key = get_card_marked_count_key(card_id)
+        count = r.get(count_key)
+        return int(count) if count else 0
+    except Exception as e:
+        print(f"Error getting card marked count from Redis: {e}")
+        return 0
+
+
+def get_card_marked_numbers_redis(card_id: int) -> set:
+    """
+    Get all marked numbers for a card from Redis.
+    Returns empty set if Redis unavailable or card not found.
+    """
+    r = get_redis_client()
+    if not r:
+        return set()
+    
+    try:
+        marked_key = get_card_marked_numbers_key(card_id)
+        numbers = r.smembers(marked_key)
+        return {int(n) for n in numbers if n.isdigit()}
+    except Exception as e:
+        print(f"Error getting card marked numbers from Redis: {e}")
+        return set()
+
+
+def initialize_card_redis(card_id: int, selected_numbers: list = None):
+    """
+    Initialize Redis tracking for a card.
+    Call this when a card is created or when loading card data.
+    """
+    r = get_redis_client()
+    if not r:
+        return False
+    
+    try:
+        marked_key = get_card_marked_numbers_key(card_id)
+        count_key = get_card_marked_count_key(card_id)
+        
+        if selected_numbers:
+            # Initialize with existing marked numbers
+            if selected_numbers:
+                r.sadd(marked_key, *[str(n) for n in selected_numbers])
+                r.set(count_key, len(selected_numbers))
+        else:
+            # Initialize empty
+            r.set(count_key, 0)
+        
+        # Set expiry to 1 hour
+        r.expire(marked_key, 3600)
+        r.expire(count_key, 3600)
+        
+        return True
+    except Exception as e:
+        print(f"Error initializing card in Redis: {e}")
+        return False
+
+
+def cleanup_card_redis(card_id: int):
+    """Clean up Redis keys for a card (called when card is deleted or game ends)"""
+    r = get_redis_client()
+    if not r:
+        return False
+    
+    try:
+        marked_key = get_card_marked_numbers_key(card_id)
+        count_key = get_card_marked_count_key(card_id)
+        r.delete(marked_key, count_key)
+        return True
+    except Exception as e:
+        print(f"Error cleaning up card Redis keys: {e}")
+        return False
+

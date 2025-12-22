@@ -93,7 +93,17 @@ def format_large_number(value):
 
 @staff_member_required
 def admin_dashboard(request):
-    """Admin dashboard view with statistics"""
+    """Admin dashboard view with statistics - PHASE 3 OPTIMIZED with caching"""
+    from django.core.cache import cache
+    
+    # PHASE 3 OPTIMIZATION: Cache dashboard data for 60 seconds
+    cache_key = 'admin:dashboard:data'
+    cached_data = cache.get(cache_key)
+    
+    if cached_data:
+        # Return cached data (much faster)
+        return render(request, 'admin/dashboard.html', cached_data)
+    
     now = timezone.now()
     
     # Get calendar-based date periods
@@ -111,7 +121,8 @@ def admin_dashboard(request):
     last_month_start = periods['last_month_start']
     last_month_end = periods['last_month_end']
     
-    # Games played statistics
+    # PHASE 3 OPTIMIZATION: Use select_related and prefetch_related for game queries
+    # Games played statistics - optimized with single query where possible
     games_today = Game.objects.filter(created_at__gte=today_start, created_at__lte=today_end).count()
     games_yesterday = Game.objects.filter(created_at__gte=yesterday_start, created_at__lt=yesterday_end).count()
     games_week = Game.objects.filter(created_at__gte=week_start, created_at__lte=week_end).count()
@@ -172,16 +183,18 @@ def admin_dashboard(request):
     revenue_last_month = get_cached_revenue('last_month', completed_games.filter(completed_at__gte=last_month_start, completed_at__lte=last_month_end))
     revenue_total = get_cached_revenue('total', completed_games)
     
+    # PHASE 3 OPTIMIZATION: Use select_related to avoid N+1 queries
     # Pending requests (limit to 5 for initial display)
-    pending_deposits = DepositRequest.objects.filter(status='pending').order_by('-created_at')[:5]
-    pending_withdraws = WithdrawRequest.objects.filter(status='pending').order_by('-created_at')[:5]
+    pending_deposits = DepositRequest.objects.select_related('user').filter(status='pending').order_by('-created_at')[:5]
+    pending_withdraws = WithdrawRequest.objects.select_related('user').filter(status='pending').order_by('-created_at')[:5]
     
     # Approved requests (limit to 5 for initial display)
-    approved_deposits = DepositRequest.objects.filter(status='approved').order_by('-created_at')[:5]
-    approved_withdraws = WithdrawRequest.objects.filter(status='approved').order_by('-created_at')[:5]
+    approved_deposits = DepositRequest.objects.select_related('user').filter(status='approved').order_by('-created_at')[:5]
+    approved_withdraws = WithdrawRequest.objects.select_related('user').filter(status='approved').order_by('-created_at')[:5]
     
-    # Active games
-    active_games = Game.objects.filter(status__in=['waiting', 'active']).order_by('-created_at')
+    # PHASE 3 OPTIMIZATION: Use select_related and prefetch_related for active games
+    # Active games - prefetch winner and winners to avoid N+1 queries
+    active_games = Game.objects.filter(status__in=['waiting', 'active']).select_related('winner').prefetch_related('winners').order_by('-created_at')
     
     # Game settings
     game_settings = GameSettings.get_settings()
@@ -286,7 +299,8 @@ def admin_dashboard(request):
     cache_key = 'admin_total_automatic_manual_games'
     cached_result = cache.get(cache_key)
     
-    if cached_result is not None:
+    # PHASE 3 FIX: Validate cached result before unpacking
+    if cached_result is not None and isinstance(cached_result, (tuple, list)) and len(cached_result) == 2:
         total_automatic_games, total_manual_games = cached_result
     else:
         # Use only() to limit fields loaded, but regular queryset (no iterator to avoid cursor issues)
@@ -430,6 +444,22 @@ def admin_dashboard(request):
         'second_admin_username': second_admin_username,
         'recent_broadcasts': BroadcastMessage.objects.all().order_by('-created_at')[:5].select_related('sent_by').prefetch_related('recipients'),
     }
+    
+    # PHASE 3 OPTIMIZATION: Cache the context for 60 seconds
+    # Convert QuerySets to lists for caching (QuerySets can't be cached directly)
+    cacheable_context = context.copy()
+    cacheable_context['pending_deposits'] = list(pending_deposits)
+    cacheable_context['pending_withdraws'] = list(pending_withdraws)
+    cacheable_context['approved_deposits'] = list(approved_deposits)
+    cacheable_context['approved_withdraws'] = list(approved_withdraws)
+    cacheable_context['active_games'] = list(active_games)
+    cacheable_context['today_games_data'] = today_games_data  # Already a list
+    cacheable_context['games_detail_data'] = games_detail_data  # Already a list
+    cacheable_context['recent_broadcasts'] = list(context['recent_broadcasts'])
+    
+    # Cache for 60 seconds
+    cache.set(cache_key, cacheable_context, 60)
+    
     return render(request, 'admin/dashboard.html', context)
 
 
@@ -967,6 +997,15 @@ def second_admin_dashboard(request):
     if not request.session.get('second_admin_authenticated'):
         return redirect('second-admin-login')
     
+    # PHASE 3 OPTIMIZATION: Cache dashboard data for 60 seconds
+    from django.core.cache import cache
+    cache_key = 'admin:second_dashboard:data'
+    cached_data = cache.get(cache_key)
+    
+    if cached_data:
+        # Return cached data (much faster)
+        return render(request, 'admin/second_admin_dashboard.html', cached_data)
+    
     # Same data as main dashboard but with limitations
     now = timezone.now()
     
@@ -1148,7 +1187,8 @@ def second_admin_dashboard(request):
     cache_key = 'admin_total_automatic_manual_games'
     cached_result = cache.get(cache_key)
     
-    if cached_result is not None:
+    # PHASE 3 FIX: Validate cached result before unpacking
+    if cached_result is not None and isinstance(cached_result, (tuple, list)) and len(cached_result) == 2:
         total_automatic_games, total_manual_games = cached_result
     else:
         # Use only() to limit fields loaded, but regular queryset (no iterator to avoid cursor issues)
@@ -1276,6 +1316,22 @@ def second_admin_dashboard(request):
         'total_manual_games': total_manual_games,
         'recent_broadcasts': BroadcastMessage.objects.all().order_by('-created_at')[:5].select_related('sent_by').prefetch_related('recipients'),
     }
+    
+    # PHASE 3 OPTIMIZATION: Cache the context for 60 seconds
+    # Convert QuerySets to lists for caching (QuerySets can't be cached directly)
+    cacheable_context = context.copy()
+    cacheable_context['pending_deposits'] = list(pending_deposits)
+    cacheable_context['pending_withdraws'] = list(pending_withdraws)
+    cacheable_context['approved_deposits'] = list(approved_deposits)
+    cacheable_context['approved_withdraws'] = list(approved_withdraws)
+    cacheable_context['active_games'] = list(active_games)
+    cacheable_context['today_games_data'] = today_games_data  # Already a list
+    cacheable_context['games_detail_data'] = games_detail_data  # Already a list
+    cacheable_context['recent_broadcasts'] = list(context['recent_broadcasts'])
+    
+    # Cache for 60 seconds
+    cache.set(cache_key, cacheable_context, 60)
+    
     return render(request, 'admin/second_admin_dashboard.html', context)
 
 
@@ -1475,7 +1531,8 @@ def admin_dashboard_api(request):
     cache_key = 'admin_total_automatic_manual_games'
     cached_result = cache.get(cache_key)
     
-    if cached_result is not None:
+    # PHASE 3 FIX: Validate cached result before unpacking
+    if cached_result is not None and isinstance(cached_result, (tuple, list)) and len(cached_result) == 2:
         total_automatic_games, total_manual_games = cached_result
     else:
         # Use only() to limit fields loaded, but regular queryset (no iterator to avoid cursor issues)
@@ -1861,7 +1918,8 @@ def second_admin_dashboard_api(request):
     cache_key = 'admin_total_automatic_manual_games'
     cached_result = cache.get(cache_key)
     
-    if cached_result is not None:
+    # PHASE 3 FIX: Validate cached result before unpacking
+    if cached_result is not None and isinstance(cached_result, (tuple, list)) and len(cached_result) == 2:
         total_automatic_games, total_manual_games = cached_result
     else:
         # Use only() to limit fields loaded, but regular queryset (no iterator to avoid cursor issues)

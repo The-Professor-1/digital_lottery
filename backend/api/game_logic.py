@@ -145,6 +145,10 @@ def create_game_card(game: Game, user: User, card_number: int) -> GameCard:
         selected_numbers=[]
     )
     
+    # PHASE 3 OPTIMIZATION: Initialize Redis tracking for faster bingo checking
+    from .redis_utils import initialize_card_redis
+    initialize_card_redis(card.id, selected_numbers=[])
+    
     # Invalidate card cache for this user and game cache (player count changed)
     from django.core.cache import cache as django_cache
     if django_cache:
@@ -214,6 +218,10 @@ def mark_number_on_card(card: GameCard, number: int) -> bool:
         card.mark_number(number)
         card.card_layout = layout
         card.save(update_fields=['card_layout', 'selected_numbers'])
+        
+        # PHASE 3 OPTIMIZATION: Update Redis tracking for faster bingo checking
+        from .redis_utils import mark_number_on_card_redis
+        mark_number_on_card_redis(card.id, number)
         
         # Invalidate card cache when card is updated
         cache.delete(f'card:{card.game.id}:{card.user.id}')
@@ -303,29 +311,115 @@ def check_bingo(card: GameCard, game: Game) -> Tuple[bool, str]:
     return (False, None)
 
 
+def get_winning_number(card: GameCard, winning_pattern: str, called_numbers: list) -> Optional[int]:
+    """
+    Find the number that completed the bingo pattern.
+    Returns the last number called that is part of the winning pattern.
+    This is the number that actually made the bingo.
+    """
+    if not winning_pattern or not called_numbers:
+        return None
+    
+    layout = card.card_layout
+    if not layout:
+        return None
+    
+    # Get all numbers in the winning pattern
+    pattern_numbers = []
+    
+    if winning_pattern.startswith('row_'):
+        row_idx = int(winning_pattern.split('_')[1])
+        pattern_numbers = [cell.get('number') for cell in layout[row_idx] if cell.get('number') is not None]
+    elif winning_pattern.startswith('col_'):
+        col_idx = int(winning_pattern.split('_')[1])
+        pattern_numbers = [layout[row_idx][col_idx].get('number') for row_idx in range(5) 
+                          if layout[row_idx][col_idx].get('number') is not None]
+    elif winning_pattern == 'diagonal_1':
+        pattern_numbers = [layout[i][i].get('number') for i in range(5) 
+                          if layout[i][i].get('number') is not None]
+    elif winning_pattern == 'diagonal_2':
+        pattern_numbers = [layout[i][4-i].get('number') for i in range(5) 
+                          if layout[i][4-i].get('number') is not None]
+    elif winning_pattern == 'corner':
+        corners = [layout[0][0], layout[0][4], layout[4][0], layout[4][4], layout[2][2]]
+        pattern_numbers = [cell.get('number') for cell in corners if cell.get('number') is not None]
+    elif winning_pattern == 'full_card':
+        pattern_numbers = [cell.get('number') for row in layout for cell in row 
+                          if cell.get('number') is not None]
+    
+    # Find which number in the pattern was called last (most recent in called_numbers)
+    # Reverse called_numbers to check from most recent to oldest
+    for number in reversed(called_numbers):
+        if number in pattern_numbers:
+            return number
+    
+    # Fallback: return the last called number if pattern number not found
+    return called_numbers[-1] if called_numbers else None
+
+
 def claim_bingo(card: GameCard, game: Game) -> Tuple[bool, Optional[str]]:
     """Process a BINGO claim. Returns (success, winning_pattern)
     
     Uses Redis for 1-second winner window to handle multiple winners properly.
     """
-    # Check if card already won
+    # CRITICAL FIX: Always get a fresh game object from database
+    # The game object passed in might be stale, especially when called from API views
+    # This prevents race conditions with async tasks
+    game = Game.objects.get(id=game.id)
+    game.refresh_from_db()
+    print(f"CRITICAL claim_bingo START: Game {game.id} status={game.status}, winner={game.winner}, card.user={card.user.id}, card.is_winner={card.is_winner}")
+    
+    # Check if card already won (refresh card too to ensure latest state)
+    card.refresh_from_db()
     if card.is_winner:
         raise ValueError('This card has already won')
     
     # Check if game is active - Redis will handle the window timing
     if game.status != 'active':
-        # Allow completed games only if within Redis window
+        # CRITICAL FIX: Allow real users to claim even if game is completed by fake user
+        # Check if the winner is a fake user (game.winner is None for fake users)
+        # If so, allow real users to claim within the window
         from .redis_utils import get_bingo_window_key, get_redis_client
         r = get_redis_client()
         if r:
             window_key = get_bingo_window_key(game.id)
             if r.exists(window_key):
-                # Window still open, allow claim
+                # Window still open, allow claim (even if fake user won)
                 pass
             elif game.status == 'completed':
-                raise ValueError('በሌላ ተጫዋች ተቀድመዋል!')
+                # Game is completed - check if it was completed by a fake user
+                # Fake users don't set game.winner (it remains None)
+                # Real users set game.winner to the User object
+                if game.winner is None:
+                    # Fake user won - allow real user to claim if they have bingo
+                    # Check if this real user actually has bingo
+                    # (check_bingo is defined in this file, so we can call it directly)
+                    has_bingo, _ = check_bingo(card, game)
+                    if has_bingo:
+                        # Real user has bingo - allow claim even though fake user won
+                        # This gives real users priority over fake users
+                        print(f"CRITICAL: Real user {card.user.id} has bingo but fake user won. Allowing real user to claim.")
+                        # Set the window now to allow this claim
+                        from .redis_utils import try_acquire_bingo_window
+                        try_acquire_bingo_window(game.id)
+                    else:
+                        raise ValueError('በሌላ ተጫዋች ተቀድመዋል!')
+                else:
+                    # Real user already won
+                    raise ValueError('በሌላ ተጫዋች ተቀድመዋል!')
         elif game.status == 'completed':
-            raise ValueError('በሌላ ተጫዋች ተቀድመዋል!')
+            # Redis unavailable - check if fake user won
+            if game.winner is None:
+                # Fake user won - check if real user has bingo
+                # (check_bingo is defined in this file, so we can call it directly)
+                has_bingo, _ = check_bingo(card, game)
+                if has_bingo:
+                    # Allow claim
+                    pass
+                else:
+                    raise ValueError('በሌላ ተጫዋች ተቀድመዋል!')
+            else:
+                raise ValueError('በሌላ ተጫዋች ተቀድመዋል!')
         else:
             raise ValueError('Game is not active')
     
@@ -372,17 +466,93 @@ def claim_bingo(card: GameCard, game: Game) -> Tuple[bool, Optional[str]]:
     ).select_related('user'))
     
     # If this is the first winner, mark game as completed
-    if is_first_winner and game.status == 'active':
+    if is_first_winner:
         from django.core.cache import cache as django_cache
         
-        game.status = 'completed'
-        game.completed_at = claim_time
-        game.winner = card.user  # Set primary winner
-        game.save()
+        # CRITICAL FIX: Always get a fresh game object with latest status
+        # Multiple processes might be trying to complete the game simultaneously
+        # This is especially critical when system accounts are enabled
+        try:
+            # Try to use select_for_update (only works in transactions)
+            game = Game.objects.select_for_update().get(id=game.id)
+        except Exception as e:
+            # Not in a transaction (e.g., called from Celery task), use regular get
+            game = Game.objects.get(id=game.id)
         
-        # Invalidate game cache when game completes
-        if django_cache:
-            django_cache.delete('game:current')
+        # CRITICAL: Refresh to ensure we have the absolute latest status
+        # This is essential to prevent race conditions with async tasks
+        game.refresh_from_db()
+        
+        # Double-check status after getting fresh data (another process might have completed it)
+        # CRITICAL: Only mark as completed if game is still active and has no winner
+        # This prevents overwriting a game that was already completed
+        if game.status == 'active' and not game.winner:
+            # CRITICAL FIX: Use update() to directly update the database without fetching the object
+            # This ensures the update is immediately visible to other processes/connections
+            # This is especially important when system accounts are enabled and async tasks are running
+            updated = Game.objects.filter(
+                id=game.id,
+                status='active',
+                winner__isnull=True
+            ).update(
+                status='completed',
+                completed_at=claim_time,
+                winner=card.user
+            )
+            
+            if updated == 0:
+                # Another process already completed the game, refresh and check
+                game.refresh_from_db()
+                print(f"WARNING: Game {game.id} was already completed by another process (status: {game.status}, winner: {game.winner})")
+            else:
+                # Update was successful, refresh to get the updated object
+                game.refresh_from_db()
+                print(f"CRITICAL: Game {game.id} marked as completed with winner {card.user.id} using direct DB update (status: {game.status}, winner_id: {game.winner.id if game.winner else None})")
+                
+                # Final verification - get a completely fresh object to ensure persistence
+                final_check = Game.objects.get(id=game.id)
+                if final_check.status != 'completed' or final_check.winner != card.user:
+                    print(f"CRITICAL ERROR: Game {game.id} status NOT persisted after update()! DB shows: status={final_check.status}, winner={final_check.winner}")
+                else:
+                    print(f"SUCCESS: Game {game.id} status correctly persisted in database using update()")
+        else:
+            # Game was already completed by another process
+            game.refresh_from_db()
+            print(f"Game {game.id} was already completed (status: {game.status}, winner: {game.winner})")
+            
+            # CRITICAL: Invalidate cache immediately after saving
+            if django_cache:
+                django_cache.delete('game:current')
+                django_cache.delete(f'game:{game.id}')
+            
+            # CRITICAL FIX: Broadcast game_ended event immediately when game completes
+            # This ensures all users see the game as completed, not just the winner
+            try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+                from .serializers import UserSerializer
+                
+                channel_layer = get_channel_layer()
+                if channel_layer:
+                    async_to_sync(channel_layer.group_send)(
+                        f'game_{game.id}',
+                        {
+                            'type': 'game_ended',
+                            'data': {
+                                'game_id': game.id,
+                                'status': 'completed',
+                                'completed_at': game.completed_at.isoformat() if game.completed_at else None,
+                                'winner': UserSerializer(card.user).data,
+                                'winner_count': 1  # Will be updated by async task
+                            }
+                        }
+                    )
+            except Exception as e:
+                print(f"WebSocket broadcast error in claim_bingo (game_ended): {e}")
+            
+            # Invalidate game cache when game completes
+            if django_cache:
+                django_cache.delete('game:current')
         
         # Trigger async task to finalize all winners after 1 second window
         # This ensures all winners within the 1-second window are properly processed

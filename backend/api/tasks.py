@@ -31,6 +31,21 @@ def task_call_number(self, game_id: int, number: int):
         # Call the number
         called_number = call_number(game, number)
         
+        # CRITICAL FIX: Mark number on all real user cards when called manually
+        # This ensures cards are marked even if frontend doesn't receive WebSocket message
+        from .game_logic import mark_number_on_card
+        from .models import GameCard
+        
+        # Get all real user cards for this game
+        real_cards = GameCard.objects.filter(game=game, is_winner=False)
+        marked_count = 0
+        
+        for card in real_cards:
+            if mark_number_on_card(card, number):
+                marked_count += 1
+        
+        print(f"Manually called number {number}: Marked on {marked_count} real user cards")
+        
         # Refresh game from database to get updated current_call_count
         game.refresh_from_db()
         
@@ -87,14 +102,43 @@ def task_check_bingo_for_all_cards(self, game_id: int):
     Only auto-claims bingo for cards in automatic mode.
     """
     try:
+        # CRITICAL FIX: Get game and immediately refresh to get latest status
+        # This ensures we see the latest game status even if a real user just won manually
+        # Note: Can't use select_for_update in Celery tasks (requires transaction)
         game = Game.objects.get(id=game_id)
         
-        # Don't check if game is not active or already has a winner
+        # CRITICAL FIX: Refresh immediately to get the absolute latest status
+        # This prevents race conditions when a real user manually claims bingo
+        game.refresh_from_db()
+        
+        # CRITICAL FIX: Don't check if game is not active or already has a winner
+        # This prevents fake users from winning after a real user has won
         if game.status != 'active' or game.winner:
+            print(f"Game {game_id}: Not checking bingo - status: {game.status}, winner: {game.winner}")
             return {'message': 'Game not active or already has winner'}
         
+        # PHASE 3 OPTIMIZATION: Filter cards early using Redis (skip cards with < 5 marked numbers)
+        # This reduces database queries and CPU time significantly
+        from .redis_utils import get_card_marked_count_redis
+        
         # Get all cards for this game
-        cards = GameCard.objects.filter(game=game, is_winner=False)
+        all_cards = GameCard.objects.filter(game=game, is_winner=False).only('id', 'is_winner', 'mode_history')
+        
+        # Filter cards using Redis (early exit optimization)
+        potential_winners = []
+        for card in all_cards:
+            marked_count = get_card_marked_count_redis(card.id)
+            # Only check cards with 5+ marked numbers (minimum for bingo)
+            if marked_count >= 5:
+                potential_winners.append(card)
+        
+        # If no potential winners, return early (no database queries needed)
+        if not potential_winners:
+            return {'message': 'No potential winners found', 'cards_checked': len(all_cards), 'potential_winners': 0}
+        
+        # Load full card data only for potential winners (reduces queries)
+        card_ids = [card.id for card in potential_winners]
+        cards = GameCard.objects.filter(id__in=card_ids).select_related('user')
         
         winners_found = []
         
@@ -140,12 +184,20 @@ def task_check_bingo_for_all_cards(self, game_id: int):
                 
                 # PHASE 2 OPTIMIZATION #2: Get called numbers from Redis (faster)
                 from .redis_utils import get_called_numbers_list_from_redis
+                from .game_logic import get_winning_number
                 called_numbers = get_called_numbers_list_from_redis(game.id)
-                last_called_number = called_numbers[-1] if called_numbers else None
                 
                 for winner_card in winner_cards:
                     # Recalculate winning pattern for this card
                     has_bingo, winning_pattern = check_bingo(winner_card, game)
+                    
+                    # CRITICAL FIX: Find the actual number that completed the bingo pattern
+                    # This is the number that should be highlighted, not just the last number called
+                    winning_number = get_winning_number(winner_card, winning_pattern if has_bingo else None, called_numbers)
+                    if not winning_number:
+                        # Fallback to last called number if we can't determine the winning number
+                        winning_number = called_numbers[-1] if called_numbers else None
+                    
                     winner_data['winners'].append({
                         'winner': {
                             'id': winner_card.user.id,
@@ -156,7 +208,7 @@ def task_check_bingo_for_all_cards(self, game_id: int):
                         'winning_pattern': winning_pattern if has_bingo else None,
                         'selected_numbers': winner_card.selected_numbers or [],
                         'called_numbers': called_numbers,
-                        'last_called_number': last_called_number,
+                        'last_called_number': winning_number,  # The number that completed this card's bingo
                         'prize': float(game.total_derash) / winner_cards.count() if winner_cards.count() > 0 else 0
                     })
                 
@@ -256,19 +308,23 @@ def task_process_bingo_winners(self, game_id: int):
         
         # Broadcast final winners list with correct prize split
         from .serializers import UserSerializer
-        from .game_logic import check_bingo
-        from .models import CalledNumber
+        from .game_logic import check_bingo, get_winning_number
+        from .redis_utils import get_called_numbers_list_from_redis
         
-        # Get last called number for winner data (to match fake user format)
-        last_called = CalledNumber.objects.filter(game=game).order_by('-called_at').first()
-        last_called_number = last_called.number if last_called else None
-        
-        # Get all called numbers for winner data
-        called_numbers = list(CalledNumber.objects.filter(game=game).order_by('called_at').values_list('number', flat=True))
+        # PHASE 2 OPTIMIZATION: Get called numbers from Redis (faster)
+        called_numbers = get_called_numbers_list_from_redis(game.id)
         
         winners_data = []
         for winner_card in winner_cards:
             has_bingo, pattern = check_bingo(winner_card, game)
+            
+            # CRITICAL FIX: Find the actual number that completed the bingo pattern
+            # This is the number that should be highlighted, not just the last number called
+            winning_number = get_winning_number(winner_card, pattern if has_bingo else None, called_numbers)
+            if not winning_number:
+                # Fallback to last called number if we can't determine the winning number
+                winning_number = called_numbers[-1] if called_numbers else None
+            
             winners_data.append({
                 'winner': UserSerializer(winner_card.user).data,
                 'card_number': winner_card.card_number,
@@ -277,7 +333,7 @@ def task_process_bingo_winners(self, game_id: int):
                 'winning_pattern': pattern if has_bingo else None,
                 'selected_numbers': winner_card.selected_numbers or [],
                 'called_numbers': called_numbers,
-                'last_called_number': last_called_number,
+                'last_called_number': winning_number,  # The number that completed this card's bingo
                 'prize': float(prize_per_winner)
             })
         
@@ -462,6 +518,14 @@ def task_auto_call_numbers(self, game_id: int):
                 from .fake_user_manager import batch_mark_number_on_fake_cards
                 # CalledNumber is already imported at the top of the file
                 
+                # CRITICAL FIX: Check if game already has a winner (real user) BEFORE processing fake cards
+                # This prevents fake users from winning after a real user has already won
+                game.refresh_from_db()
+                if game.status == 'completed' or game.winner:
+                    print(f"Game {game_id}: Already has winner or is completed, skipping fake user processing")
+                    release_number_calling_lock(game_id)
+                    return {'success': True, 'message': 'Game already has winner', 'stopped': True}
+                
                 # Batch process all fake cards (with error handling)
                 try:
                     updated_count, winners = batch_mark_number_on_fake_cards(game.id, number)
@@ -474,10 +538,52 @@ def task_auto_call_numbers(self, game_id: int):
                     winners = []
                     updated_count = 0
                 
-                # Process any winners found
+                # CRITICAL FIX: Check again if game has a winner after processing fake cards
+                # A real user might have won while we were processing fake cards
+                game.refresh_from_db()
+                if game.status == 'completed' or game.winner:
+                    print(f"Game {game_id}: Winner found after processing fake cards, stopping")
+                    release_number_calling_lock(game_id)
+                    return {'success': True, 'message': 'Game has winner', 'stopped': True}
+                
+                # Process any winners found (only if no real winner exists)
                 if winners:
+                    # CRITICAL FIX: Before declaring fake user winner, check if any real users have bingo
+                    # Give real users priority - wait a moment for them to claim
+                    # Check all real user cards for bingo first
+                    from .models import GameCard
+                    from .game_logic import check_bingo
+                    
+                    real_user_has_bingo = False
+                    real_cards = GameCard.objects.filter(game=game, is_winner=False).select_related('user')
+                    for real_card in real_cards:
+                        has_bingo, _ = check_bingo(real_card, game)
+                        if has_bingo:
+                            real_user_has_bingo = True
+                            print(f"CRITICAL: Real user {real_card.user.id} has bingo! Delaying fake user win to allow real user to claim.")
+                            break
+                    
+                    # If a real user has bingo, don't declare fake user winner yet
+                    # Instead, trigger bingo check for real users and wait
+                    if real_user_has_bingo:
+                        print(f"Real user has bingo - skipping fake user win, allowing real user to claim first")
+                        # Trigger bingo check for real users (will auto-claim if in automatic mode)
+                        task_check_bingo_for_all_cards.delay(game_id)
+                        # Don't process fake user winner yet - give real users a chance
+                        release_number_calling_lock(game_id)
+                        return {'success': True, 'real_user_has_bingo': True, 'fake_winner_delayed': True}
+                    
                     # Get the first winner (if multiple, process the first one)
                     fake_card, pattern = winners[0]
+                    
+                    # CRITICAL FIX: Set Redis bingo window BEFORE marking game as completed
+                    # This allows real users to claim within the 1-second window even if fake user wins
+                    from .redis_utils import try_acquire_bingo_window
+                    window_acquired, _ = try_acquire_bingo_window(game.id)
+                    if not window_acquired:
+                        print(f"CRITICAL: Could not acquire bingo window for fake user win - another winner may have claimed")
+                        release_number_calling_lock(game_id)
+                        return {'success': True, 'window_not_acquired': True}
                     
                     # Mark game as completed if not already
                     game.refresh_from_db()
@@ -591,8 +697,29 @@ def task_auto_call_numbers(self, game_id: int):
                         release_number_calling_lock(game_id)
                         return {'success': True, 'fake_winner': True, 'stopped': True, 'updated_cards': updated_count}
                 
+                # CRITICAL FIX: Check game status BEFORE triggering bingo check
+                # This prevents race conditions when a real user manually claims bingo
+                game.refresh_from_db()
+                print(f"CRITICAL task_auto_call_numbers: Before bingo check - Game {game_id} status={game.status}, winner={game.winner}")
+                if game.status == 'completed' or game.winner:
+                    print(f"CRITICAL: Game {game_id}: Game already completed or has winner before bingo check, stopping immediately")
+                    release_number_calling_lock(game_id)
+                    return {'success': True, 'number': number, 'stopped': True, 'reason': 'Game already completed'}
+                
                 # Check all real user cards for bingo after calling number
+                # Only trigger if game is still active (real user might have just won manually)
                 task_check_bingo_for_all_cards.delay(game_id)
+                
+                # CRITICAL FIX: Check if game was completed by a real user after calling number
+                # Wait a brief moment for bingo checking to complete, then check game status
+                time.sleep(0.5)  # Small delay to allow bingo checking task to process
+                game.refresh_from_db()
+                
+                # If game is now completed or has a winner, stop calling numbers immediately
+                if game.status == 'completed' or game.winner:
+                    print(f"Game {game_id}: Game completed or has winner after calling number {number}, stopping number calling")
+                    release_number_calling_lock(game_id)
+                    return {'success': True, 'number': number, 'stopped': True, 'reason': 'Game completed'}
             except Exception as e:
                 print(f"Error calling number {number} in auto_call_numbers: {e}")
                 release_number_calling_lock(game_id)
@@ -600,6 +727,14 @@ def task_auto_call_numbers(self, game_id: int):
                 if self.request.retries < self.max_retries:
                     raise self.retry(exc=e, countdown=time_between_calls)
                 return {'error': f'Failed to call number after retries: {str(e)}'}
+            
+            # CRITICAL FIX: Double-check game status before scheduling next call
+            # This prevents scheduling calls after game has ended
+            game.refresh_from_db()
+            if game.status != 'active' or game.winner:
+                print(f"Game {game_id}: Game status changed to {game.status} or has winner, stopping number calling")
+                release_number_calling_lock(game_id)
+                return {'success': True, 'stopped': True, 'reason': 'Game ended'}
             
             # Release lock before scheduling next call
             release_number_calling_lock(game_id)

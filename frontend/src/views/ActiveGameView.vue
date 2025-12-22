@@ -651,6 +651,17 @@ export default {
       })
       
       this.ws.on('game_ended', (data) => {
+        console.log('Game ended via WebSocket:', data)
+        
+        // CRITICAL FIX: Update game status immediately when game_ended event is received
+        // This ensures all users see the game as completed, not just the winner
+        if (this.game && data && data.status === 'completed') {
+          this.game.status = 'completed'
+          if (data.completed_at) {
+            this.game.completed_at = data.completed_at
+          }
+        }
+        
         // Check if no winner
         if (data && data.no_winner) {
           this.handleNoWinner()
@@ -669,6 +680,12 @@ export default {
       
       this.ws.on('winner_declared', (data) => {
         console.log('Winner declared via WebSocket:', data)
+        
+        // CRITICAL FIX: Update game status to 'completed' immediately when winner is declared
+        // This ensures all users see the game as completed, not just the winner
+        if (this.game) {
+          this.game.status = 'completed'
+        }
         
         // Record when winner banner is shown - enforce 8-second minimum display
         this.winnerBannerShownAt = Date.now()

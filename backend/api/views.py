@@ -986,18 +986,37 @@ class GameCardViewSet(viewsets.ReadOnlyModelViewSet):
             total_prize = game.total_derash
             prize_per_winner = float(total_prize) / winner_count if winner_count > 0 else 0.0
             
+            # CRITICAL FIX: Get the actual winning number (the number that completed the bingo)
+            # This is the number that should be highlighted, not just the last number called
+            from .redis_utils import get_called_numbers_list_from_redis
+            from .game_logic import get_winning_number
+            called_numbers_list = get_called_numbers_list_from_redis(game.id)
+            
+            # Find the number that completed the bingo pattern
+            winning_number = get_winning_number(card, winning_pattern, called_numbers_list)
+            if not winning_number:
+                # Fallback to last called number if we can't determine the winning number
+                winning_number = called_numbers_list[-1] if called_numbers_list else None
+            
             # Prepare all winners data with their cards
             winners_data = []
             for winner_card in all_winner_cards:
                 # Recalculate winning pattern for each card
                 has_bingo, pattern = check_bingo(winner_card, game)
+                # Find winning number for this card's pattern
+                card_winning_number = get_winning_number(winner_card, pattern if has_bingo else winning_pattern, called_numbers_list)
+                if not card_winning_number:
+                    card_winning_number = winning_number  # Use primary winner's number as fallback
+                
                 winners_data.append({
                     'winner': UserSerializer(winner_card.user).data,
                     'card_number': winner_card.card_number,
                     'card_id': winner_card.id,
                     'card_layout': winner_card.card_layout,
                     'winning_pattern': pattern if has_bingo else winning_pattern,
-                    'prize': prize_per_winner
+                    'prize': prize_per_winner,
+                    'last_called_number': card_winning_number,  # The number that completed this card's bingo
+                    'called_numbers': called_numbers_list
                 })
             
             # Broadcast all winners with card info (async task will rebroadcast after 1 second with final count)
@@ -1015,12 +1034,35 @@ class GameCardViewSet(viewsets.ReadOnlyModelViewSet):
                             'winning_pattern': winning_pattern,
                             'prize': prize_per_winner,
                             'total_prize': float(total_prize),
-                            'winner_count': winner_count
+                            'winner_count': winner_count,
+                            'last_called_number': winning_number,  # The number that completed the bingo
+                            'called_numbers': called_numbers_list
                         }
                     }
                 )
             except Exception as e:
                 print(f"WebSocket broadcast error: {e}")
+            
+            # CRITICAL FIX: Also broadcast game_ended event to ensure all users see the game as completed
+            # This ensures the frontend properly redirects after the winner banner
+            try:
+                game.refresh_from_db()  # Ensure we have the latest game status
+                if game.status == 'completed':
+                    async_to_sync(channel_layer.group_send)(
+                        f'game_{game.id}',
+                        {
+                            'type': 'game_ended',
+                            'data': {
+                                'game_id': game.id,
+                                'status': 'completed',
+                                'completed_at': game.completed_at.isoformat() if game.completed_at else None,
+                                'winner': UserSerializer(card.user).data,
+                                'winner_count': winner_count
+                            }
+                        }
+                    )
+            except Exception as e:
+                print(f"WebSocket broadcast error (game_ended): {e}")
             
             # Note: Final prize distribution and rebroadcast happens in async task after 1 second
             
@@ -1292,20 +1334,32 @@ def call_number_admin(request, game_id):
             if result.get('error'):
                 return Response({'error': result['error']}, status=status.HTTP_400_BAD_REQUEST)
             
-            # Return the called number data
+            # CRITICAL FIX: Always return number and letter, even if called_number query fails
+            # Get the called number from database or use result data
             called_number = CalledNumber.objects.filter(game=game, number=number).first()
             if called_number:
                 serializer = CalledNumberSerializer(called_number)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             else:
+                # Fallback: Use result data or get letter from number
+                letter = result.get('letter')
+                if not letter:
+                    # Get letter from number if not in result
+                    letter = CalledNumber.get_letter_for_number(number)
+                
                 return Response({
-                    'number': result.get('number'),
-                    'letter': result.get('letter'),
-                    'call_count': result.get('call_count', 0)
+                    'number': result.get('number', number),
+                    'letter': letter or CalledNumber.get_letter_for_number(number),
+                    'call_count': result.get('call_count', game.current_call_count)
                 }, status=status.HTTP_201_CREATED)
         except Exception as e:
-            # Task started but result not available yet - return success
+            # Task started but result not available yet - get number and letter from request
+            # CRITICAL FIX: Always return number and letter, even if task result unavailable
+            from .models import CalledNumber
+            letter = CalledNumber.get_letter_for_number(number)
             return Response({
+                'number': number,
+                'letter': letter,
                 'message': 'Number call initiated',
                 'task_id': task.id
             }, status=status.HTTP_202_ACCEPTED)

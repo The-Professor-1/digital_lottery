@@ -353,6 +353,12 @@ def batch_mark_number_on_fake_cards(game_id: int, number: int) -> tuple:
             print(f"ERROR: Game {game_id} not found in batch_mark_number_on_fake_cards")
             return (0, [])
         
+        # CRITICAL FIX: Don't process fake user winners if game already has a real winner
+        # This prevents fake users from winning after a real user has already won
+        if game.status == 'completed' or game.winner:
+            print(f"Game {game_id}: Already has winner or is completed, skipping fake user bingo checking")
+            return (0, [])
+        
         # Process all cards in memory
         cards_to_update = []
         winners = []
