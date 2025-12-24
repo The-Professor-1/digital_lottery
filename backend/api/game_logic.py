@@ -648,34 +648,32 @@ def claim_bingo_unified(card, game: Game, is_fake_user: bool = False) -> Tuple[b
                         'called_numbers': called_numbers_list
                     }
                 
-                # Broadcast winner_declared
-                async_to_sync(channel_layer.group_send)(
-                    f'game_{game.id}',
-                    {
-                        'type': 'winner_declared',
-                        'data': {
-                            'winners': [winner_data],
-                            'winner': winner_data['winner'],
-                            'total_prize': float(game.derash_amount) if game.derash_amount else 0.0,
-                            'prize': float(game.derash_amount) if game.derash_amount else 0.0,
-                            'winner_count': 1
+                # PHASE 5 OPTIMIZATION: Batch winner_declared and game_ended events
+                from .redis_utils import batch_broadcast_to_game
+                batch_broadcast_to_game(
+                    game.id,
+                    [
+                        {
+                            'type': 'winner_declared',
+                            'data': {
+                                'winners': [winner_data],
+                                'winner': winner_data['winner'],
+                                'total_prize': float(game.derash_amount) if game.derash_amount else 0.0,
+                                'prize': float(game.derash_amount) if game.derash_amount else 0.0,
+                                'winner_count': 1
+                            }
+                        },
+                        {
+                            'type': 'game_ended',
+                            'data': {
+                                'game_id': game.id,
+                                'status': 'completed',
+                                'completed_at': game.completed_at.isoformat() if game.completed_at else None,
+                                'winner': winner_data['winner'],
+                                'winner_count': 1
+                            }
                         }
-                    }
-                )
-                
-                # Broadcast game_ended
-                async_to_sync(channel_layer.group_send)(
-                    f'game_{game.id}',
-                    {
-                        'type': 'game_ended',
-                        'data': {
-                            'game_id': game.id,
-                            'status': 'completed',
-                            'completed_at': game.completed_at.isoformat() if game.completed_at else None,
-                            'winner': winner_data['winner'],
-                            'winner_count': 1
-                        }
-                    }
+                    ]
                 )
                 
                 print(f"Broadcasted winner: {'fake user ' + card.fake_user.name if is_fake_user else 'real user ' + str(card.user.id)}")
@@ -782,6 +780,9 @@ def start_game(game: Game) -> bool:
                     fake_users_to_add = random.sample(all_fake_users, fake_users_needed)
                     available_cards = get_available_card_numbers_for_fake(game)
                     
+                    # PHASE 5 OPTIMIZATION: Collect card selections for batching
+                    batched_card_events = []
+                    
                     if len(available_cards) >= fake_users_needed:
                         for fake_user in fake_users_to_add:
                             if available_cards:
@@ -803,30 +804,30 @@ def start_game(game: Game) -> bool:
                                     create_fake_user_card(game, fake_user, card_number)
                                     fake_player_count += 1
                                     
-                                    # Broadcast card selection immediately via WebSocket
-                                    try:
-                                        from channels.layers import get_channel_layer
-                                        from asgiref.sync import async_to_sync
-                                        channel_layer = get_channel_layer()
-                                        async_to_sync(channel_layer.group_send)(
-                                            f'game_{game.id}',
-                                            {
-                                                'type': 'card_selected',
-                                                'data': {
-                                                    'card_number': card_number,
-                                                    'user_id': None,  # Fake user
-                                                    'username': fake_user.name,
-                                                    'is_fake': True,
-                                                    'available_cards': get_available_card_numbers(game)
-                                                }
-                                            }
-                                        )
-                                    except Exception as e:
-                                        print(f"WebSocket broadcast error for final check fake user card: {e}")
+                                    # Add to batch instead of broadcasting immediately
+                                    batched_card_events.append({
+                                        'type': 'card_selected',
+                                        'data': {
+                                            'card_number': card_number,
+                                            'user_id': None,  # Fake user
+                                            'username': fake_user.name,
+                                            'is_fake': True,
+                                            'available_cards': get_available_card_numbers(game)
+                                        }
+                                    })
                                     
                                     print(f"Added fake user {fake_user.name} with card {card_number} to game {game.id} (final check)")
                                 except Exception as e:
                                     print(f"Error adding fake user {fake_user.name}: {e}")
+                        
+                        # Batch broadcast all card selections at once
+                        if batched_card_events:
+                            try:
+                                from .redis_utils import batch_broadcast_to_game
+                                batch_broadcast_to_game(game.id, batched_card_events)
+                                print(f"  Batched {len(batched_card_events)} fake user card selections from final check")
+                            except Exception as e:
+                                print(f"WebSocket batch broadcast error for final check fake user cards: {e}")
             except Exception as e:
                 print(f"Error in final fake user check for game {game.id}: {e}")
                 import traceback
@@ -877,6 +878,9 @@ def start_game(game: Game) -> bool:
                     fake_users_to_add = random.sample(all_fake_users, fake_users_needed)
                     available_cards = get_available_card_numbers_for_fake(game)
                     
+                    # PHASE 5 OPTIMIZATION: Collect card selections for batching
+                    batched_card_events = []
+                    
                     if len(available_cards) >= fake_users_needed:
                         for fake_user in fake_users_to_add:
                             if available_cards:
@@ -897,30 +901,31 @@ def start_game(game: Game) -> bool:
                                 try:
                                     create_fake_user_card(game, fake_user, card_number)
                                     
-                                    # Broadcast card selection immediately via WebSocket
-                                    try:
-                                        from channels.layers import get_channel_layer
-                                        from asgiref.sync import async_to_sync
-                                        channel_layer = get_channel_layer()
-                                        async_to_sync(channel_layer.group_send)(
-                                            f'game_{game.id}',
-                                            {
-                                                'type': 'card_selected',
-                                                'data': {
-                                                    'card_number': card_number,
-                                                    'user_id': None,  # Fake user
-                                                    'username': fake_user.name,
-                                                    'is_fake': True,
-                                                    'available_cards': get_available_card_numbers(game)
-                                                }
-                                            }
-                                        )
-                                    except Exception as e:
-                                        print(f"WebSocket broadcast error for pre-start fake user card: {e}")
+                                    # Add to batch instead of broadcasting immediately
+                                    batched_card_events.append({
+                                        'type': 'card_selected',
+                                        'data': {
+                                            'card_number': card_number,
+                                            'user_id': None,  # Fake user
+                                            'username': fake_user.name,
+                                            'is_fake': True,
+                                            'available_cards': get_available_card_numbers(game)
+                                        }
+                                    })
                                     
                                     print(f"CRITICAL: Added fake user {fake_user.name} with card {card_number} to game {game.id} (final pre-start check)")
                                 except Exception as e:
                                     print(f"Error in final pre-start fake user addition: {e}")
+                        
+                        # Batch broadcast all card selections at once
+                        if batched_card_events:
+                            try:
+                                from .redis_utils import batch_broadcast_to_game
+                                batch_broadcast_to_game(game.id, batched_card_events)
+                                print(f"  Batched {len(batched_card_events)} fake user card selections from final pre-start check")
+                            except Exception as e:
+                                print(f"WebSocket batch broadcast error for pre-start fake user cards: {e}")
+                        
                         # Recalculate derash after adding fake users
                         game.refresh_from_db()
                         game.recalculate_derash()

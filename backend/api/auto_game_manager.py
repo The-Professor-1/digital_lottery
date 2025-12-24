@@ -258,6 +258,10 @@ def add_fake_users_to_game_immediately(game):
     channel_layer = get_channel_layer()
     available_cards = get_available_card_numbers_for_fake(game)
     
+    # PHASE 5 OPTIMIZATION: Batch immediate card selections
+    from .redis_utils import batch_broadcast_to_game
+    batched_events = []
+    
     # Execute immediate selections synchronously
     for i in range(immediate_count):
         if not available_cards:
@@ -284,27 +288,29 @@ def add_fake_users_to_game_immediately(game):
         try:
             create_fake_user_card(game, fake_user, card_number)
             
-            # Broadcast immediately
-            try:
-                async_to_sync(channel_layer.group_send)(
-                    f'game_{game.id}',
-                    {
-                        'type': 'card_selected',
-                        'data': {
-                            'card_number': card_number,
-                            'user_id': None,
-                            'username': fake_user.name,
-                            'is_fake': True,
-                            'available_cards': get_available_card_numbers(game)
-                        }
-                    }
-                )
-            except Exception as e:
-                print(f"WebSocket broadcast error for immediate fake user card: {e}")
+            # Add to batch instead of broadcasting immediately
+            batched_events.append({
+                'type': 'card_selected',
+                'data': {
+                    'card_number': card_number,
+                    'user_id': None,
+                    'username': fake_user.name,
+                    'is_fake': True,
+                    'available_cards': get_available_card_numbers(game)
+                }
+            })
             
             print(f"  Immediately selected fake user {fake_user_id} with card {card_number} (index {i})")
         except Exception as e:
             print(f"Error creating immediate fake user card: {e}")
+    
+    # Batch broadcast all immediate card selections at once
+    if batched_events:
+        try:
+            batch_broadcast_to_game(game.id, batched_events)
+            print(f"  Batched {len(batched_events)} immediate fake user card selections")
+        except Exception as e:
+            print(f"WebSocket batch broadcast error for immediate fake user cards: {e}")
     
     # Schedule remaining selections with calculated delays
     for i in range(immediate_count, num_fake_users):
