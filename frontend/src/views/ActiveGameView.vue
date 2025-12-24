@@ -157,6 +157,7 @@ export default {
     }
   },
   async mounted() {
+    // Load game (router guard ensures we only mount when game exists)
     await this.loadGame()
     this.setupWebSocket()
     // Only start polling if WebSocket is not connected (fallback)
@@ -276,16 +277,21 @@ export default {
             }, 8000) // Wait time to 8 seconds
             return
           } else if (game.status === 'waiting') {
-            // Only redirect if we don't have a card
-            if (!this.userCard) {
-              if (this.interval) {
-                clearInterval(this.interval)
-                this.interval = null
-              }
-              this.$router.push('/select-card')
-              return
+            // Game is waiting - redirect to card selection (router guard should have caught this, but handle it anyway)
+            if (this.interval) {
+              clearInterval(this.interval)
+              this.interval = null
             }
-            // If we have a card but game is waiting, stay here (game might be starting)
+            this.$router.push('/select-card')
+            return
+          } else if (game.status === 'completed') {
+            // Game is completed - redirect to completed view (router guard should have caught this, but handle it anyway)
+            if (this.interval) {
+              clearInterval(this.interval)
+              this.interval = null
+            }
+            this.$router.push('/completed')
+            return
           }
           
           // CRITICAL: If winner banner is showing, don't load card or do anything that might affect state
@@ -480,23 +486,27 @@ export default {
             }
           }
         } else {
-          // No game found, redirect to waiting
+          // No game found - router guard should have prevented this, but redirect anyway
           if (this.interval) {
             clearInterval(this.interval)
             this.interval = null
           }
-          this.$router.push('/waiting')
+          this.$router.push('/completed')
+          return
         }
       } catch (error) {
         console.error('Error loading game:', error)
-        // Only redirect if it's a 404 (no game) and we don't have a card
-        if (error.response?.status === 404 && !this.userCard) {
+        // If 404, redirect to completed view (router guard should have prevented this, but handle it anyway)
+        if (error.response?.status === 404) {
           if (this.interval) {
             clearInterval(this.interval)
             this.interval = null
           }
-          this.$router.push('/waiting')
+          this.$router.push('/completed')
+          return
         }
+        // For other errors, log but don't redirect (might be temporary network issue)
+        console.error('Error loading game (non-404):', error)
       }
     },
     setupWebSocket() {

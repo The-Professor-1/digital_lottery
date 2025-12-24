@@ -1,11 +1,5 @@
 <template>
   <div class="completed-view">
-    <InfoBar
-      :derash="game?.total_derash || 0"
-      :players="game?.total_players || 0"
-      :bet="game?.bet_amount || 0"
-      :call="game?.current_call_count || 0"
-    />
     <GameStatus status="completed" />
     <WinnerBanner
       v-if="game?.winner"
@@ -13,15 +7,18 @@
       :prize="game.total_derash"
       :winner-card="winnerCard"
     />
-    <Timer :seconds="timerSeconds" />
-    <div class="next-game-message">
-      <p>የሚቀጥለውን ጨዋታ ለመጀመር...</p>
+    <div class="next-game-container">
+      <div class="next-game-message">
+        <p>የሚቀጥለውን ጨዋታ ለመጀመር...</p>
+      </div>
+      <div class="timer-container">
+        <Timer :seconds="timerSeconds" :large="true" />
+      </div>
     </div>
   </div>
 </template>
 
 <script>
-import InfoBar from '../components/InfoBar.vue'
 import GameStatus from '../components/GameStatus.vue'
 import WinnerBanner from '../components/WinnerBanner.vue'
 import Timer from '../components/Timer.vue'
@@ -30,7 +27,6 @@ import { getCurrentGame, getCard } from '../services/api'
 export default {
   name: 'GameCompletedView',
   components: {
-    InfoBar,
     GameStatus,
     WinnerBanner,
     Timer
@@ -38,15 +34,17 @@ export default {
   data() {
     return {
       game: null,
-      timerSeconds: 30, // Will be set from game.card_selection_timer
+      timerSeconds: 10, // Changed from 30 to 10 seconds
       interval: null,
       timerInterval: null,
       winnerCard: null
     }
   },
   async mounted() {
-    await this.loadGame()
+    // Start timer immediately (don't wait for API call) to prevent blank page
     this.startTimer()
+    // Load game in background (non-blocking)
+    this.loadGame()
     this.interval = setInterval(this.loadGame, 3000) // Hardcoded 3 seconds
   },
   beforeUnmount() {
@@ -63,13 +61,10 @@ export default {
         const game = await getCurrentGame()
         this.game = game
         
-        // Update timer seconds from game settings if available and timer not started
-        if (game && game.card_selection_timer && !this.timerInterval) {
-          this.timerSeconds = game.card_selection_timer
-        }
+        // Timer is fixed to 10 seconds, no need to update from settings
         
         // Load winner's card if there's a winner
-        if (game.winner && game.gamecards && game.gamecards.length > 0) {
+        if (game && game.winner && game.gamecards && game.gamecards.length > 0) {
           const winnerCardData = game.gamecards.find(card => card.is_winner || card.user === game.winner.id)
           if (winnerCardData) {
             try {
@@ -81,23 +76,42 @@ export default {
           }
         }
         
-        // Redirect if new game starts
-        if (game.status === 'waiting') {
+        // Redirect immediately if new game starts (don't wait for timer)
+        if (game && game.status === 'waiting') {
+          // Stop timer and redirect immediately
+          if (this.timerInterval) {
+            clearInterval(this.timerInterval)
+            this.timerInterval = null
+          }
+          if (this.interval) {
+            clearInterval(this.interval)
+            this.interval = null
+          }
           this.$router.push('/select-card')
-        } else if (game.status === 'active') {
+        } else if (game && game.status === 'active') {
+          // Stop timer and redirect immediately
+          if (this.timerInterval) {
+            clearInterval(this.timerInterval)
+            this.timerInterval = null
+          }
+          if (this.interval) {
+            clearInterval(this.interval)
+            this.interval = null
+          }
           this.$router.push('/game')
         }
       } catch (error) {
-        // No game found, create new one after timer
-        if (error.response?.status === 404 && this.timerSeconds <= 0) {
-          this.createNewGame()
+        // No game found - this is OK, we'll wait for timer to finish
+        // The timer will handle redirecting to card selection
+        if (error.response?.status === 404) {
+          console.log('No game found, waiting for timer to finish...')
+          // Don't redirect immediately - let timer finish first
         }
       }
     },
     startTimer() {
-      // Get timer value from game settings, default to 30 if not available
-      const timerValue = this.game?.card_selection_timer || 30
-      this.timerSeconds = timerValue
+      // Fixed to 10 seconds for next game countdown
+      this.timerSeconds = 10
       
       this.timerInterval = setInterval(() => {
         if (this.timerSeconds > 0) {
@@ -114,13 +128,30 @@ export default {
       try {
         // Try to get current game first
         const game = await getCurrentGame()
-        if (game.status === 'waiting') {
+        if (game && game.status === 'waiting') {
           this.$router.push('/select-card')
+        } else if (game && game.status === 'active') {
+          this.$router.push('/game')
+        } else {
+          // Game might be creating, wait a bit and check again
+          setTimeout(async () => {
+            try {
+              const game = await getCurrentGame()
+              if (game && game.status === 'waiting') {
+                this.$router.push('/select-card')
+              } else if (game && game.status === 'active') {
+                this.$router.push('/game')
+              }
+            } catch (error) {
+              // Still no game, redirect to card selection (backend should create one)
+              this.$router.push('/select-card')
+            }
+          }, 1000)
         }
       } catch (error) {
-        // No game exists, redirect to waiting page
-        // The backend should auto-create games, but for now just redirect
-        this.$router.push('/waiting')
+        // No game exists yet, redirect to card selection
+        // The backend should auto-create games, so card selection will trigger it
+        this.$router.push('/select-card')
       }
     }
   }
@@ -134,16 +165,32 @@ export default {
   position: relative;
 }
 
+.next-game-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 20px;
+}
+
 .next-game-message {
   text-align: center;
   padding: 20px;
-  margin-top: 20px;
+  margin-bottom: 40px;
 }
 
 .next-game-message p {
-  font-size: 18px;
+  font-size: 24px;
   color: var(--purple-dark);
   font-weight: bold;
+}
+
+.timer-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
 }
 </style>
 

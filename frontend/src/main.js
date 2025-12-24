@@ -12,7 +12,7 @@ import CardSelectionView from './views/CardSelectionView.vue'
 import ActiveGameView from './views/ActiveGameView.vue'
 
 const routes = [
-  { path: '/', redirect: '/game' }, // Start at game view, it will route appropriately based on game status
+  { path: '/', redirect: '/completed' }, // Start at completed view (waiting page) - will redirect based on game status
   { path: '/waiting', name: 'waiting', component: WaitingView },
   { path: '/completed', name: 'completed', component: GameCompletedView },
   { path: '/select-card', name: 'select-card', component: CardSelectionView },
@@ -26,8 +26,31 @@ const router = createRouter({
 
 // Add navigation guard to route appropriately on initial load
 router.beforeEach(async (to, from, next) => {
-  // Only check on initial load (from root)
-  if (from.name === null && to.path === '/game') {
+  // Check game status when navigating to root or completed view (initial load or refresh)
+  if (from.name === null && (to.path === '/' || to.path === '/completed')) {
+    try {
+      const { getCurrentGame } = await import('./services/api')
+      const game = await getCurrentGame()
+      if (game.status === 'waiting') {
+        next('/select-card')
+      } else if (game.status === 'active') {
+        next('/game')
+      } else {
+        // Game is completed or no game, stay on completed view
+        next()
+      }
+    } catch (error) {
+      // No game found (404) - stay on completed view (which shows waiting page with timer)
+      if (error.response?.status === 404) {
+        console.log('No game found, showing completed view (waiting page)')
+        next()
+      } else {
+        // Other error, continue to completed view
+        next()
+      }
+    }
+  } else if (to.path === '/game' && from.path !== '/game') {
+    // When navigating to /game from another route, check game status
     try {
       const { getCurrentGame } = await import('./services/api')
       const game = await getCurrentGame()
@@ -39,8 +62,12 @@ router.beforeEach(async (to, from, next) => {
         next() // Game is active, continue to game view
       }
     } catch (error) {
-      // No game or error, continue to game view (it will handle routing)
-      next()
+      // No game found (404) - redirect to completed view
+      if (error.response?.status === 404) {
+        next('/completed')
+      } else {
+        next()
+      }
     }
   } else {
     next()

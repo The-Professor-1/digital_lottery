@@ -14,18 +14,21 @@ from .redis_utils import (
 def generate_bingo_card() -> Dict:
     """
     Generate a unique 5x5 Bingo card following standard Bingo rules:
-    - B column: 1-15
-    - I column: 16-30
-    - N column: 31-45 (center is FREE)
-    - G column: 46-60
-    - O column: 61-75
+    - B column: 1-15 (randomly shuffled)
+    - I column: 16-30 (randomly shuffled)
+    - N column: 31-45 (randomly shuffled, center is FREE)
+    - G column: 46-60 (randomly shuffled)
+    - O column: 61-75 (randomly shuffled)
+    
+    Numbers are randomly arranged within each column (traditional bingo style).
     """
+    # Sample numbers for each column and shuffle them (don't sort - keep random order)
     card = {
-        'B': sorted(random.sample(range(1, 16), 5)),
-        'I': sorted(random.sample(range(16, 31), 5)),
-        'N': sorted(random.sample(range(31, 46), 4)),  # 4 numbers + FREE center
-        'G': sorted(random.sample(range(46, 61), 5)),
-        'O': sorted(random.sample(range(61, 76), 5)),
+        'B': random.sample(range(1, 16), 5),  # 5 random numbers from 1-15, shuffled
+        'I': random.sample(range(16, 31), 5),  # 5 random numbers from 16-30, shuffled
+        'N': random.sample(range(31, 46), 4),  # 4 random numbers from 31-45, shuffled (center is FREE)
+        'G': random.sample(range(46, 61), 5),  # 5 random numbers from 46-60, shuffled
+        'O': random.sample(range(61, 76), 5),  # 5 random numbers from 61-75, shuffled
     }
     
     # Create 5x5 grid layout
