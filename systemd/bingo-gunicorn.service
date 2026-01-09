@@ -1,0 +1,55 @@
+[Unit]
+Description=Gunicorn daemon for Bingo Django ASGI app (with WebSockets)
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=notify
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apps/good-bingo/arif_bingo/backend
+
+# Environment variables from .env file
+EnvironmentFile=/home/ubuntu/apps/good-bingo/arif_bingo/.env
+
+# Python virtual environment
+Environment="PATH=/home/ubuntu/apps/good-bingo/venv/bin:/usr/local/bin:/usr/bin:/bin"
+
+# Django settings
+Environment="DJANGO_SETTINGS_MODULE=bingo.settings"
+Environment="PYTHONUNBUFFERED=1"
+
+# Gunicorn command with Uvicorn workers (required for ASGI/WebSockets)
+ExecStart=/home/ubuntu/apps/good-bingo/venv/bin/gunicorn \
+          bingo.asgi:application \
+          -k uvicorn.workers.UvicornWorker \
+          --workers 2 \
+          --bind 127.0.0.1:8000 \
+          --timeout 120 \
+          --access-logfile - \
+          --error-logfile - \
+          --log-level info
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bingo-gunicorn
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
+

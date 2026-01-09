@@ -1,0 +1,29 @@
+name: Deploy Bingo App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+            git reset --hard
+            git pull origin main
+            source /home/ubuntu/apps/good-bingo/venv/bin/activate
+            pip install -r requirements.txt
+            python manage.py migrate --noinput
+            sudo systemctl restart gunicorn
+            sudo systemctl restart bingo-telegram-bot
