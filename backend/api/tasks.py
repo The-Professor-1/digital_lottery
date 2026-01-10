@@ -1886,7 +1886,25 @@ def task_call_next_number(self, game_id: int):
         # This task should only be called AFTER the initial delay, so we proceed to call the number
         is_first_call = len(called_numbers) == 0
         if is_first_call:
-            print(f"Game {game_id}: First number call - proceeding immediately")
+            logger.info(f"🎯 Game {game_id}: First number call - proceeding immediately (after 3s delay)")
+            print(f"🎯 Game {game_id}: First number call - proceeding immediately (after 3s delay)")
+            
+            # Double-check game is still active before calling first number
+            try:
+                game = Game.objects.get(id=game_id)
+                if game.status != 'active':
+                    logger.warning(f"Game {game_id}: Status changed to {game.status} before first call, stopping")
+                    return {'error': f'Game status is {game.status}, not active', 'stopped': True}
+                if game.winner:
+                    logger.warning(f"Game {game_id}: Has winner before first call, stopping")
+                    return {'error': 'Game already has winner', 'stopped': True}
+            except Game.DoesNotExist:
+                logger.error(f"Game {game_id}: Not found in database before first call")
+                return {'error': 'Game not found', 'stopped': True}
+            except Exception as e:
+                logger.error(f"Game {game_id}: Error checking game status before first call: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Check if all numbers called
         if len(called_numbers) >= 75:
@@ -1907,8 +1925,18 @@ def task_call_next_number(self, game_id: int):
         # DB records will be created at game end for history
         call_count = add_called_number_live(game_id, number)
         if call_count == 0:
+            logger.error(f"❌ ERROR: Failed to add number {number} to Redis for game {game_id}")
             print(f"❌ ERROR: Failed to add number {number} to Redis for game {game_id}")
-            return {'error': 'Failed to add number to Redis', 'stopped': True}
+            # Retry once more before giving up
+            import time
+            time.sleep(0.1)  # Small delay
+            call_count = add_called_number_live(game_id, number)
+            if call_count == 0:
+                logger.error(f"❌ CRITICAL: Retry also failed to add number {number} to Redis for game {game_id}")
+                return {'error': 'Failed to add number to Redis (after retry)', 'stopped': True}
+            else:
+                logger.info(f"✅ Retry successful: Added number {number} to Redis for game {game_id}")
+                print(f"✅ Retry successful: Added number {number} to Redis for game {game_id}")
         
         # Get letter for number
         from .models import CalledNumber
@@ -2813,26 +2841,30 @@ def task_process_registration_rewards(self, user_id: int, is_first_registration:
                 # Get fresh user data
                 user = User.objects.select_for_update().get(id=user_id)
                 
-                # TEMPORARILY DISABLED: Registration and referral rewards set to 0
                 # Get GameSettings (should be cached, but get fresh if needed)
                 game_settings = GameSettings.get_settings()
                 bid_amount = Decimal(str(game_settings.bid_amount))
                 
-                # Registration reward amount (TEMPORARILY DISABLED - set to 0)
-                registration_reward = Decimal('0')
-                
-                # STEP 1: Grant registration gift (if first registration) - DISABLED
+                # STEP 1: Grant registration gift (if first registration) - bid_amount as reward
                 if is_first_registration:
-                    # Registration gift is disabled - no balance update
-                    # Still create transaction record with 0 amount for tracking
+                    registration_reward = bid_amount
+                    
+                    # Update user balance atomically
+                    from django.db.models import F
+                    User.objects.filter(id=user.id).update(balance=F('balance') + registration_reward)
+                    
+                    # Refresh user to get updated balance
+                    user.refresh_from_db()
+                    
+                    # Create transaction record
                     Transaction.objects.create(
                         user=user,
                         transaction_type='deposit',
                         amount=registration_reward,
-                        description='Registration gift (disabled)'
+                        description='Registration gift'
                     )
                     
-                    logger.info(f"⏸️ Registration gift disabled (would have been {bid_amount}) for user {user.telegram_id} (id={user.id})")
+                    logger.info(f"✅ Registration gift {registration_reward} given to user {user.telegram_id} (id={user.id})")
                 
                 # STEP 2: Process referral reward (if applicable)
                 # Get fresh user data again to check referral status
@@ -2857,45 +2889,14 @@ def task_process_registration_rewards(self, user_id: int, is_first_registration:
                         if not referrer.phone_number:
                             logger.warning(f"Referrer {referrer.telegram_id} (id={referrer.id}) is not registered (no phone number)")
                         else:
-                            # Referral reward amount (TEMPORARILY DISABLED - set to 0)
+                            # Referral reward is disabled - set to 0, no notification, no transaction
                             referral_reward = Decimal('0')
-                            
-                            # Referral reward is disabled - no balance update
-                            # Still create transaction record with 0 amount for tracking
-                            # Build invited user name for transaction description
-                            invited_name = f"{user.first_name or ''} {user.last_name or ''}".strip()
-                            if not invited_name:
-                                invited_name = user.first_name or user.username or "User"
-                            
-                            # Create referral transaction with 0 amount
-                            Transaction.objects.create(
-                                user=referrer,
-                                transaction_type='deposit',
-                                amount=referral_reward,
-                                description=f'Referral reward (disabled) - {invited_name} registered'
-                            )
                             
                             # Mark referral reward as given (even though amount is 0)
                             user.referral_reward_given = True
                             user.save(update_fields=['referral_reward_given'])
                             
-                            logger.info(f"⏸️ Referral reward disabled (would have been {bid_amount}) for referrer {referrer.telegram_id} (id={referrer.id})")
-                            
-                            # Notification disabled since no reward was given
-                            # (Commented out to avoid confusion)
-                            # if referrer.telegram_id:
-                            #     try:
-                            #         from telegram_bot.notifications import send_notification_sync
-                            #         notification_msg = (
-                            #             f"{invited_name} ን አስገብተዋል፣ {bid_amount} ብር አግኝተዋል፡፡"
-                            #         )
-                            #         result, _ = send_notification_sync(referrer.telegram_id, notification_msg)
-                            #         if result:
-                            #             logger.info(f"✅ Sent referral notification to referrer {referrer.telegram_id}")
-                            #         else:
-                            #             logger.warning(f"Failed to send referral notification to referrer {referrer.telegram_id}")
-                            #     except Exception as e:
-                            #         logger.error(f"Error sending referral notification: {e}", exc_info=True)
+                            logger.info(f"⏸️ Referral reward disabled (set to 0, no notification) for referrer {referrer.telegram_id} (id={referrer.id})")
                     finally:
                         # Always release referral lock
                         release_referral_lock(referrer_id)

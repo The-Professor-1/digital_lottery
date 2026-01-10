@@ -2,6 +2,13 @@ import os
 import logging
 import aiohttp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, BotCommand, ReplyKeyboardMarkup, KeyboardButton
+try:
+    from telegram.constants import BotCommandScopeType
+    from telegram import BotCommandScopeAllPrivateChats
+except ImportError:
+    # Fallback for older python-telegram-bot versions
+    BotCommandScopeType = None
+    BotCommandScopeAllPrivateChats = None
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -301,21 +308,9 @@ async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.callback_query.answer()
                 return
         except User.DoesNotExist:
-            # New user - registration temporarily disabled
-            keyboard = [
-                [InlineKeyboardButton("🏠 ዋና ማውጫ", callback_data="main_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            message_text = (
-                "⚠️ ምዝገባ በዚህ ሰዓት አልተከፈተም።\n\n"
-                "እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።"
-            )
-            if update.message:
-                await update.message.reply_text(message_text, reply_markup=reply_markup)
-            elif update.callback_query:
-                await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup)
-                await update.callback_query.answer()
-            return
+            # New user - allow registration
+            # Continue to registration flow below
+            pass
         except Exception as e:
             logger.error(f"Error checking user registration: {e}")
             # Continue to registration flow even if there's an error
@@ -959,6 +954,11 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             if is_first_registration:
+                # Refresh user to get updated balance after reward
+                async def refresh_user():
+                    await sync_to_async(telegram_user.refresh_from_db)()
+                await db_operation_with_retry(refresh_user)
+                
                 # Get bid_amount for message (cached, fast)
                 from api.models import GameSettings
                 async def get_settings():
@@ -967,8 +967,8 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 bid_amount = game_settings.bid_amount
                 
                 message_text = (
-                    f"ተመዝግበዋል! ስጦታ {bid_amount} ብር ተበርክቶሎታል፡፡\n\n"
-                    "ስጦታዎ በጥቂት ሰከንዶች ውስጥ ይበርክታል።"
+                    f"✅ ተመዝግበዋል! ስጦታ {bid_amount} ብር ተበርክቶሎታል፡፡\n\n"
+                    f"ያለዎት ሂሳብ: {telegram_user.balance} ብር"
                 )
             else:
                 # Refresh user to get latest balance
@@ -1798,40 +1798,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clear_financial_command_states(context)
         await show_main_menu(update, context)
     elif query.data == "register":
-        # TEMPORARILY DISABLED: Check if user is new before allowing registration
-        user = query.from_user
-        try:
-            async def get_user():
-                return await sync_to_async(User.objects.get)(telegram_id=user.id)
-            telegram_user = await db_operation_with_retry(get_user)
-            # User exists - check if already registered
-            if telegram_user.phone_number:
-                # Already registered - show status
-                await register_command(update, context)
-            else:
-                # User exists but not registered - temporarily disabled
-                keyboard = [
-                    [InlineKeyboardButton("🏠 ዋና ማውጫ", callback_data="main_menu")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                message_text = (
-                    "⚠️ ምዝገባ በዚህ ሰዓት አልተከፈተም።\n\n"
-                    "እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።"
-                )
-                await query.edit_message_text(message_text, reply_markup=reply_markup)
-                await query.answer()
-        except User.DoesNotExist:
-            # New user - registration temporarily disabled
-            keyboard = [
-                [InlineKeyboardButton("🏠 ዋና ማውጫ", callback_data="main_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            message_text = (
-                "⚠️ ምዝገባ በዚህ ሰዓት አልተከፈተም።\n\n"
-                "እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።"
-            )
-            await query.edit_message_text(message_text, reply_markup=reply_markup)
-            await query.answer()
+        # Handle registration from callback - allow registration
+        await register_command(update, context)
     elif not is_registered:
         # User not registered, show registration prompt
         welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
@@ -1901,10 +1869,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bet_amount = game_settings.bid_amount
             gamecards_count = 0
         
-        # Check if URL is HTTPS (required for Telegram web apps)
-        # If HTTP (local development), show URL as text instead of web app button
-        if settings.TELEGRAM_WEB_APP_URL.startswith('http://'):
-            # Local development - can't use web app button with HTTP
+        # Always use web app button if URL is HTTPS (required for Telegram web apps)
+        # If HTTP (local development), show URL as text link instead
+        if settings.TELEGRAM_WEB_APP_URL and not settings.TELEGRAM_WEB_APP_URL.startswith('http://'):
+            # HTTPS - use web app button (opens in Telegram)
+            keyboard = [
+                [InlineKeyboardButton("🎮 ጨዋታ ይጀምሩ", web_app=WebAppInfo(url=mini_app_url))],
+                [InlineKeyboardButton("🏠 ዋና ማውጫ", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                f"🍀 በጨዋታዎ ላይ መልካም ዕድል!\n\n"
+                f"መደብ: {bet_amount} ብር\n"
+                f"ተጫዋቾች: {gamecards_count}",
+                reply_markup=reply_markup
+            )
+        else:
+            # HTTP (local development) - show URL as text link
             keyboard = [
                 [InlineKeyboardButton("🏠 ዋና ማውጫ", callback_data="main_menu")]
             ]
@@ -1913,18 +1894,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🍀 በጨዋታዎ ላይ መልካም ዕድል!\n\n"
                 f"መደብ: {bet_amount} ብር\n"
                 f"🔗 የጨዋታ ማስጀመሪያ:\n{mini_app_url}",
-                reply_markup=reply_markup
-            )
-        else:
-            # Production - use web app button
-            keyboard = [
-                [InlineKeyboardButton("🎮 ጨዋታ ይጀምሩ", web_app=WebAppInfo(url=mini_app_url))],
-                [InlineKeyboardButton("🏠 ዋና ማውጫ", callback_data="main_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(
-                f"🍀 በጨዋታዎ ላይ መልካም ዕድል!\n\n"
-                f"መደብ: {bet_amount} ብር\n",
                 reply_markup=reply_markup
             )
     elif query.data == "deposit":
@@ -2160,6 +2129,7 @@ async def set_bot_commands(application: Application):
         logger.error(f"Failed to get bot info: {e}")
     
     commands = [
+        BotCommand("start", "መጀመሪያ ማውጫ"),
         BotCommand("register", "ለመመዝገብ"),
         BotCommand("play", "ጨዋታ ለመጀመር"),
         BotCommand("deposit", "ገንዘብ ለማስገባት"),
@@ -2171,8 +2141,17 @@ async def set_bot_commands(application: Application):
         BotCommand("invite", "ሰዎችን ለመጋበዝ"),
     ]
     try:
+        # Set commands - this should show in menu next to typing field
         await application.bot.set_my_commands(commands)
         logger.info("✅ Bot commands menu set successfully")
+        
+        # Also try to set for all private chats (if supported)
+        if BotCommandScopeAllPrivateChats:
+            try:
+                await application.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+                logger.info("✅ Bot commands also set for all private chats")
+            except Exception as e2:
+                logger.debug(f"Could not set commands for private chats (optional): {e2}")
     except Exception as e:
         logger.error(f"Failed to set bot commands: {e}", exc_info=True)
         # Don't fail completely if commands can't be set, but log the error
