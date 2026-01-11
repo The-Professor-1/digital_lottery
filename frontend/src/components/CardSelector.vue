@@ -77,16 +77,18 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #95a5a6;
+  background: linear-gradient(135deg, var(--gray-medium) 0%, var(--gray-dark) 100%);
   color: white;
-  border-radius: 4px;
-  font-weight: bold;
+  border-radius: 10px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
   position: relative;
   font-size: 12px;
   min-height: 25px;
   min-width: 25px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  border: 2px solid transparent;
 }
 
 .card-option:disabled,
@@ -96,27 +98,38 @@ export default {
 }
 
 .card-option:hover:not(.taken):not(.selected) {
-  transform: scale(1.1);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-  background: #7f8c8d;
+  transform: scale(1.1) translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.25);
+  border-color: var(--primary-medium);
+  background: linear-gradient(135deg, var(--primary-medium) 0%, var(--primary-dark) 100%);
 }
 
 .card-option.taken {
-  background: var(--orange);
+  background: linear-gradient(135deg, var(--accent-coral) 0%, var(--accent-coral-dark) 100%);
   cursor: not-allowed;
-  opacity: 1;
+  opacity: 0.85;
+  border-color: var(--accent-coral-dark);
 }
 
 .card-option.selected {
-  background: var(--green);
-  transform: scale(1.1);
-  box-shadow: 0 0 15px rgba(46, 204, 113, 0.5);
-  cursor: pointer; /* Allow clicking selected card to unselect */
+  background: linear-gradient(135deg, var(--success-green) 0%, var(--success-green-dark) 100%);
+  transform: scale(1.15);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+  cursor: pointer;
+  border-color: var(--success-green-dark);
+  animation: selectedPulse 2s infinite;
+}
+
+@keyframes selectedPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.5); }
+  50% { box-shadow: 0 0 25px rgba(16, 185, 129, 0.7); }
 }
 
 .card-option.taken.selected {
-  cursor: pointer; /* Allow clicking selected card to unselect even if in takenCards */
-  background: var(--green);
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--success-green) 0%, var(--success-green-dark) 100%);
+  border-color: var(--success-green-dark);
+  opacity: 1;
 }
 </style>
 

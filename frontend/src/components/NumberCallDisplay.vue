@@ -58,13 +58,15 @@ export default {
 
 <style scoped>
 .number-call-display {
-  background: var(--purple-medium);
-  padding: 8px;
-  border-radius: 10px;
+  background: linear-gradient(135deg, var(--primary-medium) 0%, var(--primary-dark) 100%);
+  padding: 10px;
+  border-radius: 16px;
   margin: 5px;
   text-align: center;
   width: 100%;
   box-sizing: border-box;
+  box-shadow: var(--card-shadow);
+  border: 2px solid rgba(255, 255, 255, 0.2);
 }
 
 .number-call-display.compact-call-display {
@@ -82,34 +84,36 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   background: white;
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .letter {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   color: white;
-  font-weight: bold;
-  font-size: 25px;
+  font-weight: 700;
+  font-size: 26px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.letter-b { background: #ff6b35; }
-.letter-i { background: #2ecc71; }
-.letter-n { background: #3498db; }
-.letter-g { background: #e74c3c; }
-.letter-o { background: #9b59b6; }
+.letter-b { background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%); }
+.letter-i { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.letter-n { background: linear-gradient(135deg, #00b4d8 0%, #0077b6 100%); }
+.letter-g { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.letter-o { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
 
 .number {
-  font-size: 25px;
-  font-weight: bold;
-  color: var(--purple-dark);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--primary-dark);
 }
 
 .no-calls {
@@ -125,21 +129,22 @@ export default {
 }
 
 .recent-call {
-  width: 25px;
-  height: 25px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   color: white;
-  font-weight: bold;
-  font-size:12px;
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.call-b { background: #ff6b35; }
-.call-i { background: #2ecc71; }
-.call-n { background: #3498db; }
-.call-g { background: #e74c3c; }
-.call-o { background: #9b59b6; }
+.call-b { background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%); }
+.call-i { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.call-n { background: linear-gradient(135deg, #00b4d8 0%, #0077b6 100%); }
+.call-g { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.call-o { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
 </style>
 

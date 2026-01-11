@@ -161,7 +161,7 @@ export default {
 <style scoped>
 .completed-view {
   min-height: 100vh;
-  background: var(--purple-light);
+  background: var(--primary-light);
   position: relative;
 }
 
@@ -182,7 +182,7 @@ export default {
 
 .next-game-message p {
   font-size: 24px;
-  color: var(--purple-dark);
+  color: var(--primary-dark);
   font-weight: bold;
 }
 

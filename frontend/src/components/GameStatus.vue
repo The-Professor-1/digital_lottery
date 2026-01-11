@@ -42,8 +42,12 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 10px;
-  background: var(--purple-light);
+  padding: 8px 12px;
+  background: var(--primary-light);
+  border-radius: 10px;
+  margin: 5px;
+  box-shadow: var(--card-shadow);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .bingo-letters {
@@ -52,31 +56,40 @@ export default {
 }
 
 .letter {
-  width: 25px;
-  height: 25px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: bold;
-  font-size: 12px;
+  font-weight: 700;
+  font-size: 13px;
   color: white;
-  border-radius: 3px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
 }
 
-.letter.b { background: #ff6b35; }
-.letter.i { background: #2ecc71; }
-.letter.n { background: #3498db; }
-.letter.g { background: #e74c3c; }
-.letter.o { background: #9b59b6; }
+.letter:hover {
+  transform: scale(1.1);
+}
+
+.letter.b { background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%); }
+.letter.i { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.letter.n { background: linear-gradient(135deg, #00b4d8 0%, #0077b6 100%); }
+.letter.g { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.letter.o { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
 
 .status-text {
-  font-weight: bold;
-  font-size: 12px;
-  color: var(--purple-dark);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--primary-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .status-active {
-  color: var(--green);
+  color: var(--success-green);
+  font-weight: 700;
 }
 </style>
 

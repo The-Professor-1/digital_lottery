@@ -42,13 +42,15 @@ export default {
 
 .timer-display {
   font-size: 14px;
-  font-weight: bold;
-  color: var(--purple-dark);
+  font-weight: 700;
+  color: var(--primary-dark);
   background: white;
-  padding: 3px 8px;
-  border-radius: 4px;
+  padding: 4px 10px;
+  border-radius: 10px;
   display: inline-block;
   white-space: nowrap;
+  box-shadow: var(--card-shadow);
+  border: 2px solid var(--primary-medium);
 }
 
 /* Large timer style for next game countdown */
@@ -61,14 +63,15 @@ export default {
 
 .timer.large .timer-display {
   font-size: 120px;
-  font-weight: bold;
-  color: var(--purple-dark);
+  font-weight: 700;
+  color: var(--primary-dark);
   background: white;
   padding: 30px 60px;
-  border-radius: 20px;
+  border-radius: 24px;
   display: inline-block;
   white-space: nowrap;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--card-shadow-lg);
+  border: 3px solid var(--primary-medium);
   min-width: 200px;
   text-align: center;
 }

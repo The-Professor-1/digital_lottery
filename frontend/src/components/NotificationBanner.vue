@@ -56,30 +56,35 @@ export default {
   min-width: 300px;
   max-width: 90%;
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  padding: 12px 20px;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow-lg);
+  padding: 14px 24px;
   text-align: center;
+  border: 2px solid transparent;
 }
 
 .notification-banner.error {
-  border-left: 4px solid #e74c3c;
-  background: #fee;
+  border-left: 5px solid var(--accent-coral);
+  background: linear-gradient(135deg, #fff5f5 0%, #ffe5e5 100%);
+  border-color: rgba(255, 107, 107, 0.2);
 }
 
 .notification-banner.success {
-  border-left: 4px solid #2ecc71;
-  background: #efe;
+  border-left: 5px solid var(--success-green);
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-color: rgba(16, 185, 129, 0.2);
 }
 
 .notification-banner.warning {
-  border-left: 4px solid #f39c12;
-  background: #fff9e6;
+  border-left: 5px solid #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: rgba(245, 158, 11, 0.2);
 }
 
 .notification-banner.info {
-  border-left: 4px solid #3498db;
-  background: #eef;
+  border-left: 5px solid var(--primary-medium);
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-color: rgba(0, 180, 216, 0.2);
 }
 
 .banner-content {

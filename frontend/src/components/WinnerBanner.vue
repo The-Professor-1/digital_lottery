@@ -228,13 +228,14 @@ export default {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: var(--orange);
+  background: linear-gradient(135deg, var(--accent-coral) 0%, var(--accent-coral-dark) 100%);
   color: white;
-  padding: 30px;
-  border-radius: 15px;
+  padding: 32px;
+  border-radius: 20px;
   text-align: center;
   z-index: 1000;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  box-shadow: var(--card-shadow-lg);
+  border: 3px solid rgba(255, 255, 255, 0.2);
   min-width: 350px;
   max-width: 90vw;
   max-height: 90vh;
@@ -381,11 +382,12 @@ export default {
 }
 
 .winner-text-you-small {
-  background: #2ecc71;
+  background: linear-gradient(135deg, var(--success-green) 0%, var(--success-green-dark) 100%);
   color: white;
-  padding: 5px 12px;
-  border-radius: 6px;
-  font-weight: bold;
+  padding: 6px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
 }
 
 .winner-card-display-small {

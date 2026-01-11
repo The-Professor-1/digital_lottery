@@ -23,12 +23,12 @@ class Command(BaseCommand):
         self.application = None
 
     def handle(self, *args, **options):
-        # Detect if running in production (Fly.io)
-        is_production = os.getenv('FLY_APP_NAME') is not None
+        # Detect if running in production (EC2)
+        is_production = os.getenv('ENVIRONMENT') == 'production' or not os.getenv('DEBUG', 'False') == 'True'
         
         if is_production:
             self.stdout.write(self.style.SUCCESS('Starting Telegram bot (PRODUCTION MODE)...'))
-            logger.info('Telegram bot starting in PRODUCTION MODE on Fly.io')
+            logger.info('Telegram bot starting in PRODUCTION MODE on EC2')
         else:
             self.stdout.write(self.style.SUCCESS('Starting Telegram bot (DEVELOPMENT MODE)...'))
             logger.info('Telegram bot starting in DEVELOPMENT MODE')

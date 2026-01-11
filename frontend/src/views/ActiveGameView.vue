@@ -1435,7 +1435,7 @@ export default {
 <style scoped>
 .active-game-view {
   height: 100vh;
-  background: var(--purple-light);
+  background: var(--primary-light);
   overflow-x: hidden;
   overflow-y: auto;
   display: flex;
@@ -1455,22 +1455,22 @@ export default {
 
 .mode-selector label {
   font-weight: bold;
-  color: var(--purple-dark);
+  color: var(--primary-dark);
 }
 
 .mode-selector select {
   padding: 5px 10px;
-  border: 2px solid var(--purple-light);
+  border: 2px solid var(--primary-light);
   border-radius: 5px;
   background: white;
-  color: var(--purple-dark);
+  color: var(--primary-dark);
   font-size: 14px;
   cursor: pointer;
 }
 
 .mode-selector select:focus {
   outline: none;
-  border-color: var(--purple-dark);
+  border-color: var(--primary-dark);
 }
 
 .game-content {
@@ -1509,18 +1509,18 @@ export default {
 .game-started-text {
   text-align: center;
   font-weight: bold;
-  color: var(--purple-dark);
+  color: var(--primary-dark);
   margin-bottom: 5px;
   font-size: 16px;
   padding: 5px;
-  background: var(--purple-light);
+  background: var(--primary-light);
   border-radius: 4px;
 }
 
 .card-label {
   text-align: center;
   font-weight: bold;
-  color: var(--purple-dark);
+  color: var(--primary-dark);
   margin-bottom: 5px;
   font-size: 20px;
 }
@@ -1528,7 +1528,7 @@ export default {
 .no-card-message {
   text-align: center;
   padding: 20px;
-  color: var(--gray);
+  color: var(--gray-medium);
 }
 
 .wait-message-box {
@@ -1574,13 +1574,13 @@ export default {
 }
 
 .no-winner-box h2 {
-  color: var(--purple-dark);
+  color: var(--primary-dark);
   margin: 0 0 20px 0;
   font-size: 28px;
 }
 
 .no-winner-box p {
-  color: var(--gray);
+  color: var(--gray-medium);
   margin: 10px 0;
   font-size: 16px;
 }
@@ -1679,24 +1679,26 @@ export default {
 
 .start-countdown {
   text-align: center;
-  padding: 20px;
-  background: var(--purple-light);
-  border-radius: 10px;
-  margin-bottom: 10px;
+  padding: 24px;
+  background: var(--primary-light);
+  border-radius: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--card-shadow);
+  border: 2px solid rgba(255, 255, 255, 0.5);
 }
 
 .countdown-number-small {
-  font-size: 60px;
-  font-weight: bold;
-  color: var(--orange);
-  text-shadow: 0 0 10px rgba(255, 165, 0, 0.6);
-  margin-bottom: 10px;
+  font-size: 64px;
+  font-weight: 700;
+  color: var(--accent-coral);
+  text-shadow: 0 0 15px rgba(255, 107, 107, 0.6);
+  margin-bottom: 12px;
   animation: pulse 1s ease-in-out infinite;
 }
 
 .countdown-text-small {
   font-size: 18px;
-  color: var(--purple-dark);
+  color: var(--primary-dark);
   font-weight: bold;
 }
 </style>

@@ -46,31 +46,43 @@ export default {
 <style scoped>
 .info-bar {
   display: flex;
-  background: var(--purple-light);
-  padding: 5px;
-  gap: 5px;
-  border-bottom: 1px solid white;
+  background: var(--primary-light);
+  padding: 8px;
+  gap: 8px;
+  border-radius: 10px;
+  margin: 5px;
+  box-shadow: var(--card-shadow);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .info-item {
   flex: 1;
   text-align: center;
   background: white;
-  padding: 5px;
-  border-radius: 4px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease;
+}
+
+.info-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .label {
-  color: var(--purple-dark);
+  color: var(--primary-dark);
   font-size: 10px;
-  font-weight: bold;
-  margin-bottom: 2px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .value {
-  color: #333;
-  font-size: 14px;
-  font-weight: bold;
+  color: var(--gray-dark);
+  font-size: 15px;
+  font-weight: 700;
 }
 </style>
 

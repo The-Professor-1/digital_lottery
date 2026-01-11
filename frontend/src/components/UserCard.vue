@@ -157,8 +157,10 @@ export default {
 <style scoped>
 .user-card {
   background: white;
-  border-radius: 8px;
-  padding: 8px;
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: var(--card-shadow-lg);
+  border: 2px solid rgba(0, 180, 216, 0.1);
 }
 
 .user-card.compact {
@@ -174,9 +176,11 @@ export default {
 }
 
 .card-number {
-  color: var(--purple-dark);
-  font-size: 12px;
-  font-weight: bold;
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .card-grid {
@@ -207,38 +211,44 @@ export default {
   align-items: center;
   justify-content: center;
   font-size: 15px;
-  color: var(--gray);
-  font-weight: bold;
+  color: var(--gray-medium);
+  font-weight: 700;
 }
 
 .letter-cell {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: bold;
+  font-weight: 700;
   font-size: 20px;
   color: white;
-  border-radius: 3px;
+  border-radius: 8px;
   min-height: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
 }
 
-.letter-cell.letter-b { background: #ff6b35; }
-.letter-cell.letter-i { background: #2ecc71; }
-.letter-cell.letter-n { background: #3498db; }
-.letter-cell.letter-g { background: #e74c3c; }
-.letter-cell.letter-o { background: #9b59b6; }
+.letter-cell:hover {
+  transform: scale(1.05);
+}
+
+.letter-cell.letter-b { background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%); }
+.letter-cell.letter-i { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.letter-cell.letter-n { background: linear-gradient(135deg, #00b4d8 0%, #0077b6 100%); }
+.letter-cell.letter-g { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.letter-cell.letter-o { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
 
 .card-cell {
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f8f9fa;
-  border: 1px solid var(--purple-medium);
-  border-radius: 3px;
-  font-weight: bold;
+  background: var(--gray-light);
+  border: 2px solid var(--primary-medium);
+  border-radius: 8px;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.1s ease-out; /* Faster transition for immediate feedback */
+  transition: all 0.2s ease;
   font-size: 20px;
   min-height: 20px;
   min-width: 0;
@@ -248,18 +258,20 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.1;
-  color: #000; /* Default black text for normal cells */
+  color: var(--gray-dark);
 }
 
-.card-cell:hover:not(.marked):not(.free) {
-  background: #e8d5ff;
+.card-cell:hover:not(.marked):not(.free):not(.winning-cell) {
+  background: var(--primary-light);
   transform: scale(1.05);
+  border-color: var(--primary-dark);
 }
 
 .card-cell.marked {
-  background: var(--green);
+  background: linear-gradient(135deg, var(--success-green) 0%, var(--success-green-dark) 100%);
   color: white;
-  border-color: var(--green);
+  border-color: var(--success-green-dark);
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
 }
 
 /* Last called number must override marked class - higher specificity */
@@ -268,14 +280,15 @@ export default {
 }
 
 .card-cell.free {
-  background: var(--orange);
+  background: linear-gradient(135deg, var(--accent-coral) 0%, var(--accent-coral-dark) 100%);
   color: white;
-  border-color: var(--orange);
+  border-color: var(--accent-coral-dark);
   cursor: default;
   font-size: 8px;
   padding: 1px;
   word-break: break-word;
   line-height: 1;
+  font-weight: 700;
 }
 
 .card-cell.winning-cell {
@@ -343,48 +356,55 @@ export default {
 
 .bingo-btn {
   width: 100%;
-  padding: 8px;
-  background: var(--gray); /* Initial/unclickable state: grey */
+  padding: 12px;
+  background: linear-gradient(135deg, var(--gray-medium) 0%, var(--gray-dark) 100%);
   color: white;
   border: none;
-  border-radius: 6px;
-  font-size: 25px;
-  font-weight: bold;
+  border-radius: 16px;
+  font-size: 26px;
+  font-weight: 700;
   cursor: not-allowed;
-  transition: all 0.1s ease-out; /* Faster transition for immediate feedback */
-  margin-top: 5px;
+  transition: all 0.3s ease;
+  margin-top: 8px;
   position: relative;
   opacity: 0.6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .bingo-btn:active {
-  transform: scale(0.95); /* Immediate visual feedback on click */
+  transform: scale(0.97);
 }
 
 .bingo-btn:hover:not(:disabled) {
-  background: var(--orange-dark);
-  transform: scale(1.05);
+  background: linear-gradient(135deg, var(--accent-coral-dark) 0%, var(--accent-coral) 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(255, 107, 107, 0.4);
 }
 
 .bingo-btn:disabled {
-  background: var(--gray);
+  background: linear-gradient(135deg, var(--gray-medium) 0%, var(--gray-dark) 100%);
   cursor: not-allowed;
   opacity: 0.6;
 }
 
 .bingo-btn.enabled:not(:disabled) {
-  background: var(--orange); /* Clickable state: orange */
+  background: linear-gradient(135deg, var(--accent-coral) 0%, var(--accent-coral-dark) 100%);
   cursor: pointer;
   opacity: 1;
-  animation: pulse-orange 1.5s infinite;
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.5);
+  animation: pulse-coral 2s infinite;
 }
 
-@keyframes pulse-orange {
+@keyframes pulse-coral {
   0%, 100% {
-    box-shadow: 0 0 8px rgba(255, 107, 53, 0.6);
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.5);
+    transform: scale(1);
   }
   50% {
-    box-shadow: 0 0 20px rgba(255, 107, 53, 1);
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.8);
+    transform: scale(1.02);
   }
 }
 </style>

@@ -770,7 +770,7 @@ export default {
 <style scoped>
 .card-selection-view {
   min-height: 100vh;
-  background: var(--purple-light);
+  background: var(--primary-light);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -808,8 +808,8 @@ export default {
 
 .timer-label-text {
   font-size: 11px;
-  font-weight: bold;
-  color: var(--purple-dark);
+  font-weight: 700;
+  color: var(--primary-dark);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -825,15 +825,15 @@ export default {
 
 .wallet-label {
   font-size: 11px;
-  font-weight: bold;
-  color: var(--purple-dark);
+  font-weight: 700;
+  color: var(--primary-dark);
   white-space: nowrap;
 }
 
 .wallet-amount {
   font-size: 11px;
-  font-weight: bold;
-  color: var(--green);
+  font-weight: 700;
+  color: var(--success-green);
   white-space: nowrap;
 }
 
@@ -847,15 +847,15 @@ export default {
 
 .bet-label {
   font-size: 11px;
-  font-weight: bold;
-  color: var(--purple-dark);
+  font-weight: 700;
+  color: var(--primary-dark);
   white-space: nowrap;
 }
 
 .bet-amount-top {
   font-size: 11px;
-  font-weight: bold;
-  color: var(--orange);
+  font-weight: 700;
+  color: var(--accent-coral);
   white-space: nowrap;
 }
 
@@ -864,17 +864,20 @@ export default {
   top: 45px; /* Adjust this value to change position below top section */
   left: 0;
   right: 0;
-  padding: 8px;
+  padding: 10px;
   text-align: center;
-  background: var(--purple-light);
+  background: var(--primary-light);
   z-index: 99;
+  border-radius: 0 0 12px 12px;
 }
 
 .select-card-text {
-  font-size: 16px;
-  font-weight: bold;
-  color: var(--purple-dark);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--primary-dark);
   margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .card-selector-container {
@@ -885,8 +888,8 @@ export default {
   bottom: 32vh; /* Increased space for cards section (reduced from 40vh) */
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 10px;
-  background: var(--purple-light);
+  padding: 12px;
+  background: var(--primary-light);
   z-index: 10;
 }
 
@@ -900,8 +903,8 @@ export default {
 
 .timer-label {
   font-size: 18px;
-  font-weight: bold;
-  color: var(--purple-dark);
+  font-weight: 700;
+  color: var(--primary-dark);
   margin-bottom: 10px;
 }
 
@@ -920,9 +923,11 @@ export default {
   bottom: 0; /* Positioned at bottom */
   left: 0;
   right: 0;
-  background: var(--purple-light);
-  padding: 5px 0px; /* Minimal vertical padding, no horizontal padding */
-  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+  background: var(--primary-light);
+  padding: 8px 0px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  border-top: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px 16px 0 0;
   z-index: 50;
   height: 28vh; /* Reduced from 40vh to make more compact */
   max-height: 28vh; /* Should match height value above */
@@ -934,15 +939,18 @@ export default {
 
 .selected-card-header {
   text-align: center;
-  margin-bottom: 2px; /* Reduced from 5px to minimize space */
-  margin-top: 2px; /* Minimal top margin */
+  margin-bottom: 4px;
+  margin-top: 4px;
   flex-shrink: 0;
 }
 
 .selected-card-header h3 {
   margin: 0;
-  font-size: 12px;
-  color: var(--purple-light);
+  font-size: 13px;
+  color: var(--primary-dark);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .selected-card-display.compact {
@@ -999,19 +1007,24 @@ export default {
 }
 
 .continue-btn {
-  background: #3498db;
+  background: linear-gradient(135deg, var(--primary-medium) 0%, var(--primary-dark) 100%);
   color: white;
-  padding: 12px 30px;
+  padding: 14px 32px;
   font-size: 18px;
-  font-weight: bold;
+  font-weight: 700;
   border: none;
-  border-radius: 8px;
+  border-radius: 16px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s ease;
+  box-shadow: var(--card-shadow);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .continue-btn:hover {
-  background: #2980b9;
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-medium) 100%);
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-lg);
 }
 
 .selected-card-display.compact :deep(.card-cell) {

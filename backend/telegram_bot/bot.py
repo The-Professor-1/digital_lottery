@@ -34,7 +34,7 @@ def ensure_db_connection():
     """Ensure database connection is fresh and valid"""
     try:
         # Close all existing connections to force fresh connections
-        # This is important for Neon databases that may have gone to sleep
+        # For EC2 single instance with local PostgreSQL, connections are more stable
         for conn in connections.all():
             try:
                 # Try to ensure connection is valid
@@ -76,13 +76,13 @@ def ensure_db_connection():
             pass
 
 
-async def db_operation_with_retry(operation, max_retries=5, retry_delay=2):
-    """Execute a database operation with retry logic for stale connections and machine wake-up
+async def db_operation_with_retry(operation, max_retries=3, retry_delay=1):
+    """Execute a database operation with retry logic for connection errors
     
-    Increased retries and delays to handle:
-    - Machine wake-up scenarios (can take 5-10 seconds)
-    - Database connection establishment after wake-up
-    - Neon database connection pool issues
+    Optimized for EC2 single instance with local PostgreSQL:
+    - Fewer retries needed (local DB is more stable)
+    - Shorter delays (local connections are faster)
+    - Handles connection errors and network issues
     """
     for attempt in range(max_retries):
         try:
@@ -93,14 +93,14 @@ async def db_operation_with_retry(operation, max_retries=5, retry_delay=2):
         except Exception as e:
             error_str = str(e).lower()
             error_type = type(e).__name__
-            # Check if it's a connection-related error (including Neon-specific errors)
+            # Check if it's a connection-related error
             connection_errors = [
                 'connection', 'closed', 'lost', 'timeout', 'server closed',
                 'operationalerror', 'interfaceerror', 'databaseerror',
                 'connection refused', 'connection reset', 'broken pipe',
                 'connection pool', 'connection limit', 'too many connections',
                 'server closed the connection', 'connection terminated',
-                'neon', 'pg_', 'postgresql', 'could not connect', 'network',
+                'postgresql', 'could not connect', 'network',
                 'unreachable', 'name resolution', 'dns'
             ]
             is_connection_error = (
@@ -112,20 +112,8 @@ async def db_operation_with_retry(operation, max_retries=5, retry_delay=2):
             
             if is_connection_error:
                 if attempt < max_retries - 1:
-                    # Check if this looks like a machine wake-up scenario (connection refused/unreachable)
-                    # vs a stale connection (connection closed/lost)
-                    wake_up_indicators = [
-                        'connection refused', 'could not connect', 'unreachable',
-                        'name resolution', 'dns', 'network', 'timeout'
-                    ]
-                    is_wake_up_scenario = any(indicator in error_str for indicator in wake_up_indicators)
-                    
-                    # Only use 5-second delay on first retry if it looks like machine wake-up
-                    # For stale connections, use shorter delays
-                    if attempt == 0 and is_wake_up_scenario:
-                        delay = 5  # Give machine time to wake up
-                    else:
-                        delay = retry_delay * (attempt + 1)  # Exponential backoff: 2s, 4s, 6s, 8s
+                    # Use exponential backoff for retries (optimized for EC2 single instance)
+                    delay = retry_delay * (attempt + 1)  # Exponential backoff: 1s, 2s, 3s
                     
                     logger.warning(f"Database connection error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay}s...")
                     # Close all connections before retry to force fresh connections
@@ -195,7 +183,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         logger.error(f"Error storing referrer: {e}")
                 
                 # Show registration prompt
-                welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+                welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
                 # Show only register button
                 keyboard = [
                     [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
@@ -241,7 +229,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.info(f"Created new user {user.id} with referrer {referrer_telegram_id}")
             
             # Show registration prompt
-            welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             # Show only register button
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
@@ -358,7 +346,7 @@ async def play_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Check if user is registered
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -383,7 +371,7 @@ async def play_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Generate JWT token
         token = generate_jwt_token(telegram_user)
         
-        # Create mini app URL - opens the web app on Fly.io
+        # Create mini app URL - opens the web app
         mini_app_url = f"{settings.TELEGRAM_WEB_APP_URL}?token={token}"
         logger.info(f"Opening web app for user {telegram_user.telegram_id}: {settings.TELEGRAM_WEB_APP_URL}")
         
@@ -507,7 +495,7 @@ async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if user is registered
     if not await is_user_registered(user.id):
-        welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+        welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
         keyboard = [
             [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
         ]
@@ -567,7 +555,7 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if user is registered
     if not await is_user_registered(user.id):
-        welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+        welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
         keyboard = [
             [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
         ]
@@ -635,7 +623,7 @@ async def transfer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Check if user is registered
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -709,7 +697,7 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if user is registered
     if not await is_user_registered(user.id):
-        welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+        welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
         keyboard = [
             [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
         ]
@@ -755,7 +743,7 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def instruction_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /instruction command"""
     instructions = (
-        "📋 አሪፍ ቢንጎ የጨዋታ መመሪያ:\n\n"
+        "📋 ጉድ ቢንጎ የጨዋታ መመሪያ:\n\n"
         "1. **ለመመዝገብ**: /register(ለመመዝገብ) የሚለውን ይጫኑ፡፡\n\n"
         "2. **ለመጫወት**:\n"
         "   - ጨዋታ ለመቀላቀል /play(ጨዋታ ለመጀመር) ይጫኑ፡፡\n"
@@ -834,7 +822,7 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Fix URL encoding - use proper encoding for Amharic text
     import urllib.parse
-    invite_text = "አሪፍ ቢንጎ ጨዋታ ይጫወቱ!"
+    invite_text = "ጉድ ቢንጎ ጨዋታ ይጫወቱ!"
     encoded_text = urllib.parse.quote(invite_text)
     share_url = f"https://t.me/share/url?url={urllib.parse.quote(invite_link)}&text={encoded_text}"
     
@@ -1049,7 +1037,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🎮 ጨዋታ ለመጀመር":
         # Check registration before allowing play
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -1063,7 +1051,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clear_financial_command_states(context)
         # Check registration before allowing deposit
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -1077,7 +1065,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clear_financial_command_states(context)
         # Check registration before allowing withdraw
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -1089,7 +1077,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "💵 ሂሳብዎን ለማወቅ":
         # Check registration before allowing balance
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -1103,7 +1091,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clear_financial_command_states(context)
         # Check registration before allowing transfer
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -1802,7 +1790,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await register_command(update, context)
     elif not is_registered:
         # User not registered, show registration prompt
-        welcome_msg = "እንኳን ወደ አሪፍ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+        welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
         keyboard = [
             [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
         ]
@@ -2087,7 +2075,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ping_health_endpoint():
-    """Ping health endpoint to wake machines on Fly.io"""
+    """Ping health endpoint to verify app is running"""
     try:
         import aiohttp
         api_url = settings.TELEGRAM_WEB_APP_URL or 'http://localhost:8000'

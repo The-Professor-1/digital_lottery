@@ -120,39 +120,25 @@ WSGI_APPLICATION = 'bingo.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.1/ref/settings/#databases
 
-# Use DATABASE_URL if available (set by Fly.io), otherwise use individual variables
-import dj_database_url
-
-DATABASE_URL = os.getenv('DATABASE_URL')
-if DATABASE_URL:
-    # Parse database URL with optimized connection pooling for memory efficiency
-    # Reduced conn_max_age to 300 (5 minutes) to prevent stale connections after idle wake-up
-    db_config = dj_database_url.parse(DATABASE_URL, conn_max_age=300)
-    # Additional database options for better performance and connection validation
-    if 'OPTIONS' not in db_config:
-        db_config['OPTIONS'] = {}
-    db_config['OPTIONS'].update({
-        'connect_timeout': 10,
-        # Note: statement_timeout removed - Neon pooled connections don't support it
-        # Use unpooled connection or set timeout at application level if needed
-    })
-    # Enable connection health checks
-    db_config['CONN_MAX_AGE'] = 300  # 5 minutes max connection age
-    DATABASES = {
-        'default': db_config
-    }
-else:
-    # Use individual environment variables
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('DB_NAME', 'bingo_db'),
-            'USER': os.getenv('DB_USER', 'postgres'),
-            'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
-            'HOST': os.getenv('DB_HOST', 'localhost'),
-            'PORT': os.getenv('DB_PORT', '5432'),
+# Database configuration for EC2 single instance
+# Optimized for PostgreSQL on same EC2 instance
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME', 'bingo_db'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
+        # Connection pooling for EC2 single instance
+        'CONN_MAX_AGE': 60,  # Keep connections alive for 60 seconds (reduced for single instance)
+        'OPTIONS': {
+            'connect_timeout': 10,
+            # Optimize for single instance PostgreSQL
+            'options': '-c statement_timeout=30000',  # 30 second statement timeout
         }
     }
+}
 
 
 # Password validation
@@ -250,7 +236,8 @@ if DEBUG:
 # Channels Configuration
 ASGI_APPLICATION = 'bingo.asgi.application'
 
-# Redis configuration - support both Upstash and standard Redis
+# Redis configuration for EC2 single instance
+# Redis runs on same EC2 instance (localhost)
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
 REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', None)
@@ -261,23 +248,30 @@ if REDIS_PASSWORD:
 else:
     REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
 
+# Channels (WebSocket) configuration - optimized for single instance
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [REDIS_URL],  # Use URL format which includes password
+            "hosts": [REDIS_URL],
+            "capacity": 1500,  # Maximum messages per channel (optimized for ~100 concurrent users)
+            "expiry": 10,  # Message expiry in seconds
         },
     },
 }
 
 # Django Cache Configuration - Use Redis for caching
-# Django 4.2+ has built-in Redis cache support
+# Optimized for EC2 single instance memory usage
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': REDIS_URL,
         'KEY_PREFIX': 'bingo_cache',
         'TIMEOUT': 300,  # Default 5 minutes timeout
+        'OPTIONS': {
+            'MAX_ENTRIES': 10000,  # Limit cache entries to manage memory
+            'CULL_FREQUENCY': 3,  # Cull 1/3 of entries when limit reached
+        }
     }
 }
 
@@ -323,23 +317,27 @@ CELERY_TASK_ROUTES = {
 # Ensure queues are created automatically
 CELERY_TASK_CREATE_MISSING_QUEUES = True
 
-# IMPORTANT: If queues don't exist or workers aren't listening, tasks will fail
-# The worker in start-celery.sh must listen to: gameplay,default,registration
+# IMPORTANT: Celery worker must listen to all queues: gameplay,default,registration
+# For EC2 single instance, use: celery -A bingo worker --concurrency=2 -Q gameplay,registration,default
 
 # Default queue for tasks without explicit routing
 CELERY_TASK_DEFAULT_QUEUE = 'default'
 CELERY_TASK_DEFAULT_EXCHANGE = 'default'
 CELERY_TASK_DEFAULT_ROUTING_KEY = 'default'
 
-# Memory optimization settings
+# Memory optimization settings for EC2 single instance (t3.micro/t3.small)
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 50  # Restart worker after 50 tasks to prevent memory leaks
-CELERY_WORKER_MAX_MEMORY_PER_CHILD = 200000  # Kill worker if it exceeds 200MB (in KB)
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 150000  # Kill worker if it exceeds 150MB (reduced for t3.micro)
 CELERY_TASK_IGNORE_RESULT = True  # Don't store task results to save memory
 CELERY_RESULT_EXPIRES = 3600  # Expire results after 1 hour
 
+# Worker concurrency for single instance (2-4 threads recommended for t3.micro)
+# Note: This is set via command line (celery -A bingo worker --concurrency=2)
+# CELERY_WORKER_CONCURRENCY = 2  # Set in systemd service file
+
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
-# Use Fly.io URL for production, localhost for local development
+# Web app URL (EC2 production or localhost for development)
 TELEGRAM_WEB_APP_URL = os.getenv('TELEGRAM_WEB_APP_URL', 'https://goodbingo.shop')
 
 # JWT Configuration
