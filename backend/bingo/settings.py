@@ -262,16 +262,15 @@ CHANNEL_LAYERS = {
 
 # Django Cache Configuration - Use Redis for caching
 # Optimized for EC2 single instance memory usage
+# Note: Django's built-in Redis cache backend doesn't support MAX_ENTRIES or CULL_FREQUENCY
+# Redis manages memory automatically via maxmemory policy configured in redis.conf
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': REDIS_URL,
         'KEY_PREFIX': 'bingo_cache',
         'TIMEOUT': 300,  # Default 5 minutes timeout
-        'OPTIONS': {
-            'MAX_ENTRIES': 10000,  # Limit cache entries to manage memory
-            'CULL_FREQUENCY': 3,  # Cull 1/3 of entries when limit reached
-        }
+        # No OPTIONS needed - Django's Redis cache backend uses minimal configuration
     }
 }
 

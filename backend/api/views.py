@@ -331,18 +331,28 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
             cache_key_state = f'game:current:state:{cache_key}'  # For state-only cache
             
             # Try short-term state cache first (1 second TTL)
-            cached_state = cache.get(cache_key_state)
-            if cached_state:
-                game_id = cached_state.get('id')
-                status = cached_state.get('status')
-                if game_id and status == 'active':
-                    # Active game - try full data cache
-                    cached_data = cache.get(cache_key)
-                    if cached_data:
-                        return Response(cached_data)
+            # Wrap in try-except to handle Redis connection failures gracefully
+            try:
+                cached_state = cache.get(cache_key_state)
+                if cached_state:
+                    game_id = cached_state.get('id')
+                    status = cached_state.get('status')
+                    if game_id and status == 'active':
+                        # Active game - try full data cache
+                        cached_data = cache.get(cache_key)
+                        if cached_data:
+                            return Response(cached_data)
+            except Exception as cache_error:
+                # Redis connection failed - log and continue without cache
+                print(f"WARNING: Cache read failed (will continue without cache): {cache_error}")
             
             # Try medium-term full data cache (5 seconds)
-            cached_data = cache.get(cache_key)
+            try:
+                cached_data = cache.get(cache_key)
+            except Exception as cache_error:
+                # Redis connection failed - continue without cache
+                print(f"WARNING: Cache read failed (will continue without cache): {cache_error}")
+                cached_data = None
             game = None
             
             if cached_data is not None:
@@ -396,10 +406,13 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                 try:
                     settings = GameSettings.get_settings()
                     if game.bet_amount != settings.bid_amount:
-                        game.bet_amount = settings.bid_amount
-                        game.save(update_fields=['bet_amount'])
-                        # Invalidate cache when game is updated
+                    game.bet_amount = settings.bid_amount
+                    game.save(update_fields=['bet_amount'])
+                    # Invalidate cache when game is updated
+                    try:
                         cache.delete(cache_key)
+                    except Exception:
+                        pass  # Ignore cache errors
                 except Exception as e:
                     print(f"ERROR: Failed to get settings for bet_amount update: {e}")
                     import traceback
@@ -424,7 +437,10 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                                 game.refresh_from_db()
                                 game.recalculate_derash()
                                 # Invalidate cache to get updated game data
-                                cache.delete(cache_key)
+                                try:
+                                    cache.delete(cache_key)
+                                except Exception:
+                                    pass  # Ignore cache errors
                         except Exception as e:
                             # If fake user addition fails (e.g., migration not run), log and continue
                             print(f"ERROR: Failed to add fake users to game {game.id}: {e}")
@@ -594,14 +610,19 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
             
             # PHASE 2 OPTIMIZATION #1: Multi-level caching
             # Cache state (minimal data) for 1 second - for quick status checks
-            cache.set(cache_key_state, {
-                'id': game.id,
-                'status': game.status,
-                'created_at': game.created_at.isoformat() if game.created_at else None
-            }, 1)
-            
-            # Cache full game data for 5 seconds (medium-term cache)
-            cache.set(cache_key, game_data, 5)
+            # Wrap in try-except to handle Redis connection failures gracefully
+            try:
+                cache.set(cache_key_state, {
+                    'id': game.id,
+                    'status': game.status,
+                    'created_at': game.created_at.isoformat() if game.created_at else None
+                }, 1)
+                
+                # Cache full game data for 5 seconds (medium-term cache)
+                cache.set(cache_key, game_data, 5)
+            except Exception as cache_error:
+                # Redis connection failed - log but don't crash
+                print(f"WARNING: Cache write failed (game data still returned): {cache_error}")
             
             return Response(game_data)
         except Exception as e:
