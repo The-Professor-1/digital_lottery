@@ -314,7 +314,7 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = GameSerializer
     permission_classes = [AllowAny]  # Allow unauthenticated access for testing
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def current(self, request):
         """Get current active or waiting game"""
         try:
