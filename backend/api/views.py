@@ -317,96 +317,97 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'])
     def current(self, request):
         """Get current active or waiting game"""
-        from django.core.cache import cache
-        from .auto_game_manager import check_and_create_new_game
-        from .models import GameSettings
-        
-        # PHASE 2 OPTIMIZATION #1: Multi-level caching with different TTLs
-        # Level 1: Short-term cache (1-2 seconds) - Game state (status, basic info)
-        # Level 2: Medium-term cache (5 seconds) - Full game data
-        # Level 3: Long-term cache (30-60 seconds) - Static settings
-        
-        cache_key = 'game:current'
-        cache_key_state = f'game:current:state:{cache_key}'  # For state-only cache
-        
-        # Try short-term state cache first (1 second TTL)
-        cached_state = cache.get(cache_key_state)
-        if cached_state:
-            game_id = cached_state.get('id')
-            status = cached_state.get('status')
-            if game_id and status == 'active':
-                # Active game - try full data cache
-                cached_data = cache.get(cache_key)
-                if cached_data:
-                    return Response(cached_data)
-        
-        # Try medium-term full data cache (5 seconds)
-        cached_data = cache.get(cache_key)
-        game = None
-        
-        if cached_data is not None:
-            # Check if game still exists and is still current
-            game_id = cached_data.get('id')
-            if game_id:
-                # Use only() to fetch minimal fields for validation
-                game = Game.objects.filter(id=game_id).only('id', 'status', 'created_at').first()
-                if game and game.status in ['active', 'waiting']:
-                    # For active games, return cached data immediately (5-second cache)
-                    if game.status == 'active':
-                        # Also cache state for faster future checks
-                        cache.set(cache_key_state, {'id': game_id, 'status': 'active'}, 1)
+        try:
+            from django.core.cache import cache
+            from .auto_game_manager import check_and_create_new_game
+            from .models import GameSettings
+            
+            # PHASE 2 OPTIMIZATION #1: Multi-level caching with different TTLs
+            # Level 1: Short-term cache (1-2 seconds) - Game state (status, basic info)
+            # Level 2: Medium-term cache (5 seconds) - Full game data
+            # Level 3: Long-term cache (30-60 seconds) - Static settings
+            
+            cache_key = 'game:current'
+            cache_key_state = f'game:current:state:{cache_key}'  # For state-only cache
+            
+            # Try short-term state cache first (1 second TTL)
+            cached_state = cache.get(cache_key_state)
+            if cached_state:
+                game_id = cached_state.get('id')
+                status = cached_state.get('status')
+                if game_id and status == 'active':
+                    # Active game - try full data cache
+                    cached_data = cache.get(cache_key)
+                    if cached_data:
                         return Response(cached_data)
-                    # For waiting games, continue to check fake users below
-        
-        # Cache miss or waiting game - fetch from database with optimized query
-        if not game:
-            # OPTIMIZATION #5: Use select_related and prefetch_related for efficient queries
-            game = Game.objects.filter(
-                Q(status='active') | Q(status='waiting')
-            ).select_related('winner').prefetch_related('winners').order_by('-created_at').first()
-        
-        # If no game exists, create a new one
-        # CRITICAL: Only create new game if the last completed game finished at least 8 seconds ago
-        # This ensures users have time to see the winner banner before a new game is created
-        if not game:
-            from django.utils import timezone
-            from datetime import timedelta
             
-            # Check when the last game completed
-            last_completed = Game.objects.filter(status='completed').order_by('-completed_at').first()
+            # Try medium-term full data cache (5 seconds)
+            cached_data = cache.get(cache_key)
+            game = None
             
-            if last_completed and last_completed.completed_at:
-                time_since_completion = timezone.now() - last_completed.completed_at
-                # Don't create new game if winner banner is still showing (8 seconds)
-                # Add 2 seconds buffer for navigation
-                min_time_since_completion = 10  # 8s banner + 2s buffer
+            if cached_data is not None:
+                # Check if game still exists and is still current
+                game_id = cached_data.get('id')
+                if game_id:
+                    # Use only() to fetch minimal fields for validation
+                    game = Game.objects.filter(id=game_id).only('id', 'status', 'created_at').first()
+                    if game and game.status in ['active', 'waiting']:
+                        # For active games, return cached data immediately (5-second cache)
+                        if game.status == 'active':
+                            # Also cache state for faster future checks
+                            cache.set(cache_key_state, {'id': game_id, 'status': 'active'}, 1)
+                            return Response(cached_data)
+                        # For waiting games, continue to check fake users below
+            
+            # Cache miss or waiting game - fetch from database with optimized query
+            if not game:
+                # OPTIMIZATION #5: Use select_related and prefetch_related for efficient queries
+                game = Game.objects.filter(
+                    Q(status='active') | Q(status='waiting')
+                ).select_related('winner').prefetch_related('winners').order_by('-created_at').first()
+            
+            # If no game exists, create a new one
+            # CRITICAL: Only create new game if the last completed game finished at least 8 seconds ago
+            # This ensures users have time to see the winner banner before a new game is created
+            if not game:
+                from django.utils import timezone
+                from datetime import timedelta
                 
-                if time_since_completion.total_seconds() < min_time_since_completion:
-                    # Too soon after completion, return 404 to let frontend handle it
+                # Check when the last game completed
+                last_completed = Game.objects.filter(status='completed').order_by('-completed_at').first()
+                
+                if last_completed and last_completed.completed_at:
+                    time_since_completion = timezone.now() - last_completed.completed_at
+                    # Don't create new game if winner banner is still showing (8 seconds)
+                    # Add 2 seconds buffer for navigation
+                    min_time_since_completion = 10  # 8s banner + 2s buffer
+                    
+                    if time_since_completion.total_seconds() < min_time_since_completion:
+                        # Too soon after completion, return 404 to let frontend handle it
+                        return Response({'message': 'No active game'}, status=status.HTTP_404_NOT_FOUND)
+                
+                # Safe to create new game now
+                game = check_and_create_new_game()
+                if not game:
                     return Response({'message': 'No active game'}, status=status.HTTP_404_NOT_FOUND)
             
-            # Safe to create new game now
-            game = check_and_create_new_game()
-            if not game:
-                return Response({'message': 'No active game'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Update bet_amount for waiting games to match current settings (if no cards selected yet)
-        if game.status == 'waiting' and game.gamecards.count() == 0:
-            try:
-                settings = GameSettings.get_settings()
-                if game.bet_amount != settings.bid_amount:
-                    game.bet_amount = settings.bid_amount
-                    game.save(update_fields=['bet_amount'])
-                    # Invalidate cache when game is updated
-                    cache.delete(cache_key)
-            except Exception as e:
-                print(f"ERROR: Failed to get settings for bet_amount update: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Ensure fake users are added if system accounts are enabled (for waiting games)
-        settings = None
-        if game.status == 'waiting':
+            # Update bet_amount for waiting games to match current settings (if no cards selected yet)
+            if game.status == 'waiting' and game.gamecards.count() == 0:
+                try:
+                    settings = GameSettings.get_settings()
+                    if game.bet_amount != settings.bid_amount:
+                        game.bet_amount = settings.bid_amount
+                        game.save(update_fields=['bet_amount'])
+                        # Invalidate cache when game is updated
+                        cache.delete(cache_key)
+                except Exception as e:
+                    print(f"ERROR: Failed to get settings for bet_amount update: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Ensure fake users are added if system accounts are enabled (for waiting games)
+            settings = None
+            if game.status == 'waiting':
             try:
                 settings = GameSettings.get_settings()
                 # Use getattr to safely check allow_system_account
@@ -555,54 +556,81 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                     print(f"Game {game.id}: Timer elapsed ({elapsed_time.total_seconds():.1f}s) but grace period not passed ({game_age:.1f}s < {min_game_age_seconds}s). Waiting...")
                     success = False
         
-        # Refresh game before returning
-        game.refresh_from_db()
-        
-        # Recalculate derash for WAITING games to ensure accuracy
-        # For ACTIVE games, verify consistency but don't recalculate (to avoid desync)
-        if game.status == 'waiting':
-            # Recalculate derash for waiting games to ensure accuracy
-            # This ensures derash includes fake users even when game is waiting
-            game.recalculate_derash()
+            # Refresh game before returning
             game.refresh_from_db()
-        elif game.status == 'active':
-            # For active games, verify consistency between derash and player count
-            # If there's a mismatch, fix it (but this should rarely happen)
-            from decimal import Decimal
-            from .models import GameSettings
-            settings = GameSettings.get_settings()
-            bid_amount = Decimal(str(settings.bid_amount))
-            percentage_cut = Decimal(str(settings.percentage_cut))
             
-            # Get actual player count
-            actual_player_count = game.total_players
-            
-            # Calculate expected derash based on actual player count
-            expected_derash = (Decimal(str(actual_player_count)) * bid_amount) - ((Decimal(str(actual_player_count)) * bid_amount * percentage_cut) / Decimal('100'))
-            
-            # Check if derash matches player count (allow small rounding differences)
-            if abs(game.derash_amount - expected_derash) > Decimal('0.01'):
-                # Mismatch detected - fix it
-                print(f"WARNING: Derash/player count mismatch in active game {game.id}. Players: {actual_player_count}, Derash: {game.derash_amount}, Expected: {expected_derash}. Fixing...")
-                game.derash_amount = expected_derash
-                game.save(update_fields=['derash_amount'])
+            # Recalculate derash for WAITING games to ensure accuracy
+            # For ACTIVE games, verify consistency but don't recalculate (to avoid desync)
+            if game.status == 'waiting':
+                # Recalculate derash for waiting games to ensure accuracy
+                # This ensures derash includes fake users even when game is waiting
+                game.recalculate_derash()
                 game.refresh_from_db()
-        
-        serializer = self.get_serializer(game)
-        game_data = serializer.data
-        
-        # PHASE 2 OPTIMIZATION #1: Multi-level caching
-        # Cache state (minimal data) for 1 second - for quick status checks
-        cache.set(cache_key_state, {
-            'id': game.id,
-            'status': game.status,
-            'created_at': game.created_at.isoformat() if game.created_at else None
-        }, 1)
-        
-        # Cache full game data for 5 seconds (medium-term cache)
-        cache.set(cache_key, game_data, 5)
-        
-        return Response(game_data)
+            elif game.status == 'active':
+                # For active games, verify consistency between derash and player count
+                # If there's a mismatch, fix it (but this should rarely happen)
+                from decimal import Decimal
+                from .models import GameSettings
+                settings = GameSettings.get_settings()
+                bid_amount = Decimal(str(settings.bid_amount))
+                percentage_cut = Decimal(str(settings.percentage_cut))
+                
+                # Get actual player count
+                actual_player_count = game.total_players
+                
+                # Calculate expected derash based on actual player count
+                expected_derash = (Decimal(str(actual_player_count)) * bid_amount) - ((Decimal(str(actual_player_count)) * bid_amount * percentage_cut) / Decimal('100'))
+                
+                # Check if derash matches player count (allow small rounding differences)
+                if abs(game.derash_amount - expected_derash) > Decimal('0.01'):
+                    # Mismatch detected - fix it
+                    print(f"WARNING: Derash/player count mismatch in active game {game.id}. Players: {actual_player_count}, Derash: {game.derash_amount}, Expected: {expected_derash}. Fixing...")
+                    game.derash_amount = expected_derash
+                    game.save(update_fields=['derash_amount'])
+                    game.refresh_from_db()
+            
+            serializer = self.get_serializer(game)
+            game_data = serializer.data
+            
+            # PHASE 2 OPTIMIZATION #1: Multi-level caching
+            # Cache state (minimal data) for 1 second - for quick status checks
+            cache.set(cache_key_state, {
+                'id': game.id,
+                'status': game.status,
+                'created_at': game.created_at.isoformat() if game.created_at else None
+            }, 1)
+            
+            # Cache full game data for 5 seconds (medium-term cache)
+            cache.set(cache_key, game_data, 5)
+            
+            return Response(game_data)
+        except Exception as e:
+            # Log the full error for debugging
+            import logging
+            import traceback
+            logger = logging.getLogger(__name__)
+            error_trace = traceback.format_exc()
+            logger.error(f"ERROR in /api/games/current/: {str(e)}\n{error_trace}")
+            print(f"ERROR in /api/games/current/: {str(e)}")
+            print(error_trace)
+            
+            # Try to return a graceful error response
+            # If we can at least get a game, return it even if there was an error
+            try:
+                game = Game.objects.filter(
+                    Q(status='active') | Q(status='waiting')
+                ).order_by('-created_at').first()
+                if game:
+                    serializer = self.get_serializer(game)
+                    return Response(serializer.data)
+            except:
+                pass
+            
+            # If all else fails, return a 500 error with details
+            return Response(
+                {'error': 'Internal server error while fetching game', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=['post'])
     def select_card(self, request, pk=None):
