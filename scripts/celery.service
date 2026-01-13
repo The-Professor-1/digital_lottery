@@ -1,0 +1,18 @@
+[Unit]
+Description=Celery worker daemon for Bingo game
+After=network.target redis.service postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apps/good-bingo/arif_bingo/backend
+Environment="PATH=/home/ubuntu/apps/good-bingo/venv/bin"
+Environment="DJANGO_SETTINGS_MODULE=bingo.settings"
+ExecStart=/home/ubuntu/apps/good-bingo/venv/bin/celery -A bingo worker --concurrency=2 -Q gameplay,registration,default --loglevel=info
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+
