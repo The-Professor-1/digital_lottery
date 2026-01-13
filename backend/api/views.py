@@ -406,13 +406,13 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                 try:
                     settings = GameSettings.get_settings()
                     if game.bet_amount != settings.bid_amount:
-                    game.bet_amount = settings.bid_amount
-                    game.save(update_fields=['bet_amount'])
-                    # Invalidate cache when game is updated
-                    try:
-                        cache.delete(cache_key)
-                    except Exception:
-                        pass  # Ignore cache errors
+                        game.bet_amount = settings.bid_amount
+                        game.save(update_fields=['bet_amount'])
+                        # Invalidate cache when game is updated
+                        try:
+                            cache.delete(cache_key)
+                        except Exception:
+                            pass  # Ignore cache errors
                 except Exception as e:
                     print(f"ERROR: Failed to get settings for bet_amount update: {e}")
                     import traceback
