@@ -709,19 +709,8 @@ def start_game(game: Game) -> bool:
     if game.status != 'waiting':
         return False
     
-    # CRITICAL: Grace period to prevent premature game start
-    # Don't allow game to start if it was created less than 10 seconds ago
-    # This prevents race condition where game starts before users see card selection page
-    # The 10 seconds comes from: 8 seconds (winner banner) + 2 seconds (buffer)
-    # Note: Card selection timer (25s) is longer, but this grace period ensures minimum safety
-    from django.utils import timezone
-    from datetime import timedelta
-    
-    min_game_age_seconds = 10  # 10 second grace period (8s banner + 2s buffer)
-    game_age = timezone.now() - game.created_at
-    if game_age.total_seconds() < min_game_age_seconds:
-        print(f"Game {game.id} too new to start (created {game_age.total_seconds():.1f}s ago, need {min_game_age_seconds}s grace period)")
-        return False
+    # No grace period needed - game starts immediately when timer ends
+    # State transitions are handled atomically with locks
     
     # CRITICAL: Cache game settings at game start to prevent mid-game changes
     # This ensures settings remain consistent throughout the active game

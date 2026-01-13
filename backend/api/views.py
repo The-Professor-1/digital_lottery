@@ -386,15 +386,8 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                 # Check when the last game completed
                 last_completed = Game.objects.filter(status='completed').order_by('-completed_at').first()
                 
-                if last_completed and last_completed.completed_at:
-                    time_since_completion = timezone.now() - last_completed.completed_at
-                    # Don't create new game if winner banner is still showing (8 seconds)
-                    # Add 2 seconds buffer for navigation
-                    min_time_since_completion = 10  # 8s banner + 2s buffer
-                    
-                    if time_since_completion.total_seconds() < min_time_since_completion:
-                        # Too soon after completion, return 404 to let frontend handle it
-                        return Response({'message': 'No active game'}, status=status.HTTP_404_NOT_FOUND)
+                # No delay needed - create game immediately after completion
+                # State transitions are handled atomically with locks
                 
                 # Safe to create new game now
                 game = check_and_create_new_game()
@@ -466,15 +459,9 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                 elapsed_time = timezone.now() - game.created_at
                 timer_seconds = getattr(settings, 'card_selection_timer', 30)
                 
-                # CRITICAL: Also check grace period to prevent premature starts
-                # The grace period ensures users have time to see winner banner and navigate to card selection
-                min_game_age_seconds = 10  # 10 second grace period (8s banner + 2s buffer)
-                game_age = elapsed_time.total_seconds()
-                
-                # Only start if BOTH conditions are met:
-                # 1. Card selection timer has elapsed
-                # 2. Game is old enough (grace period passed)
-                if elapsed_time.total_seconds() >= timer_seconds and game_age >= min_game_age_seconds:
+                # Start immediately when timer elapses (no grace period needed)
+                # State transitions are handled atomically with locks
+                if elapsed_time.total_seconds() >= timer_seconds:
                     from .game_logic import start_game
                     from .fake_user_manager import get_fake_user_count_for_game
                     
@@ -549,8 +536,8 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                                         task = task_call_next_number
                                         print(f"⚠️ Auto-started Game {game.id}: Task not found by name, using direct import")
                                     
-                                    result = task.apply_async(args=[game.id], countdown=3)
-                                    print(f"✅ Auto-started Game {game.id}: Scheduled first number call in 3 seconds (task_id: {result.id}, task_name: {result.name})")
+                                    result = task.apply_async(args=[game.id], countdown=1)
+                                    print(f"✅ Auto-started Game {game.id}: Scheduled first number call in 1 second (task_id: {result.id}, task_name: {result.name})")
                                     success = True
                                 except Exception as e:
                                     print(f"❌ ERROR: Failed to schedule task_call_next_number for auto-started game {game.id}: {e}")
@@ -567,10 +554,6 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                                         import traceback
                                         traceback.print_exc()
                                         success = False
-                elif elapsed_time.total_seconds() >= timer_seconds and game_age < min_game_age_seconds:
-                    # Timer elapsed but grace period not passed - log and skip
-                    print(f"Game {game.id}: Timer elapsed ({elapsed_time.total_seconds():.1f}s) but grace period not passed ({game_age:.1f}s < {min_game_age_seconds}s). Waiting...")
-                    success = False
         
             # Refresh game before returning
             game.refresh_from_db()
@@ -1460,12 +1443,12 @@ def start_game(request, game_id):
                     task = task_call_next_number
                     print(f"⚠️ Game {game.id}: Task not found by name, using direct import")
                 
-                result = task.apply_async(args=[game.id], countdown=3)
-                print(f"✅ Game {game.id}: Scheduled first number call in 3 seconds (task_id: {result.id}, task_name: {result.name})")
+                result = task.apply_async(args=[game.id], countdown=1)
+                print(f"✅ Game {game.id}: Scheduled first number call in 1 second (task_id: {result.id}, task_name: {result.name})")
                 # Also log to Django logger for better visibility
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.info(f"Game {game.id}: Scheduled task_call_next_number with task_id {result.id}, countdown=3, task_name={result.name}")
+                logger.info(f"Game {game.id}: Scheduled task_call_next_number with task_id {result.id}, countdown=1, task_name={result.name}")
             except Exception as e:
                 print(f"❌ ERROR: Failed to schedule task_call_next_number for game {game.id}: {e}")
                 import traceback

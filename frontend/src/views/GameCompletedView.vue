@@ -9,10 +9,7 @@
     />
     <div class="next-game-container">
       <div class="next-game-message">
-        <p>የሚቀጥለውን ጨዋታ ለመጀመር...</p>
-      </div>
-      <div class="timer-container">
-        <Timer :seconds="timerSeconds" :large="true" />
+        <p>የሚቀጥለውን ጨዋታ ለመጀመር በመጠባበቅ ላይ...</p>
       </div>
     </div>
   </div>
@@ -21,47 +18,41 @@
 <script>
 import GameStatus from '../components/GameStatus.vue'
 import WinnerBanner from '../components/WinnerBanner.vue'
-import Timer from '../components/Timer.vue'
 import { getCurrentGame, getCard } from '../services/api'
 
 export default {
   name: 'GameCompletedView',
   components: {
     GameStatus,
-    WinnerBanner,
-    Timer
+    WinnerBanner
   },
   data() {
     return {
       game: null,
-      timerSeconds: 10, // Changed from 30 to 10 seconds
       interval: null,
-      timerInterval: null,
-      winnerCard: null
+      winnerCard: null,
+      redirecting: false
     }
   },
   async mounted() {
-    // Start timer immediately (don't wait for API call) to prevent blank page
-    this.startTimer()
-    // Load game in background (non-blocking)
+    // Load game immediately and redirect as soon as new game is available
     this.loadGame()
-    this.interval = setInterval(this.loadGame, 3000) // Hardcoded 3 seconds
+    // Poll more frequently for faster transition (1 second)
+    this.interval = setInterval(this.loadGame, 1000)
   },
   beforeUnmount() {
     if (this.interval) {
       clearInterval(this.interval)
     }
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval)
-    }
   },
   methods: {
     async loadGame() {
+      // Prevent multiple redirects
+      if (this.redirecting) return
+      
       try {
         const game = await getCurrentGame()
         this.game = game
-        
-        // Timer is fixed to 10 seconds, no need to update from settings
         
         // Load winner's card if there's a winner
         if (game && game.winner && game.gamecards && game.gamecards.length > 0) {
@@ -76,82 +67,25 @@ export default {
           }
         }
         
-        // Redirect immediately if new game starts (don't wait for timer)
-        if (game && game.status === 'waiting') {
-          // Stop timer and redirect immediately
-          if (this.timerInterval) {
-            clearInterval(this.timerInterval)
-            this.timerInterval = null
-          }
+        // Redirect immediately if new game is available (no timer needed)
+        if (game && (game.status === 'waiting' || game.status === 'active')) {
+          this.redirecting = true
           if (this.interval) {
             clearInterval(this.interval)
             this.interval = null
           }
-          this.$router.push('/select-card')
-        } else if (game && game.status === 'active') {
-          // Stop timer and redirect immediately
-          if (this.timerInterval) {
-            clearInterval(this.timerInterval)
-            this.timerInterval = null
+          
+          if (game.status === 'waiting') {
+            this.$router.push('/select-card').catch(() => {})
+          } else if (game.status === 'active') {
+            this.$router.push('/game').catch(() => {})
           }
-          if (this.interval) {
-            clearInterval(this.interval)
-            this.interval = null
-          }
-          this.$router.push('/game')
         }
       } catch (error) {
-        // No game found - this is OK, we'll wait for timer to finish
-        // The timer will handle redirecting to card selection
+        // No game found - backend should create one soon, keep polling
         if (error.response?.status === 404) {
-          console.log('No game found, waiting for timer to finish...')
-          // Don't redirect immediately - let timer finish first
+          console.log('No game found yet, waiting for backend to create one...')
         }
-      }
-    },
-    startTimer() {
-      // Fixed to 10 seconds for next game countdown
-      this.timerSeconds = 10
-      
-      this.timerInterval = setInterval(() => {
-        if (this.timerSeconds > 0) {
-          this.timerSeconds--
-        } else {
-          clearInterval(this.timerInterval)
-          this.timerInterval = null
-          // Timer ended, create new game or redirect to card selection
-          this.createNewGame()
-        }
-      }, 1000)
-    },
-    async createNewGame() {
-      try {
-        // Try to get current game first
-        const game = await getCurrentGame()
-        if (game && game.status === 'waiting') {
-          this.$router.push('/select-card')
-        } else if (game && game.status === 'active') {
-          this.$router.push('/game')
-        } else {
-          // Game might be creating, wait a bit and check again
-          setTimeout(async () => {
-            try {
-              const game = await getCurrentGame()
-              if (game && game.status === 'waiting') {
-                this.$router.push('/select-card')
-              } else if (game && game.status === 'active') {
-                this.$router.push('/game')
-              }
-            } catch (error) {
-              // Still no game, redirect to card selection (backend should create one)
-              this.$router.push('/select-card')
-            }
-          }, 1000)
-        }
-      } catch (error) {
-        // No game exists yet, redirect to card selection
-        // The backend should auto-create games, so card selection will trigger it
-        this.$router.push('/select-card')
       }
     }
   }

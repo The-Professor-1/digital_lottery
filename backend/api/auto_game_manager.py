@@ -38,16 +38,6 @@ def create_new_game_after_completion(completed_game, lock_acquired=False):
             print(f"CRITICAL: Found existing game {existing_game.id} (status: {existing_game.status}) - not creating new game")
             return existing_game
         
-        # Add delay before creating new game to give real players time to join card selection
-        import time
-        time.sleep(5)  # 5 second delay before creating new game
-        
-        # CRITICAL: Triple-check after delay (another process might have created one during delay)
-        existing_game = Game.objects.filter(status__in=['waiting', 'active']).first()
-        if existing_game:
-            print(f"CRITICAL: Found existing game {existing_game.id} after delay - not creating new game")
-            return existing_game
-        
         # Get settings from database
         settings = GameSettings.get_settings()
         # Create new game with bet amount from settings
