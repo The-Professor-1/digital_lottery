@@ -407,6 +407,12 @@ export default {
             if (hasNewNumbers) {
               this.calledNumbers = newCalledNumbers
               
+              // ATOMIC FIX: Update current_call_count to match actual called numbers length
+              // This ensures the count displayed matches the actual numbers on the bingo board
+              if (this.game) {
+                this.game.current_call_count = this.calledNumbers.length
+              }
+              
               if (game.called_numbers.length > 0) {
                 const lastCall = game.called_numbers[game.called_numbers.length - 1]
                 const callKey = `${lastCall.letter}-${lastCall.number}`
@@ -561,9 +567,16 @@ export default {
           this.calledNumbers.push(data.number)
         }
         
-        // Update game's current_call_count if provided in WebSocket data
-        if (data.call_count !== undefined && this.game) {
-          this.game.current_call_count = data.call_count
+        // ATOMIC FIX: Update game's current_call_count to match actual called numbers length
+        // This ensures the count displayed matches the actual numbers on the bingo board
+        if (this.game) {
+          // Use the actual length of calledNumbers array as the source of truth
+          this.game.current_call_count = this.calledNumbers.length
+          // Also update from WebSocket data if provided (for consistency)
+          if (data.call_count !== undefined) {
+            // Ensure it matches our array length
+            this.game.current_call_count = Math.max(this.calledNumbers.length, data.call_count)
+          }
         }
         
         // Clear any existing timeout
@@ -697,12 +710,20 @@ export default {
           this.game.status = 'completed'
         }
         
+        // ATOMIC FIX: Stop all polling and state updates BEFORE showing banner
+        // This prevents any race conditions that might skip the banner
+        if (this.interval) {
+          clearInterval(this.interval)
+          this.interval = null
+        }
+        
         // Record when winner banner is shown - enforce 8-second minimum display
         this.winnerBannerShownAt = Date.now()
         
         // CRITICAL: Set banner visibility flag IMMEDIATELY - this is independent of winner data
         // This prevents banner from disappearing due to state updates/re-renders
         this.showWinnerBanner = true
+        this._winnerBannerActive = true
         
         // Stop ALL automatic mode behavior immediately when winner is declared
         this.canClaimBingo = false
@@ -1402,27 +1423,26 @@ export default {
       }
     },
     handleWinnerRedirect() {
-      // Ensure at least 5 seconds have passed since banner was shown
-      const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : 5000
-      if (timeSinceBannerShown < 5000) {
-        // Wait for remaining time
-        setTimeout(() => {
-          this.handleWinnerRedirect()
-        }, 5000 - timeSinceBannerShown)
-        return
-      }
-      
-      // Stop interval before redirecting
+      // ATOMIC TRANSITION: Ensure all state is clean before redirecting
+      // Stop all intervals and WebSocket connections
       if (this.interval) {
         clearInterval(this.interval)
         this.interval = null
       }
+      if (this.ws) {
+        this.ws.disconnect()
+        this.ws = null
+      }
       
-      // Clear winner banner timestamp and flag
-      this.winnerBannerShownAt = null
+      // Reset winner banner flags
+      this.showWinnerBanner = false
       this._winnerBannerActive = false
+      this.winnerBannerShownAt = null
       
-      this.$router.push('/completed')
+      // Redirect to completed view (which will then redirect to card selection if new game is ready)
+      this.$router.push('/completed').catch(() => {
+        // Ignore navigation errors
+      })
     },
     showNotification(message, type = 'info') {
       this.notificationMessage = message

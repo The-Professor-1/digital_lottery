@@ -284,7 +284,7 @@ export default {
           // If game is active but user has NO card, allow them to select a card
           if (game.status === 'active' && !this.isRedirecting && this.selectedCard) {
             // User has a card and game is active - redirect to game view
-            // Clear timer and interval if game becomes active
+            // ATOMIC TRANSITION: Stop all updates before redirecting to prevent glitches
             if (this.timerInterval) {
               clearInterval(this.timerInterval)
               this.timerInterval = null
@@ -293,11 +293,20 @@ export default {
               clearInterval(this.interval)
               this.interval = null
             }
-            // Set redirecting flag
+            // Stop WebSocket updates
+            if (this.ws) {
+              this.ws.disconnect()
+              this.ws = null
+            }
+            // Set redirecting flag BEFORE navigation to prevent any state updates
             this.isRedirecting = true
-            // Redirect immediately
-            this.$router.push('/game').catch(() => {
-              // Ignore navigation errors
+            // Update game state atomically before redirect
+            this.game = game
+            // Use nextTick to ensure state is updated before navigation
+            this.$nextTick(() => {
+              this.$router.push('/game').catch(() => {
+                // Ignore navigation errors
+              })
             })
             return // Stop further execution
           }
@@ -502,23 +511,31 @@ export default {
         this.interval = null
       }
       
+      // Stop WebSocket to prevent state updates during transition
+      if (this.ws) {
+        this.ws.disconnect()
+        this.ws = null
+      }
+      
       try {
         // Call API to start game using the API service
         console.log('Calling start game API for game:', this.game.id)
         const gameData = await startGame(this.game.id)
-        this.game = gameData
         
-        // Update game status immediately
+        // ATOMIC TRANSITION: Update state atomically before redirect
+        this.game = gameData
         this.game.status = 'active'
         
         console.log('Game started successfully:', gameData)
         
-        // Set redirecting flag
+        // Set redirecting flag BEFORE navigation
         this.isRedirecting = true
         
-        // Redirect immediately without delay
-        this.$router.push('/game').catch(() => {
-          // Ignore navigation errors (e.g., already navigating)
+        // Use nextTick to ensure state is updated before navigation
+        this.$nextTick(() => {
+          this.$router.push('/game').catch(() => {
+            // Ignore navigation errors (e.g., already navigating)
+          })
         })
       } catch (error) {
         console.error('Error starting game:', error)

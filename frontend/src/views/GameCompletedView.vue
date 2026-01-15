@@ -7,11 +7,6 @@
       :prize="game.total_derash"
       :winner-card="winnerCard"
     />
-    <div class="next-game-container">
-      <div class="next-game-message">
-        <p>የሚቀጥለውን ጨዋታ ለመጀመር በመጠባበቅ ላይ...</p>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -99,32 +94,5 @@ export default {
   position: relative;
 }
 
-.next-game-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  padding: 20px;
-}
-
-.next-game-message {
-  text-align: center;
-  padding: 20px;
-  margin-bottom: 40px;
-}
-
-.next-game-message p {
-  font-size: 24px;
-  color: var(--primary-dark);
-  font-weight: bold;
-}
-
-.timer-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-}
 </style>
 

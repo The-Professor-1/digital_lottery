@@ -1420,8 +1420,11 @@ def task_select_single_fake_card(self, game_id: int, fake_user_id: int):
 @shared_task(bind=True, max_retries=3)
 def task_simulate_fake_user_selections(self, game_id: int, fake_user_ids: List[int]):
     """
-    Simulate fake user card selections with staggered delays and card changes
-    This task schedules individual selections with delays and simulates card changes
+    Simulate fake user card selections in batches every 2 seconds
+    - Select random amount of fake users
+    - Show them selecting in batches every 2 seconds
+    - Leave 5 seconds at the end for state management
+    - No unselection - once selected, remain selected
     """
     try:
         from .models import FakeUser, FakeUserGameCard
@@ -1440,46 +1443,77 @@ def task_simulate_fake_user_selections(self, game_id: int, fake_user_ids: List[i
         if not fake_users.exists():
             return {'error': 'No active fake users found', 'stopped': True}
         
-        # Schedule initial selections with staggered delays
-        # IMPORTANT: All selections must complete within card_selection_timer
-        # Get timer from settings to calculate max delay per user
+        # Get timer from settings
         from .models import GameSettings
         settings = GameSettings.get_settings()
         timer_seconds = settings.card_selection_timer
         
-        # Calculate max delay per user to ensure all finish before timer ends
-        # Reserve 10 seconds buffer at the end to ensure all selections complete
-        # Distribute remaining time across all users evenly
-        max_total_time = timer_seconds - 10  # Reserve 10 seconds buffer to ensure completion
-        num_users = len(fake_users)
+        # Reserve 5 seconds at the end for state management
+        # Use first 2 seconds to randomly choose which fake users will select
+        available_time = timer_seconds - 5  # Leave 5 seconds buffer
+        selection_window = available_time - 2  # First 2 seconds for planning
         
-        if num_users == 0:
+        if selection_window <= 0:
+            return {'error': 'Timer too short for simulation', 'stopped': True}
+        
+        # Randomly select which fake users will participate (random amount)
+        fake_users_list = list(fake_users)
+        num_fake_users = len(fake_users_list)
+        
+        # Randomly choose how many will select (at least 1, at most all)
+        num_to_select = random.randint(1, num_fake_users)
+        selected_fake_users = random.sample(fake_users_list, num_to_select)
+        
+        if num_to_select == 0:
             return {'error': 'No fake users to schedule', 'stopped': True}
         
-        # Calculate base delay per user (distribute evenly)
-        base_delay_per_user = max_total_time / num_users
+        # Calculate how many users per batch (every 2 seconds)
+        # We have selection_window seconds, batches every 2 seconds
+        num_batches = max(1, int(selection_window / 2))
+        users_per_batch = max(1, int(num_to_select / num_batches))
         
-        # Clamp between 0.2 and 0.8 seconds per user to ensure faster completion
-        # This ensures all users complete well before timer ends and cards show up quickly
-        base_delay_per_user = min(max(base_delay_per_user, 0.2), 0.8)
+        # Distribute users across batches
+        # Make sure we don't miss any users due to rounding
+        batches = []
+        remaining_users = selected_fake_users.copy()
         
-        # Schedule all fake users with evenly distributed delays
-        # This ensures all selections complete before timer ends and are visible quickly
-        for i, fake_user in enumerate(fake_users):
-            # Calculate delay: base delay * index, with small random variation
-            delay = (i * base_delay_per_user) + random.uniform(0.0, 0.2)
-            # Ensure delay doesn't exceed max_total_time
-            delay = min(delay, max_total_time)
+        for batch_idx in range(num_batches):
+            if not remaining_users:
+                break
             
-            task_select_fake_card_with_changes.apply_async(
-                args=[game_id, fake_user.id],
-                countdown=delay
-            )
+            # Calculate how many users in this batch
+            if batch_idx == num_batches - 1:
+                # Last batch gets all remaining users
+                batch_users = remaining_users
+            else:
+                # Distribute evenly, but ensure we don't miss any
+                batch_size = min(users_per_batch, len(remaining_users))
+                batch_users = remaining_users[:batch_size]
+                remaining_users = remaining_users[batch_size:]
+            
+            if batch_users:
+                batches.append(batch_users)
+        
+        # Schedule batches every 2 seconds (starting after 2 seconds for planning)
+        for batch_idx, batch_users in enumerate(batches):
+            # Delay: 2 seconds (planning) + (batch_idx * 2 seconds)
+            delay = 2 + (batch_idx * 2)
+            
+            # Schedule each user in the batch at the same time (with tiny random offset for realism)
+            for fake_user in batch_users:
+                # Tiny random offset (0-0.1 seconds) to make it look more natural
+                user_delay = delay + random.uniform(0.0, 0.1)
+                
+                task_select_fake_card_once.apply_async(
+                    args=[game_id, fake_user.id],
+                    countdown=user_delay
+                )
         
         return {
             'success': True,
-            'scheduled_count': len(fake_users),
-            'message': f'Scheduled {len(fake_users)} fake user selections with delays'
+            'scheduled_count': num_to_select,
+            'batches': len(batches),
+            'message': f'Scheduled {num_to_select} fake user selections in {len(batches)} batches'
         }
     except Game.DoesNotExist:
         return {'error': 'Game not found', 'stopped': True}
@@ -1676,6 +1710,153 @@ def task_select_fake_card_with_changes(self, game_id: int, fake_user_id: int):
         traceback.print_exc()
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=2)
+        return {'error': str(e), 'stopped': True}
+
+
+@shared_task(bind=True, max_retries=3)
+def task_select_fake_card_once(self, game_id: int, fake_user_id: int):
+    """
+    Select a card for a fake user once - no unselection, no changes
+    Once selected, the card remains selected
+    """
+    try:
+        from .models import FakeUser, FakeUserGameCard
+        from .fake_user_manager import (
+            get_available_card_numbers_for_fake,
+            create_fake_user_card
+        )
+        from .game_logic import get_available_card_numbers
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        
+        game = Game.objects.get(id=game_id)
+        fake_user = FakeUser.objects.get(id=fake_user_id, is_active=True)
+        
+        # Check if game is still waiting
+        if game.status != 'waiting':
+            return {'error': 'Game is not in waiting status', 'stopped': True}
+        
+        # Check if fake user already has a card - if so, don't select again
+        existing_card = FakeUserGameCard.objects.filter(game=game, fake_user=fake_user).first()
+        if existing_card:
+            # Already has a card, return success (no unselection)
+            return {
+                'success': True,
+                'fake_user_id': fake_user_id,
+                'fake_user_name': fake_user.name,
+                'card_number': existing_card.card_number,
+                'message': 'Fake user already has a card'
+            }
+        
+        # Get available cards (excluding real user cards and other fake user cards)
+        # Check available cards right before selection to handle real users taking cards
+        available_cards = get_available_card_numbers_for_fake(game)
+        if not available_cards:
+            return {'error': 'No available cards', 'stopped': True}
+        
+        # Prefer cards from 1-100 range (70% chance) for more realistic selection
+        preferred_cards = [c for c in available_cards if c <= 100]
+        other_cards = [c for c in available_cards if c > 100]
+        
+        if preferred_cards and random.random() < 0.7:
+            # 70% chance to pick from preferred range (1-100)
+            card_number = random.choice(preferred_cards)
+        elif preferred_cards:
+            # 30% chance to pick from preferred if available
+            card_number = random.choice(preferred_cards)
+        elif other_cards:
+            # Fallback to other cards if preferred is empty
+            card_number = random.choice(other_cards)
+        else:
+            # Last resort - any available card
+            card_number = random.choice(available_cards)
+        
+        try:
+            # Create card (will raise ValueError if card is taken)
+            card = create_fake_user_card(game, fake_user, card_number)
+            
+            # Broadcast card selection immediately
+            try:
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    f'game_{game.id}',
+                    {
+                        'type': 'card_selected',
+                        'data': {
+                            'card_number': card_number,
+                            'user_id': None,  # Fake user
+                            'username': fake_user.name,
+                            'is_fake': True,
+                            'available_cards': get_available_card_numbers(game)
+                        }
+                    }
+                )
+            except Exception as e:
+                print(f"WebSocket broadcast error for fake user card: {e}")
+            
+            # Recalculate derash after card selection to ensure it includes all fake users
+            game.refresh_from_db()
+            game.recalculate_derash()
+            game.refresh_from_db()  # Refresh again to get updated derash
+            
+            return {
+                'success': True,
+                'fake_user_id': fake_user_id,
+                'fake_user_name': fake_user.name,
+                'card_number': card_number
+            }
+        except ValueError as e:
+            # Card was taken by real user or another fake user, try another if available
+            # Get fresh available cards
+            available_cards = get_available_card_numbers_for_fake(game)
+            if card_number in available_cards:
+                available_cards.remove(card_number)
+            
+            if available_cards:
+                # Try another card
+                card_number = random.choice(available_cards)
+                try:
+                    card = create_fake_user_card(game, fake_user, card_number)
+                    # Broadcast selection
+                    try:
+                        channel_layer = get_channel_layer()
+                        async_to_sync(channel_layer.group_send)(
+                            f'game_{game.id}',
+                            {
+                                'type': 'card_selected',
+                                'data': {
+                                    'card_number': card_number,
+                                    'user_id': None,
+                                    'username': fake_user.name,
+                                    'is_fake': True,
+                                    'available_cards': get_available_card_numbers(game)
+                                }
+                            }
+                        )
+                    except Exception as e:
+                        print(f"WebSocket broadcast error: {e}")
+                    
+                    game.refresh_from_db()
+                    game.recalculate_derash()
+                    
+                    return {
+                        'success': True,
+                        'fake_user_id': fake_user_id,
+                        'card_number': card_number
+                    }
+                except ValueError:
+                    # Card taken again, return error
+                    return {'error': 'Card taken by another user', 'stopped': True}
+            else:
+                return {'error': 'No available cards after card taken', 'stopped': True}
+    except (Game.DoesNotExist, FakeUser.DoesNotExist) as e:
+        return {'error': f'Game or fake user not found: {str(e)}', 'stopped': True}
+    except Exception as e:
+        print(f"Error in task_select_fake_card_once: {e}")
+        import traceback
+        traceback.print_exc()
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=e, countdown=5)
         return {'error': str(e), 'stopped': True}
 
 

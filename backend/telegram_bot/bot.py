@@ -942,11 +942,6 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             if is_first_registration:
-                # Refresh user to get updated balance after reward
-                async def refresh_user():
-                    await sync_to_async(telegram_user.refresh_from_db)()
-                await db_operation_with_retry(refresh_user)
-                
                 # Get bid_amount for message (cached, fast)
                 from api.models import GameSettings
                 async def get_settings():
@@ -954,9 +949,12 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 game_settings = await db_operation_with_retry(get_settings)
                 bid_amount = game_settings.bid_amount
                 
+                # FIX: Don't refresh user balance immediately - the Celery task is async
+                # Instead, show the bid_amount as the balance since that's what they'll receive
+                # The actual balance will be updated by the async task shortly
                 message_text = (
                     f"✅ ተመዝግበዋል! ስጦታ {bid_amount} ብር ተበርክቶሎታል፡፡\n\n"
-                    f"ያለዎት ሂሳብ: {telegram_user.balance} ብር"
+                    f"ያለዎት ሂሳብ: {bid_amount} ብር"
                 )
             else:
                 # Refresh user to get latest balance

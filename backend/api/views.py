@@ -104,14 +104,71 @@ def telegram_register(request):
         return Response({'error': 'initData required'}, status=status.HTTP_400_BAD_REQUEST)
     
     from api.telegram_auth import verify_telegram_init_data, get_or_create_user_from_telegram
+    from api.tasks import task_process_registration_rewards
     
     verified_data = verify_telegram_init_data(init_data)
     if not verified_data or not verified_data.get('user'):
         return Response({'error': 'Invalid initData signature'}, status=status.HTTP_401_UNAUTHORIZED)
     
-    user = get_or_create_user_from_telegram(verified_data['user'])
+    # Check if user had phone number before (to determine if this is first registration)
+    telegram_user_data = verified_data['user']
+    telegram_id = telegram_user_data.get('id')
+    had_phone_before = False
+    if telegram_id:
+        try:
+            existing_user = User.objects.get(telegram_id=telegram_id)
+            had_phone_before = bool(existing_user.phone_number and existing_user.phone_number.strip())
+        except User.DoesNotExist:
+            pass
+    
+    user = get_or_create_user_from_telegram(telegram_user_data)
     if not user:
         return Response({'error': 'Failed to create user'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # Check if this is first-time registration (user didn't have phone number before)
+    is_first_registration = not had_phone_before and bool(user.phone_number)
+    
+    # FIX: For first registration, process registration reward synchronously to ensure balance is updated immediately
+    # This ensures the user sees the correct balance in the response
+    registration_gift_given = False
+    if is_first_registration:
+        # Process registration reward synchronously (only for first registration, fast operation)
+        from api.models import GameSettings, Transaction
+        from django.db.models import F
+        from decimal import Decimal
+        
+        try:
+            game_settings = GameSettings.get_settings()
+            bid_amount = Decimal(str(game_settings.bid_amount))
+            
+            # Update user balance atomically
+            User.objects.filter(id=user.id).update(balance=F('balance') + bid_amount)
+            
+            # Refresh user to get updated balance
+            user.refresh_from_db()
+            
+            # Create transaction record
+            Transaction.objects.create(
+                user=user,
+                transaction_type='deposit',
+                amount=bid_amount,
+                description='Registration gift'
+            )
+            registration_gift_given = True
+        except Exception as e:
+            # If synchronous processing fails, queue async task as fallback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error processing registration reward synchronously: {e}")
+            # Queue async task with is_first_registration=True so it can retry
+            task_process_registration_rewards.delay(user.id, is_first_registration)
+    
+    # Queue async task for referral rewards (if applicable)
+    # Pass is_first_registration=False if we already gave the registration gift synchronously
+    # This prevents duplicate registration gifts
+    if not registration_gift_given or user.referred_by_id:
+        # Only queue if we haven't given registration gift yet, or if user has referrer (for referral rewards)
+        task_process_registration_rewards.delay(user.id, False if registration_gift_given else is_first_registration)
     
     # Generate JWT token
     from api.auth_utils import generate_jwt_token
