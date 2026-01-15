@@ -172,7 +172,7 @@ def add_fake_users_to_game_immediately(game):
         get_available_card_numbers_for_fake,
         create_fake_user_card
     )
-    from .tasks import task_select_fake_card_with_changes, task_adjust_fake_users_before_game_start
+    from .tasks import task_select_fake_card_once, task_simulate_fake_user_selections, task_adjust_fake_users_before_game_start
     from channels.layers import get_channel_layer
     from asgiref.sync import async_to_sync
     from .game_logic import get_available_card_numbers
@@ -302,34 +302,14 @@ def add_fake_users_to_game_immediately(game):
         except Exception as e:
             print(f"WebSocket batch broadcast error for immediate fake user cards: {e}")
     
-    # Schedule remaining selections with calculated delays
-    for i in range(immediate_count, num_fake_users):
-        fake_user_id = fake_user_ids[i]
-        
-        # Get base delay for this user
-        base_delay = delays[i] if i < len(delays) else delays[-1] + (i - len(delays) + 1) * 0.5
-        
-        # Add small random variation (0-0.25s) to make it look more natural
-        max_variation = min(0.25, interval * 0.5 if num_fake_users > 1 else 0.25)
-        random_variation = random.uniform(0.0, max_variation)
-        delay = base_delay + random_variation
-        
-        # Ensure delay doesn't exceed available time
-        delay = min(delay, available_time)
-        
-        # Ensure minimum delay of 0.3s to avoid immediate execution
-        delay = max(0.3, delay)
-        
-        # Schedule the selection using eta (absolute time) for more reliable execution
-        eta_time = timezone.now() + timedelta(seconds=delay)
-        task_select_fake_card_with_changes.apply_async(
-            args=[game.id, fake_user_id],
-            eta=eta_time
-        )
-        
-        # Debug logging for first few scheduled and last
-        if i < immediate_count + 3 or i >= num_fake_users - 3:
-            print(f"  Scheduled fake user {fake_user_id} with delay {delay:.2f}s (index {i}/{num_fake_users-1}, base={base_delay:.2f}s)")
+    # NEW APPROACH: Use batch-based simulation for remaining fake users
+    # This ensures selections appear in batches every 2 seconds, no unselection
+    remaining_fake_user_ids = fake_user_ids[immediate_count:]
+    if remaining_fake_user_ids:
+        # Use the new batch-based simulation function
+        # This will schedule selections in batches every 2 seconds
+        task_simulate_fake_user_selections.delay(game.id, remaining_fake_user_ids)
+        print(f"  Scheduled {len(remaining_fake_user_ids)} remaining fake users using batch-based simulation")
     
     # Schedule task to adjust fake users at 5 seconds before timer ends
     # This will:
