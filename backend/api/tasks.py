@@ -41,20 +41,25 @@ def task_call_number(self, game_id: int, number: int):
         # Call the number
         called_number = call_number(game, number)
         
-        # CRITICAL FIX: Mark number on all real user cards when called manually
-        # This ensures cards are marked even if frontend doesn't receive WebSocket message
+        # CRITICAL FIX: Only mark number on real user cards that are in AUTOMATIC mode
+        # Manual mode users must mark their own numbers
         from .game_logic import mark_number_on_card
         from .models import GameCard
         
         # Get all real user cards for this game
-        real_cards = GameCard.objects.filter(game=game, is_winner=False)
+        real_cards = GameCard.objects.filter(game=game, is_winner=False).only('id', 'mode_history')
         marked_count = 0
         
         for card in real_cards:
-            if mark_number_on_card(card, number):
-                marked_count += 1
+            # Check card mode - only mark if in automatic mode
+            card_mode = _get_card_current_mode(card)
+            if card_mode == 'automatic':
+                # Only mark numbers automatically for cards in automatic mode
+                if mark_number_on_card(card, number):
+                    marked_count += 1
+            # Manual mode cards are NOT marked automatically - user must mark them manually
         
-        print(f"Manually called number {number}: Marked on {marked_count} real user cards")
+        print(f"Manually called number {number}: Marked on {marked_count} real user cards (automatic mode only)")
         
         # Refresh game from database to get updated current_call_count
         game.refresh_from_db()
@@ -2189,21 +2194,31 @@ def task_mark_cards_for_number(self, game_id: int, number: int):
         from .redis_utils import mark_number_on_card_live
         from .models import GameCard, FakeUserGameCard
         
-        # Get all real cards for this game
-        real_cards = GameCard.objects.filter(game_id=game_id, is_winner=False).only('id')
+        # Get all real cards for this game (include mode_history to check mode)
+        real_cards = GameCard.objects.filter(game_id=game_id, is_winner=False).only('id', 'mode_history')
         real_card_count = real_cards.count()
         logger.info(f"🎯 [MARK] Game {game_id}: Found {real_card_count} real cards to check")
         print(f"🎯 [MARK] Game {game_id}: Found {real_card_count} real cards to check")
         
-        # Mark on real cards (Redis)
+        # CRITICAL FIX: Only mark on real cards that are in AUTOMATIC mode
+        # Manual mode users must mark their own numbers
         marked_count = 0
+        skipped_manual = 0
         for card in real_cards:
-            if mark_number_on_card_live(game_id, card.id, number):
-                marked_count += 1
-                logger.debug(f"🎯 [MARK] Game {game_id}: Marked number {number} on card {card.id}")
+            # Check card mode - only mark if in automatic mode
+            card_mode = _get_card_current_mode(card)
+            if card_mode == 'automatic':
+                # Only mark numbers automatically for cards in automatic mode
+                if mark_number_on_card_live(game_id, card.id, number):
+                    marked_count += 1
+                    logger.debug(f"🎯 [MARK] Game {game_id}: Marked number {number} on card {card.id} (automatic mode)")
+            else:
+                # Manual mode - skip automatic marking
+                skipped_manual += 1
+                logger.debug(f"🎯 [MARK] Game {game_id}: Skipped marking number {number} on card {card.id} (manual mode)")
         
-        logger.info(f"🎯 [MARK] Game {game_id}: Marked number {number} on {marked_count}/{real_card_count} real cards")
-        print(f"🎯 [MARK] Game {game_id}: Marked number {number} on {marked_count}/{real_card_count} real cards")
+        logger.info(f"🎯 [MARK] Game {game_id}: Marked number {number} on {marked_count}/{real_card_count} real cards (automatic mode), skipped {skipped_manual} manual mode cards")
+        print(f"🎯 [MARK] Game {game_id}: Marked number {number} on {marked_count}/{real_card_count} real cards (automatic mode), skipped {skipped_manual} manual mode cards")
         
         # Mark on fake cards (Redis) - treat them the same
         fake_cards = FakeUserGameCard.objects.filter(game_id=game_id, is_winner=False).only('id')
