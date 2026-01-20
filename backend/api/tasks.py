@@ -302,14 +302,18 @@ def task_process_bingo_winners(self, game_id: int):
         # Refresh game to get latest derash
         game.refresh_from_db()
         
-        # Calculate prize split (only real users get prizes, fake users don't)
+        # Calculate prize split (split by ALL winners for realism, but only real users receive prizes)
         total_prize = game.total_derash
         real_winner_count = len(real_winner_cards)
-        # Only split prize among real winners (fake users don't get prizes)
-        prize_per_winner = total_prize / Decimal(str(real_winner_count)) if real_winner_count > 0 else Decimal('0')
+        all_winner_count = len(real_winner_cards) + len(fake_winner_cards)
         
-        # Award prizes to real winners only (fake users don't get prizes)
-        print(f"Processing {all_winner_count} winners ({real_winner_count} real, {len(fake_winner_cards)} fake) for game {game_id}, total prize: {total_prize}, prize per real winner: {prize_per_winner}")
+        # CRITICAL FIX: Split prize by ALL winners (real + fake) to make it look realistic
+        # Real players see 3 winners announced, so prize should be split 3 ways
+        # But only real winners actually receive the split amount
+        prize_per_winner = total_prize / Decimal(str(all_winner_count)) if all_winner_count > 0 else Decimal('0')
+        
+        # Award prizes to real winners only (fake users don't get prizes, but are counted in split)
+        print(f"Processing {all_winner_count} winners ({real_winner_count} real, {len(fake_winner_cards)} fake) for game {game_id}, total prize: {total_prize}, prize split by {all_winner_count} winners = {prize_per_winner} per winner (only real winners receive)")
         
         # CRITICAL FIX: Use atomic transaction and F() expressions for balance updates
         from django.db import transaction
@@ -342,7 +346,7 @@ def task_process_bingo_winners(self, game_id: int):
                             transaction_type='win',
                             amount=prize_per_winner,
                             game=game,
-                            description=f'Won game {game.id} (split among {real_winner_count} real winners) with card {winner_card.card_number}'
+                            description=f'Won game {game.id} (split among {all_winner_count} winners) with card {winner_card.card_number}'
                         )
                         
                         print(f"✅ Awarded prize {prize_per_winner} to user {user.id} (card {winner_card.card_number}), balance: {old_balance} -> {user.balance}")
@@ -388,7 +392,7 @@ def task_process_bingo_winners(self, game_id: int):
                 'selected_numbers': winner_card.selected_numbers or [],
                 'called_numbers': called_numbers,
                 'last_called_number': winning_number,  # The number that completed this card's bingo
-                'prize': float(prize_per_winner) if real_winner_count > 0 else 0.0
+                'prize': float(prize_per_winner)  # Show split amount (realistic for all winners)
             })
         
         # Process fake user winners (they don't get prizes, but are shown in winners list)
@@ -445,7 +449,7 @@ def task_process_bingo_winners(self, game_id: int):
                 'selected_numbers': fake_card.selected_numbers or [],
                 'called_numbers': called_numbers,
                 'last_called_number': winning_number,
-                'prize': 0.0  # Fake users don't get prizes (but show the total prize in display)
+                'prize': float(prize_per_winner)  # Show split amount (for display consistency, but they don't actually receive it)
             })
         
         # Broadcast final winner_declared with all winners
@@ -463,9 +467,9 @@ def task_process_bingo_winners(self, game_id: int):
                     'is_fake': True
                 }
             
-            # For fake user winners, show the total prize (even though they don't receive it)
-            # This keeps the display consistent with the initial broadcast
-            display_prize = float(prize_per_winner) if real_winner_count > 0 else float(total_prize)
+            # Show split prize amount for all winners (realistic display)
+            # All winners see the same split amount, but only real winners actually receive it
+            display_prize = float(prize_per_winner)
             
             async_to_sync(channel_layer.group_send)(
                 f'game_{game.id}',
@@ -1924,11 +1928,12 @@ def task_check_all_numbers_called(self, game_id: int):
 def task_process_fake_user_claim(self, game_id: int, fake_card_id: int):
     """
     Process fake user bingo claim after delay.
-    CRITICAL FIX: Separate task to avoid blocking number calling with time.sleep().
+    CRITICAL FIX: Check for real user winners before claiming - if real users claimed during the 3-second delay,
+    include them as multiple winners and process all together.
     """
     try:
-        from .models import FakeUserGameCard
-        from .redis_utils import get_game_state_from_redis
+        from .models import FakeUserGameCard, GameCard
+        from .redis_utils import get_game_state_from_redis, get_bingo_winners
         from .game_logic import claim_bingo_unified
         
         # Check game state from Redis cache first
@@ -1941,9 +1946,48 @@ def task_process_fake_user_claim(self, game_id: int, fake_card_id: int):
         # Verify with DB
         game = Game.objects.get(id=game_id)
         game.refresh_from_db()
-        if game.status != 'active' or game.winner:
-            print(f"Game {game_id}: Already completed or has winner, skipping fake user claim")
+        
+        # CRITICAL FIX: Check if game is already completed (real user might have won during 3-second delay)
+        if game.status == 'completed':
+            print(f"Game {game_id}: Already completed (real user likely won during delay), checking for multiple winners...")
+            # Check if there are real winners in Redis
+            redis_winners = get_bingo_winners(game_id)
+            if redis_winners:
+                real_winners = [w for w in redis_winners if w.get('user_id') is not None]
+                if real_winners:
+                    print(f"Game {game_id}: Real user(s) already won. Fake user will be included in multiple winners processing.")
+                    # The game is already completed, but we should still add fake user to winners if valid
+                    # However, since game is completed, claim_bingo_unified will reject it
+                    # So we need to check if fake user should be added to existing winners
+                    fake_card = FakeUserGameCard.objects.get(id=fake_card_id)
+                    fake_card.refresh_from_db()
+                    if not fake_card.is_winner:
+                        # Fake user hasn't been marked as winner yet, but real user won
+                        # This means real user won first, so fake user doesn't get to claim
+                        print(f"Game {game_id}: Real user won first, fake user {fake_card.fake_user.name} claim rejected")
+                        return {'success': True, 'real_user_won_first': True}
             return {'success': True, 'game_completed_during_delay': True}
+        
+        if game.status != 'active':
+            print(f"Game {game_id}: Not active (status: {game.status}), skipping fake user claim")
+            return {'success': True, 'game_not_active': True}
+        
+        # CRITICAL FIX: Check if any real users have claimed bingo during the 3-second delay
+        # This handles the race condition where real user clicks bingo while fake user is waiting
+        redis_winners = get_bingo_winners(game_id)
+        real_winners_in_redis = [w for w in redis_winners] if redis_winners else []
+        real_winner_cards = []
+        
+        if real_winners_in_redis:
+            # Check if any are real users (user_id is not None)
+            real_winner_ids = [w['card_id'] for w in real_winners_in_redis if w.get('user_id') is not None]
+            if real_winner_ids:
+                # Real users have claimed! Get their cards
+                real_winner_cards = list(GameCard.objects.filter(
+                    id__in=real_winner_ids,
+                    game=game
+                ).select_related('user'))
+                print(f"Game {game_id}: Found {len(real_winner_cards)} real user winner(s) in Redis during fake user delay")
         
         # Get fake card
         fake_card = FakeUserGameCard.objects.get(id=fake_card_id)
@@ -1954,17 +1998,55 @@ def task_process_fake_user_claim(self, game_id: int, fake_card_id: int):
             print(f"Fake user {fake_card.fake_user.name} (card {fake_card.card_number}) already won - skipping")
             return {'success': True, 'card_already_won': True}
         
-        print(f"Fake user {fake_card.fake_user.name} (card {fake_card.card_number}) claiming bingo after delay")
-        
-        # Call unified function for fake user
-        success, winning_pattern, error_message = claim_bingo_unified(fake_card, game, is_fake_user=True)
-        
-        if success:
-            print(f"SUCCESS: Fake user {fake_card.fake_user.name} claimed bingo successfully")
-            return {'success': True, 'fake_winner': True, 'stopped': True}
+        # CRITICAL FIX: If real users have claimed, add fake user to winners and process all together
+        if real_winner_cards:
+            print(f"Game {game_id}: Real user(s) claimed during delay. Adding fake user {fake_card.fake_user.name} and processing all winners together...")
+            
+            # Validate fake user's bingo before adding
+            from .redis_utils import get_called_numbers_from_redis
+            from .fake_user_manager import check_fake_user_bingo
+            called_numbers = get_called_numbers_from_redis(game_id)
+            if called_numbers:
+                called_set = set(called_numbers)
+                has_bingo, winning_pattern = check_fake_user_bingo(fake_card, called_set, game)
+                
+                if has_bingo:
+                    # Fake user has valid bingo - add to winners and process all together
+                    from .redis_utils import add_bingo_winner
+                    add_bingo_winner(game_id, fake_card.id, user_id=None)  # None for fake users
+                    
+                    # Mark fake card as winner
+                    fake_card.is_winner = True
+                    fake_card.winning_pattern = winning_pattern
+                    fake_card.claimed_at = timezone.now()
+                    fake_card.save()
+                    
+                    print(f"Game {game_id}: Added fake user {fake_card.fake_user.name} to winners. Processing all {len(real_winner_cards) + 1} winners together...")
+                    
+                    # Process all winners together (real + fake)
+                    # This will handle prize splitting correctly (only real users get prizes)
+                    task_process_bingo_winners.delay(game_id)
+                    
+                    return {'success': True, 'multiple_winners': True, 'real_count': len(real_winner_cards), 'fake_count': 1}
+                else:
+                    print(f"Game {game_id}: Fake user {fake_card.fake_user.name} doesn't have valid bingo, skipping")
+                    return {'success': True, 'fake_no_bingo': True}
+            else:
+                print(f"Game {game_id}: No called numbers found, cannot validate fake user bingo")
+                return {'success': True, 'no_called_numbers': True}
         else:
-            print(f"Fake user claim failed: {error_message}")
-            return {'success': True, 'fake_claim_failed': True, 'reason': error_message}
+            # No real winners - proceed with normal fake user claim
+            print(f"Game {game_id}: No real winners found. Fake user {fake_card.fake_user.name} (card {fake_card.card_number}) claiming bingo after delay")
+            
+            # Call unified function for fake user
+            success, winning_pattern, error_message = claim_bingo_unified(fake_card, game, is_fake_user=True)
+            
+            if success:
+                print(f"SUCCESS: Fake user {fake_card.fake_user.name} claimed bingo successfully")
+                return {'success': True, 'fake_winner': True, 'stopped': True}
+            else:
+                print(f"Fake user claim failed: {error_message}")
+                return {'success': True, 'fake_claim_failed': True, 'reason': error_message}
     except Exception as e:
         print(f"Error in task_process_fake_user_claim: {e}")
         import traceback
