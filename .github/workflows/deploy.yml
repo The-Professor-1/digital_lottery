@@ -32,17 +32,22 @@ jobs:
             source /home/ubuntu/apps/good-bingo/venv/bin/activate
 
             echo "📦 Installing dependencies..."
-            pip install -r backend/requirements.txt
+            pip install -r requirements.txt
 
             echo "🗃 Running migrations..."
             cd backend
             python manage.py migrate --noinput
             python manage.py collectstatic --noinput
+            cd ..
 
-            echo "🔄 Restarting services..."
-            sudo systemctl restart gunicorn
-            sudo systemctl restart bingo-telegram-bot
-            sudo systemctl restart celery
+            echo "🔄 Reloading systemd..."
+            sudo systemctl daemon-reload
+
+            echo "🔄 Restarting services (non-blocking)..."
+            sudo systemctl restart gunicorn --no-block
+            sudo systemctl restart bingo-telegram-bot --no-block
+            sudo systemctl restart celery --no-block
 
             echo "✅ Deployment completed successfully!"
+
 
