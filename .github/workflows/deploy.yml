@@ -22,20 +22,20 @@ jobs:
           script: |
             echo "🚀 Starting deployment..."
 
-            cd ${{ secrets.PROJECT_PATH }}
+            cd /home/ubuntu/apps/good-bingo/arif_bingo
 
             echo "📥 Updating repository..."
             git fetch origin
             git reset --hard origin/master
 
             echo "🐍 Activating virtual environment..."
-            source venv/bin/activate
+            source /home/ubuntu/apps/good-bingo/venv/bin/activate
 
             echo "📦 Installing dependencies..."
-            pip install -r requirements.txt
+            pip install -r backend/requirements.txt
 
             echo "🗃 Running migrations..."
-            cd arif_bingo/backend
+            cd backend
             python manage.py migrate --noinput
             python manage.py collectstatic --noinput
 
@@ -45,3 +45,4 @@ jobs:
             sudo systemctl restart celery
 
             echo "✅ Deployment completed successfully!"
+
