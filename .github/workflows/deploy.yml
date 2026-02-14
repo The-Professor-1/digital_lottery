@@ -24,15 +24,14 @@ jobs:
 
             echo "🚀 Starting deployment..."
 
-            echo "📁 Moving to project directory..."
-            cd /home/ubuntu/apps/arif_bingo
+            cd /home/***/apps/arif_bingo
 
             echo "📥 Updating repository..."
             git fetch origin
-            git reset --hard origin/master
+            git reset --hard origin/main   # or master if confirmed
 
             echo "🐍 Activating virtual environment..."
-            source /home/ubuntu/apps/bingo/backend/venv/bin/activate
+            source backend/venv/bin/activate
 
             echo "📦 Installing backend dependencies..."
             pip install -r backend/requirements.txt
@@ -52,3 +51,4 @@ jobs:
             sudo systemctl restart celery-beat || true
 
             echo "✅ Deployment completed successfully!"
+
