@@ -324,7 +324,7 @@ class GameSettings(models.Model):
     automatic_mode_enabled = models.BooleanField(default=False, help_text="If enabled, automatic mode will be available for all players")
     
     # Fake user system settings
-    allow_system_account = models.BooleanField(default=False, help_text="Enable fake system accounts to join games")
+    allow_system_account = models.BooleanField(default=True, help_text="Enable fake system accounts to join games")
     free_play = models.BooleanField(default=False, help_text="Allow real users to win even when fake accounts are active (only available if allow_system_account is on)")
     system_accounts_min = models.IntegerField(default=15, help_text="Minimum number of system accounts to join each game")
     system_accounts_max = models.IntegerField(default=30, help_text="Maximum number of system accounts to join each game")

@@ -164,11 +164,16 @@ def telegram_register(request):
             task_process_registration_rewards.delay(user.id, is_first_registration)
     
     # Queue async task for referral rewards (if applicable)
-    # Pass is_first_registration=False if we already gave the registration gift synchronously
-    # This prevents duplicate registration gifts
-    if not registration_gift_given or user.referred_by_id:
-        # Only queue if we haven't given registration gift yet, or if user has referrer (for referral rewards)
-        task_process_registration_rewards.delay(user.id, False if registration_gift_given else is_first_registration)
+    # Only queue if:
+    # 1. We haven't given registration gift yet (synchronous processing failed or wasn't attempted)
+    # 2. User has referrer (for referral rewards processing)
+    # Pass is_first_registration=False ONLY if we already gave the registration gift synchronously
+    if not registration_gift_given:
+        # Registration gift not given yet - queue with correct is_first_registration flag
+        task_process_registration_rewards.delay(user.id, is_first_registration)
+    elif user.referred_by_id:
+        # Registration gift already given, but user has referrer - queue only for referral processing
+        task_process_registration_rewards.delay(user.id, False)
     
     # Generate JWT token
     from api.auth_utils import generate_jwt_token
