@@ -22,33 +22,49 @@ jobs:
           script: |
             set -e
 
-            echo "🚀 Starting deployment..."
+                echo "🚀 Starting deployment..."
 
-            cd /home/***/apps/arif_bingo
+                cd /home/***/apps/arif_bingo
 
-            echo "📥 Updating repository..."
-            git fetch origin
-            git reset --hard origin/main   # or master if confirmed
+                echo "📥 Fetching repository..."
+                git fetch origin
 
-            echo "🐍 Activating virtual environment..."
-            source backend/venv/bin/activate
+                # 🔍 Auto-detect default branch (main or master)
+                if git show-ref --quiet refs/remotes/origin/main; then
+                    BRANCH=main
+                elif git show-ref --quiet refs/remotes/origin/master; then
+                    BRANCH=master
+                else
+                    echo "❌ Neither origin/main nor origin/master exists"
+                    exit 1
+                fi
 
-            echo "📦 Installing backend dependencies..."
-            pip install -r backend/requirements.txt
+                echo "✅ Using branch: $BRANCH"
 
-            echo "🗃 Running Django migrations & collectstatic..."
-            cd backend
-            python manage.py migrate --noinput
-            python manage.py collectstatic --noinput
-            cd ..
+                git reset --hard origin/$BRANCH
 
-            echo "🔄 Reloading systemd..."
-            sudo systemctl daemon-reload
+                echo "✅ Deployed commit:"
+                git log -1 --oneline
 
-            echo "🔄 Restarting services..."
-            sudo systemctl restart gunicorn
-            sudo systemctl restart celery
-            sudo systemctl restart celery-beat || true
+                echo "🐍 Activating virtual environment..."
+                source backend/venv/bin/activate
 
-            echo "✅ Deployment completed successfully!"
+                echo "📦 Installing backend dependencies..."
+                pip install -r backend/requirements.txt
+
+                echo "🗃 Running Django migrations & collectstatic..."
+                cd backend
+                python manage.py migrate --noinput
+                python manage.py collectstatic --noinput
+                cd ..
+
+                echo "🔄 Reloading systemd..."
+                sudo systemctl daemon-reload
+
+                echo "🔄 Restarting services..."
+                sudo systemctl restart gunicorn
+                sudo systemctl restart celery
+                sudo systemctl restart celery-beat || true
+
+                echo "✅ Deployment completed successfully!"
 
