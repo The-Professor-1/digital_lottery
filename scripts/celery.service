@@ -6,10 +6,11 @@ After=network.target redis.service postgresql.service
 Type=simple
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/apps/good-bingo/arif_bingo/backend
-Environment="PATH=/home/ubuntu/apps/good-bingo/venv/bin"
+WorkingDirectory=/home/ubuntu/apps/arif_bingo/backend
+Environment="PATH=/home/ubuntu/apps/arif_bingo/backend/venv/bin"
+Environment="PYTHONPATH=/home/ubuntu/apps/arif_bingo/backend"
 Environment="DJANGO_SETTINGS_MODULE=bingo.settings"
-ExecStart=/home/ubuntu/apps/good-bingo/venv/bin/celery -A bingo worker --concurrency=2 -Q gameplay,registration,default --loglevel=info
+ExecStart=/home/ubuntu/apps/arif_bingo/backend/venv/bin/celery -A bingo worker --concurrency=2 -Q gameplay,registration,default --loglevel=info
 Restart=always
 RestartSec=10
 

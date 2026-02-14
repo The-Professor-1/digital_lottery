@@ -27,8 +27,8 @@ echo ""
 
 echo "4. Checking Redis connection..."
 echo "-----------------------------------"
-cd /home/ubuntu/apps/good-bingo/arif_bingo/backend
-source /home/ubuntu/apps/good-bingo/venv/bin/activate
+cd /home/ubuntu/apps/arif_bingo/backend
+source /home/ubuntu/apps/arif_bingo/backend/venv/bin/activate
 python -c "
 import redis
 from django.conf import settings
