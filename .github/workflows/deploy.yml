@@ -50,7 +50,7 @@ jobs:
                 source backend/venv/bin/activate
 
                 echo "📦 Installing backend dependencies..."
-                pip install -r backend/requirements.txt
+                pip install -r requirements.txt
 
                 echo "🗃 Running Django migrations & collectstatic..."
                 cd backend
