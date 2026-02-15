@@ -310,7 +310,7 @@ class GameSettings(models.Model):
     """Game configuration settings - Singleton pattern"""
     # Game timing settings
     time_between_calls = models.IntegerField(default=3, help_text="Seconds between each number call")
-    card_selection_timer = models.IntegerField(default=30, help_text="Seconds for card selection window")
+    card_selection_timer = models.IntegerField(default=20, help_text="Seconds for card selection window")
     
     # Game financial settings
     bid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=10.00, help_text="Default bet amount per card")
@@ -318,7 +318,7 @@ class GameSettings(models.Model):
     min_withdraw = models.DecimalField(max_digits=10, decimal_places=2, default=50.00, help_text="Minimum withdrawal amount")
     
     # Card settings
-    total_cards = models.IntegerField(default=90, help_text="Total number of cards available")
+    total_cards = models.IntegerField(default=100, help_text="Total number of cards available")
     
     # Game mode settings
     automatic_mode_enabled = models.BooleanField(default=False, help_text="If enabled, automatic mode will be available for all players")

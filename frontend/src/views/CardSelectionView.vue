@@ -69,9 +69,6 @@
     
     <!-- Selected card display at bottom -->
     <div class="selected-card-section" v-if="selectedCard && userCard">
-      <div class="selected-card-header">
-        <h3>የተመረጠዎ ካርድ #{{ selectedCard }}</h3>
-      </div>
       <UserCard
         :card-layout="userCard.card_layout"
         :card-number="userCard.card_number"

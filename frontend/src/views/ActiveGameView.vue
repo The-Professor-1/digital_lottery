@@ -641,23 +641,25 @@ export default {
           }
         }
         
-        // Set new current call immediately (no delay)
+        // CRITICAL FIX: Set new current call immediately to show the latest number
+        // This ensures the UI always shows the most recently called number
         this.currentCall = {
           number: data.number,
           letter: data.letter
         }
         
-        // Force immediate UI update
+        // Force immediate UI update to show the new number
         this.$forceUpdate()
         
-        // Keep current call visible for at least 2 seconds (reduced for faster updates)
-        if (this.currentCallTimeout) {
-          clearTimeout(this.currentCallTimeout)
-        }
+        // Get time between calls from game settings (default 3 seconds)
+        const timeBetweenCalls = (this.game && this.game.time_between_calls) || 3
+        
+        // Keep current call visible for the time interval between calls
+        // This ensures each number is displayed for the correct duration
         this.currentCallTimeout = setTimeout(() => {
           // After timeout, current call stays visible until next number is called
           // Don't move it to recent here - let the next call handle it
-        }, 2000) // 2 seconds minimum display time
+        }, timeBetweenCalls * 1000) // Use time_between_calls from settings
         
         // In automatic mode, mark the number on the card automatically (only if no winner yet and banner not shown)
         const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : Infinity

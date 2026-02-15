@@ -5,7 +5,7 @@
       <div class="value">{{ derash }}</div>
     </div>
     <div class="info-item">
-      <div class="label">የተጫዋች ብዛት</div>
+      <div class="label">ተጫዋች</div>
       <div class="value">{{ players }}</div>
     </div>
     <div class="info-item">
@@ -13,7 +13,7 @@
       <div class="value">{{ bet }}</div>
     </div>
     <div class="info-item">
-      <div class="label">የተጠሩ ቁጥሮች</div>
+      <div class="label">የተጠሩ</div>
       <div class="value">{{ call }}</div>
     </div>
   </div>
@@ -72,7 +72,7 @@ export default {
 
 .label {
   color: var(--primary-dark);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   margin-bottom: 4px;
   text-transform: uppercase;
@@ -81,7 +81,7 @@ export default {
 
 .value {
   color: var(--gray-dark);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
 }
 </style>

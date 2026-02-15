@@ -823,9 +823,16 @@ def start_game(game: Game) -> bool:
                 traceback.print_exc()
     
     # Require at least 2 total players to start the game
+    # BUT: If system accounts are enabled, allow starting with just fake players (even 0 real players)
     total_player_count = real_player_count + fake_player_count
-    if total_player_count < 2:
-        return False
+    if allow_system_account:
+        # If system accounts enabled, only need at least 1 fake player (can start with 0 real players)
+        if fake_player_count < 1:
+            return False
+    else:
+        # If system accounts disabled, need at least 2 real players
+        if total_player_count < 2:
+            return False
     
     # IMPORTANT: Recalculate derash BEFORE setting game to active
     # This ensures derash and player count are synchronized before countdown starts
