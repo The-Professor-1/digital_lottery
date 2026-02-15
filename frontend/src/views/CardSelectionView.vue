@@ -958,7 +958,7 @@ export default {
    ============================================ */
 .selected-card-section {
   position: fixed;
-  bottom: 0; /* Positioned at bottom */
+  top: 20px; /* Positioned at bottom */
   left: 0;
   right: 0;
   background: var(--primary-light);

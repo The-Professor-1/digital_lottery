@@ -77,17 +77,16 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%);
+  background:#5e6269;
   color: white;
   border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
-  font-size: 12px;
-  min-height: 25px;
-  min-width: 25px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  font-size: 15px;
+  min-height: 28px;
+  min-width: 28px;
   border: 2px solid transparent;
 }
 
