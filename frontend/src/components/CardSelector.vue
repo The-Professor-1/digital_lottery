@@ -77,7 +77,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+  background: linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%);
   color: white;
   border-radius: 10px;
   font-weight: 600;

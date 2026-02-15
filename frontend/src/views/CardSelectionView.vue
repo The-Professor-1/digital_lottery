@@ -230,7 +230,19 @@ export default {
         this.game = game
         
         // Update timer seconds from game settings if available
-        if (game && game.card_selection_timer && !this.timerInterval) {
+        // CRITICAL: Calculate remaining time based on game.created_at, not full timer
+        if (game && game.card_selection_timer && game.created_at && !this.timerInterval) {
+          const timerValue = game.card_selection_timer
+          // Calculate elapsed time since game was created
+          const gameCreatedAt = new Date(game.created_at)
+          const now = new Date()
+          const elapsedSeconds = Math.floor((now - gameCreatedAt) / 1000)
+          // Calculate remaining time
+          const remainingSeconds = Math.max(0, timerValue - elapsedSeconds)
+          this.timerSeconds = remainingSeconds
+          console.log(`⏱️ Timer calculated: ${remainingSeconds}s remaining (${elapsedSeconds}s elapsed of ${timerValue}s total)`)
+        } else if (game && game.card_selection_timer && !this.timerInterval) {
+          // Fallback if created_at is not available
           this.timerSeconds = game.card_selection_timer
         }
         
@@ -464,10 +476,21 @@ export default {
         return // Timer already running - don't reset it!
       }
       
-      // Get timer value from game settings, default to 30 if not available
-      const timerValue = this.game?.card_selection_timer || 30
-      this.timerSeconds = timerValue
-      console.log('⏱️ Starting timer from', this.timerSeconds, 'seconds (from settings)')
+      // CRITICAL: Calculate remaining time based on game.created_at, not full timer
+      // This ensures timer matches backend calculation
+      let timerValue = this.game?.card_selection_timer || 30
+      if (this.game && this.game.created_at) {
+        const gameCreatedAt = new Date(this.game.created_at)
+        const now = new Date()
+        const elapsedSeconds = Math.floor((now - gameCreatedAt) / 1000)
+        const remainingSeconds = Math.max(0, timerValue - elapsedSeconds)
+        this.timerSeconds = remainingSeconds
+        console.log(`⏱️ Starting timer: ${remainingSeconds}s remaining (${elapsedSeconds}s elapsed of ${timerValue}s total)`)
+      } else {
+        // Fallback if created_at is not available
+        this.timerSeconds = timerValue
+        console.log('⏱️ Starting timer from', this.timerSeconds, 'seconds (from settings, no created_at)')
+      }
       
       // Use arrow function to preserve 'this' context
       this.timerInterval = setInterval(() => {
@@ -939,7 +962,7 @@ export default {
   left: 0;
   right: 0;
   background: var(--primary-light);
-  padding: 8px 0px;
+  padding: 12px 0px;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
   border-top: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 16px 16px 0 0;
@@ -949,13 +972,13 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start; /* Align to top to reduce space */
+  justify-content: center; /* Center the card vertically */
 }
 
 .selected-card-header {
   text-align: center;
-  margin-bottom: 4px;
-  margin-top: 4px;
+  margin-bottom: 8px;
+  margin-top: 8px;
   flex-shrink: 0;
 }
 
