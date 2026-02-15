@@ -47,7 +47,8 @@ urlpatterns = [
         'show_indexes': False
     }),
     # Serve frontend for all non-API routes (SPA routing)
-    re_path(r'^(?!admin|api|static|assets|secondadmin).*$', TemplateView.as_view(template_name='index.html'), name='frontend'),
+    # Exclude: admin/, admin-dashboard/, api/, static/, assets/, secondadmin/
+    re_path(r'^(?!admin/|admin-dashboard/|api/|static/|assets/|secondadmin/).*$', TemplateView.as_view(template_name='index.html'), name='frontend'),
 ]
 
 # Serve static files in development
