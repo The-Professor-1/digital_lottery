@@ -98,10 +98,16 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'bingo.urls'
 
+# Frontend build may live inside backend/ or at repo root (e.g. on EC2)
+FRONTEND_DIST_DIRS = [
+    os.path.join(BASE_DIR, 'frontend_dist'),
+    os.path.join(BASE_DIR, '..', 'frontend_dist'),
+]
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'frontend_dist')],  # Frontend build directory
+        'DIRS': [d for d in FRONTEND_DIST_DIRS if os.path.exists(d)],  # Frontend build directory (try both locations)
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -178,8 +184,8 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# Frontend static files (from Vite build)
-FRONTEND_DIST = os.path.join(BASE_DIR, 'frontend_dist')
+# Frontend static files (from Vite build) - use first existing location (backend/ or repo root)
+FRONTEND_DIST = next((os.path.abspath(d) for d in FRONTEND_DIST_DIRS if os.path.exists(d)), os.path.join(BASE_DIR, 'frontend_dist'))
 if os.path.exists(FRONTEND_DIST):
     # Add frontend_dist to static files directories
     # This includes index.html and all assets

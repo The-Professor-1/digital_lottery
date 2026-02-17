@@ -19,8 +19,28 @@ from django.views.generic import TemplateView
 from django.conf import settings
 from django.conf.urls.static import static
 from django.views.static import serve
+from django.http import HttpResponse, Http404
 from api import admin_views
 import os
+
+
+def serve_spa_index(request):
+    """Serve the SPA index.html from frontend_dist (tries backend/frontend_dist and repo root frontend_dist)."""
+    base = getattr(settings, 'BASE_DIR', None)
+    if base is None:
+        raise Http404('Frontend not configured')
+    # Path can be Path or str
+    base = str(base)
+    candidates = [
+        os.path.join(base, 'frontend_dist', 'index.html'),
+        os.path.join(base, '..', 'frontend_dist', 'index.html'),
+    ]
+    for path in candidates:
+        abs_path = os.path.abspath(path)
+        if os.path.isfile(abs_path):
+            with open(abs_path, 'r', encoding='utf-8') as f:
+                return HttpResponse(f.read(), content_type='text/html')
+    raise Http404('index.html not found')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -47,9 +67,8 @@ urlpatterns = [
         'show_indexes': False
     }),
     # Serve frontend for all non-API routes (SPA routing)
-    # Exclude: admin/, api/, static/, assets/ (but allow admin-dashboard/ and secondadmin/ to go to SPA)
-    # Note: admin-dashboard/ and secondadmin/ API endpoints are still handled above, but the pages themselves go to SPA
-    re_path(r'^(?!admin/|api/|static/|assets/).*$', TemplateView.as_view(template_name='index.html'), name='frontend'),
+    # Use serve_spa_index so index.html is loaded from filesystem (works when frontend_dist is beside backend on EC2)
+    re_path(r'^(?!admin/|api/|static/|assets/).*$', serve_spa_index, name='frontend'),
 ]
 
 # Serve static files in development
