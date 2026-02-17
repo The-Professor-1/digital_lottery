@@ -1076,6 +1076,7 @@ export default {
 
 .selected-card-display.compact :deep(.letter-cell) {
   font-size: 25px;
+  
   min-height: 25px;
 }
 </style>
