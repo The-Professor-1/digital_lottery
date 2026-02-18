@@ -550,11 +550,8 @@ export default {
             this.handleWinnerRedirect()
           }, 8000)
         }
-        if (isFakeUserWinner) {
-          setTimeout(applyWinner, 3000)
-        } else {
-          applyWinner()
-        }
+        // Show winner banner immediately for all winners (real and fake)
+        applyWinner()
       })
       
       this.ws.on('game_ended', (data) => {

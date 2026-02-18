@@ -798,7 +798,6 @@ export default {
         // Set flag to prevent loadGame from running and interfering with banner
         this._winnerBannerActive = true
         
-        // FIX: For fake user winners, wait 3 seconds before showing banner (gives real players chance to claim)
         const isFakeUserWinner = (data.winners && data.winners.length > 0 && data.winners[0].is_fake) ||
                                  (data.winner && data.winner.is_fake) ||
                                  (data.winners && data.winners.length > 0 && data.winners[0].winner && data.winners[0].winner.is_fake) ||
@@ -947,16 +946,8 @@ export default {
           isFakeUserWinner: isFakeUserWinner
         })
         
-        // FIX: Show banner immediately for real users, after 3-second delay for fake users
-        if (isFakeUserWinner) {
-          // Wait 3 seconds before showing banner for fake users
-          setTimeout(() => {
-            showWinnerBanner()
-          }, 3000)
-        } else {
-          // Real user winner - show immediately
-          showWinnerBanner()
-        }
+        // Show winner banner immediately for all winners (real and fake)
+        showWinnerBanner()
         
         // Redirect to completed view after 8 seconds (handled by WinnerBanner timer)
       })
