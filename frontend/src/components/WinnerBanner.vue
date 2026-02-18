@@ -230,27 +230,27 @@ export default {
   transform: translate(-50%, -50%);
   background: linear-gradient(135deg, var(--accent-coral) 0%, var(--accent-coral-dark) 100%);
   color: white;
-  padding: 32px;
-  border-radius: 20px;
+  padding: 20px;
+  border-radius: 14px;
   text-align: center;
   z-index: 1000;
   box-shadow: var(--card-shadow-lg);
-  border: 3px solid rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   min-width: 350px;
-  max-width: 90vw;
-  max-height: 90vh;
+  max-width: 85vw;
+  max-height: 85vh;
   overflow-y: auto;
 }
 
 .banner-content h1 {
-  font-size: 48px;
-  margin: 0 0 15px 0;
+  font-size: 32px;
+  margin: 0 0 10px 0;
   text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
   font-weight: bold;
 }
 
 .winner-info {
-  margin: 15px 0;
+  margin: 10px 0;
 }
 
 .winner-message {
@@ -273,48 +273,48 @@ export default {
 
 .winner-text {
   display: inline-block;
-  font-size: 18px;
+  font-size: 15px;
 }
 
 .winner-text-you {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: bold;
   color: white;
 }
 
 .winner-card-display {
-  margin: 20px auto;
-  max-width: 280px;
+  margin: 12px auto;
+  max-width: 220px;
   background: white;
-  border-radius: 10px;
-  padding: 12px;
-  transform: scale(0.85);
+  border-radius: 8px;
+  padding: 8px;
+  transform: scale(0.75);
   transform-origin: center;
 }
 
 .prize {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: bold;
-  margin-top: 15px;
-  padding: 10px;
+  margin-top: 10px;
+  padding: 8px;
   background: rgba(255,255,255,0.2);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .timer-section {
-  margin-top: 20px;
-  padding: 10px;
+  margin-top: 12px;
+  padding: 8px;
   background: rgba(255,255,255,0.2);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .timer-label {
-  font-size: 14px;
-  margin-bottom: 5px;
+  font-size: 12px;
+  margin-bottom: 4px;
 }
 
 .timer-value {
-  font-size: 32px;
+  font-size: 24px;
   font-weight: bold;
   color: white;
 }
@@ -325,33 +325,33 @@ export default {
 }
 
 .winners-header {
-  margin: 15px 0;
+  margin: 10px 0;
 }
 
 .winner-count-text {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: bold;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 
 .split-prize-text {
-  font-size: 16px;
+  font-size: 14px;
   opacity: 0.9;
 }
 
 .winners-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 20px;
-  margin: 20px 0;
-  max-height: 400px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+  max-height: 280px;
   overflow-y: auto;
 }
 
 .winner-item {
   background: rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-  padding: 15px;
+  border-radius: 8px;
+  padding: 10px;
   text-align: center;
 }
 
@@ -359,72 +359,73 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
 .winner-badge {
   background: #2ecc71;
   color: white;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  font-size: 16px;
+  font-size: 13px;
 }
 
 .winner-name-multiple {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: bold;
 }
 
 .winner-text-you-small {
   background: linear-gradient(135deg, var(--success-green) 0%, var(--success-green-dark) 100%);
   color: white;
-  padding: 6px 14px;
-  border-radius: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
   font-weight: 700;
+  font-size: 13px;
   box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
 }
 
 .winner-card-display-small {
-  margin: 10px auto;
-  max-width: 200px;
+  margin: 6px auto;
+  max-width: 150px;
   background: white;
-  border-radius: 8px;
-  padding: 10px;
-  transform: scale(0.8);
+  border-radius: 6px;
+  padding: 6px;
+  transform: scale(0.7);
   transform-origin: center;
 }
 
 .winner-prize {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: bold;
-  margin-top: 10px;
-  padding: 8px;
+  margin-top: 6px;
+  padding: 6px;
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
+  border-radius: 5px;
 }
 
 .total-prize-section {
-  margin-top: 20px;
-  padding: 15px;
+  margin-top: 12px;
+  padding: 10px;
   background: rgba(255, 255, 255, 0.25);
-  border-radius: 10px;
+  border-radius: 8px;
   border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 .total-prize-label {
-  font-size: 16px;
-  margin-bottom: 5px;
+  font-size: 13px;
+  margin-bottom: 4px;
   opacity: 0.9;
 }
 
 .total-prize-value {
-  font-size: 28px;
+  font-size: 20px;
   font-weight: bold;
 }
 

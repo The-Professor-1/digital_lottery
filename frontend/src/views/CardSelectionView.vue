@@ -13,7 +13,11 @@
     <div class="top-section" v-if="game?.status === 'waiting'">
       <div class="timer-section-top">
         <span class="timer-label-text">ለመጀመር፡</span>
-        <Timer :seconds="timerSeconds" />
+        <CardSelectionTimer
+          :seconds="timerSeconds"
+          :total-seconds="game?.card_selection_timer || 20"
+          :game-created-at="game?.created_at"
+        />
       </div>
       <div class="wallet-section-top">
         <span class="wallet-label">ያለዎት ገንዘብ ፡</span>
@@ -97,7 +101,7 @@
 import InfoBar from '../components/InfoBar.vue'
 import GameStatus from '../components/GameStatus.vue'
 import CardSelector from '../components/CardSelector.vue'
-import Timer from '../components/Timer.vue'
+import CardSelectionTimer from '../components/CardSelectionTimer.vue'
 import UserCard from '../components/UserCard.vue'
 import NotificationBanner from '../components/NotificationBanner.vue'
 import WinnerBanner from '../components/WinnerBanner.vue'
@@ -110,7 +114,7 @@ export default {
     InfoBar,
     GameStatus,
     CardSelector,
-    Timer,
+    CardSelectionTimer,
     UserCard,
     NotificationBanner,
     WinnerBanner
@@ -1091,7 +1095,7 @@ export default {
   left: 0;
   right: 0;
   background: var(--primary-light);
-  padding: 12px 0px;
+  padding: 16px 0px 12px; /* Slightly more top padding to center card in container */
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
   border-top: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 16px 16px 0 0;
@@ -1129,8 +1133,8 @@ export default {
   height: 100%;
   overflow: visible;
   position: relative;
-  padding: 0; /* Remove any default padding */
-  margin: 0; /* Remove any default margin */
+  padding: 0;
+  margin: 12px 0 0 0; /* Slight top margin to shift card down for better centering in container */
 }
 
 .selected-card-display.compact :deep(.user-card) {

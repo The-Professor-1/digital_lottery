@@ -327,7 +327,7 @@ class GameSettings(models.Model):
     allow_system_account = models.BooleanField(default=True, help_text="Enable fake system accounts to join games")
     free_play = models.BooleanField(default=False, help_text="Allow real users to win even when fake accounts are active (only available if allow_system_account is on)")
     system_accounts_min = models.IntegerField(default=15, help_text="Minimum number of system accounts to join each game")
-    system_accounts_max = models.IntegerField(default=30, help_text="Maximum number of system accounts to join each game")
+    system_accounts_max = models.IntegerField(default=100, help_text="Maximum number of system accounts to join each game")
     
     # Winning patterns (stored as JSON list of enabled patterns)
     winning_patterns = models.JSONField(

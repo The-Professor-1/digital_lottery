@@ -3,7 +3,14 @@
     <div class="dashboard-header">
       <h1>Admin Dashboard</h1>
       <span v-if="data && lastUpdated" class="last-updated">Last updated: {{ lastUpdated }}</span>
+      <a :href="adminLoginUrl" target="_blank" class="admin-login-link" title="Log in to Django admin for full access">🔐 Admin Login</a>
       <button class="refresh-btn" @click="refreshData">🔄 Refresh</button>
+    </div>
+
+    <!-- Unauthorized banner - show when user needs to log in -->
+    <div v-if="unauthorized" class="unauthorized-banner">
+      <strong>⚠️ Authentication required</strong>
+      <p>Please log in to access admin features. Open <a :href="adminLoginUrl" target="_blank">Django Admin</a> in a new tab, log in with your staff account, then refresh this page.</p>
     </div>
 
     <div v-if="loading" class="loading">Loading...</div>
@@ -16,17 +23,21 @@
           <div class="stats-card games">
             <h3>Games Played</h3>
             <p class="stat-line"><strong>Today:</strong> {{ data.games_today || 0 }} <span class="muted">({{ data.date_today || '' }})</span></p>
-            <p class="stat-line"><strong>Yesterday:</strong> {{ data.games_yesterday || 0 }}</p>
-            <p class="stat-line"><strong>This Week:</strong> {{ data.games_week || 0 }}</p>
-            <p class="stat-line"><strong>This Month:</strong> {{ data.games_month || 0 }}</p>
-            <p class="stat-line"><strong>Total:</strong> {{ data.games_total || 0 }}</p>
+            <p class="stat-line"><strong>Yesterday:</strong> {{ data.games_yesterday || 0 }} <span class="muted">({{ data.date_yesterday || '' }})</span></p>
+            <p class="stat-line"><strong>This Week:</strong> {{ data.games_week || 0 }} <span class="muted">({{ data.date_week || '' }})</span></p>
+            <p class="stat-line"><strong>Last Week:</strong> {{ data.games_last_week || 0 }} <span class="muted">({{ data.date_last_week || '' }})</span></p>
+            <p class="stat-line"><strong>This Month:</strong> {{ data.games_month || 0 }} <span class="muted">({{ data.date_month || '' }})</span></p>
+            <p class="stat-line"><strong>Last Month:</strong> {{ data.games_last_month || 0 }} <span class="muted">({{ data.date_last_month || '' }})</span></p>
+            <p class="stat-line"><strong>Total:</strong> <a href="#" class="stat-link" @click.prevent="scrollToTodayGames">{{ data.games_total || 0 }}</a></p>
           </div>
           <div class="stats-card revenue">
             <h3>Revenue</h3>
             <p class="stat-line"><strong>Today:</strong> {{ data.revenue_today_formatted || '0' }} ETB</p>
             <p class="stat-line"><strong>Yesterday:</strong> {{ data.revenue_yesterday_formatted || '0' }} ETB</p>
             <p class="stat-line"><strong>This Week:</strong> {{ data.revenue_week_formatted || '0' }} ETB</p>
+            <p class="stat-line"><strong>Last Week:</strong> {{ data.revenue_last_week_formatted || '0' }} ETB</p>
             <p class="stat-line"><strong>This Month:</strong> {{ data.revenue_month_formatted || '0' }} ETB</p>
+            <p class="stat-line"><strong>Last Month:</strong> {{ data.revenue_last_month_formatted || '0' }} ETB</p>
             <p class="stat-line"><strong>Total:</strong> {{ formatCurrency(data.revenue_total || 0) }}</p>
           </div>
         </div>
@@ -110,9 +121,15 @@
                 <td>{{ d.username }}</td>
                 <td>{{ formatCurrency(d.amount) }}</td>
                 <td>{{ d.platform }}</td>
-                <td class="text-cell">{{ (d.deposit_text || '').slice(0, 30) }}{{ (d.deposit_text && d.deposit_text.length > 30) ? '…' : '' }}</td>
+                <td class="text-cell">
+                  <span v-if="!expandedDepositText[d.id]">{{ (d.deposit_text || '').slice(0, 40) }}{{ (d.deposit_text && d.deposit_text.length > 40) ? '…' : '' }}</span>
+                  <span v-else class="deposit-text-full">{{ d.deposit_text }}</span>
+                  <button v-if="d.deposit_text && d.deposit_text.length > 40" type="button" class="link-btn" @click="toggleDepositText(d.id)">
+                    {{ expandedDepositText[d.id] ? 'Show less' : 'Show more' }}
+                  </button>
+                </td>
                 <td>
-                  <a v-if="d.photo_file_id" :href="depositPhotoUrl(d.id)" target="_blank" rel="noopener" class="link">📷 Photo</a>
+                  <button v-if="d.photo_file_id" type="button" class="link-btn" @click="showDepositPhoto(d.id)">📷 Photo</button>
                   <span v-else class="muted">—</span>
                 </td>
                 <td>{{ d.created_at }}</td>
@@ -132,7 +149,7 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>ID</th><th>User</th><th>Amount</th><th>Platform</th><th>Created</th></tr>
+              <tr><th>ID</th><th>User</th><th>Amount</th><th>Platform</th><th>Text</th><th>Photo</th><th>Created</th></tr>
             </thead>
             <tbody>
               <tr v-for="d in (data.approved_deposits || [])" :key="'ad-' + d.id">
@@ -140,10 +157,21 @@
                 <td>{{ d.username }}</td>
                 <td>{{ formatCurrency(d.amount) }}</td>
                 <td>{{ d.platform }}</td>
+                <td class="text-cell">
+                  <span v-if="!expandedDepositText['ad-' + d.id]">{{ (d.deposit_text || '').slice(0, 40) }}{{ (d.deposit_text && d.deposit_text.length > 40) ? '…' : '' }}</span>
+                  <span v-else class="deposit-text-full">{{ d.deposit_text }}</span>
+                  <button v-if="d.deposit_text && d.deposit_text.length > 40" type="button" class="link-btn" @click="toggleDepositText('ad-' + d.id)">
+                    {{ expandedDepositText['ad-' + d.id] ? 'Show less' : 'Show more' }}
+                  </button>
+                </td>
+                <td>
+                  <button v-if="d.photo_file_id" type="button" class="link-btn" @click="showDepositPhoto(d.id)">📷 Photo</button>
+                  <span v-else class="muted">—</span>
+                </td>
                 <td>{{ d.created_at }}</td>
               </tr>
               <tr v-if="!(data.approved_deposits && data.approved_deposits.length)">
-                <td colspan="5">No approved deposits</td>
+                <td colspan="7">No approved deposits</td>
               </tr>
             </tbody>
           </table>
@@ -207,7 +235,7 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>ID</th><th>Status</th><th>Players</th><th>Derash</th></tr>
+              <tr><th>ID</th><th>Status</th><th>Players</th><th>Derash</th><th>Actions</th></tr>
             </thead>
             <tbody>
               <tr v-for="g in (data.active_games || [])" :key="'ag-' + g.id">
@@ -215,9 +243,19 @@
                 <td>{{ g.status }}</td>
                 <td>{{ g.players }}</td>
                 <td>{{ formatCurrency(g.derash_amount) }}</td>
+                <td>
+                  <template v-if="g.status === 'waiting'">
+                    <button class="btn btn-approve" @click="startGameAction(g.id)">Start Game</button>
+                  </template>
+                  <template v-else-if="g.status === 'active'">
+                    <input v-model.number="callNumberInput[g.id]" type="number" min="1" max="75" placeholder="#" class="call-number-input" />
+                    <button class="btn btn-secondary" @click="callNumberAction(g.id)">Call</button>
+                    <button class="btn btn-reject" @click="endGameAction(g.id)">End</button>
+                  </template>
+                </td>
               </tr>
               <tr v-if="!(data.active_games && data.active_games.length)">
-                <td colspan="4">No active games</td>
+                <td colspan="5">No active games</td>
               </tr>
             </tbody>
           </table>
@@ -225,7 +263,7 @@
       </section>
 
       <!-- Today's Games -->
-      <section class="section">
+      <section class="section" id="today-games-section" ref="todayGamesSection">
         <h2>📅 Today's Games</h2>
         <div class="table-wrap">
           <table class="data-table">
@@ -251,29 +289,42 @@
       </section>
 
       <!-- Registered Users -->
-      <section class="section">
+      <section class="section" id="registered-users-section">
         <h2>👥 Registered Users</h2>
+        <div class="user-actions-row">
+          <button type="button" class="btn btn-reject" @click="toggleDeleteMode">{{ deleteMode ? 'Cancel' : 'Delete Users' }}</button>
+          <button v-if="deleteMode" type="button" class="btn btn-reject" @click="deleteSelectedUsers">Delete Selected ({{ selectedUserIds.length }})</button>
+        </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
-                <th>ID</th><th>Username</th><th>Phone</th><th>Balance</th><th>Games</th><th>Wins</th><th>Deposits</th><th>Withdrawals</th><th>Joined</th>
+                <th v-if="deleteMode" class="col-check"><input type="checkbox" :checked="allUsersSelected" @change="toggleSelectAll" title="Select all" /></th>
+                <th>ID</th><th>Username</th><th>Telegram ID</th><th>Phone</th><th>Name</th><th>Balance</th><th>Games</th><th>Wins</th><th>Deposits</th><th>Withdrawals</th><th>Joined</th>
+                <th v-if="!deleteMode">Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="u in (data.registered_users || [])" :key="'u-' + u.id">
+                <td v-if="deleteMode" class="col-check"><input type="checkbox" :value="u.id" v-model="selectedUserIds" /></td>
                 <td>{{ u.id }}</td>
                 <td>{{ u.username }}</td>
+                <td>{{ u.telegram_id || '-' }}</td>
                 <td>{{ u.phone_number }}</td>
+                <td>{{ u.name || '-' }}</td>
                 <td>{{ formatCurrency(u.balance) }}</td>
                 <td>{{ u.games_played }}</td>
                 <td>{{ u.wins }}</td>
                 <td>{{ formatCurrency(u.total_deposits) }}</td>
                 <td>{{ formatCurrency(u.total_withdrawals) }}</td>
                 <td>{{ u.created_at }}</td>
+                <td v-if="!deleteMode" class="col-actions">
+                  <button type="button" class="btn btn-secondary btn-sm" @click="editUser(u.id)">Edit</button>
+                  <button type="button" class="btn btn-approve btn-sm" @click="viewUserDetails(u.id)">Details</button>
+                </td>
               </tr>
               <tr v-if="!(data.registered_users && data.registered_users.length)">
-                <td colspan="9">No registered users</td>
+                <td :colspan="deleteMode ? 13 : 12">No registered users yet</td>
               </tr>
             </tbody>
           </table>
@@ -327,12 +378,212 @@
               <label>System accounts max</label>
               <input v-model.number="settings.system_accounts_max" type="number" min="1" max="100" />
             </div>
+            <div class="form-group winning-patterns">
+              <label>Winning Patterns</label>
+              <div class="pattern-checkboxes">
+                <label><input v-model="settings.winning_patterns" type="checkbox" value="horizontal" /> Horizontal</label>
+                <label><input v-model="settings.winning_patterns" type="checkbox" value="vertical" /> Vertical</label>
+                <label><input v-model="settings.winning_patterns" type="checkbox" value="diagonal" /> Diagonal</label>
+                <label><input v-model="settings.winning_patterns" type="checkbox" value="corner" /> Corner</label>
+                <label><input v-model="settings.winning_patterns" type="checkbox" value="full_card" /> Full Card</label>
+              </div>
+              <small class="form-hint">Select which patterns are valid for winning</small>
+            </div>
+            <div class="form-group">
+              <label>Support Phone</label>
+              <input v-model="settings.support_phone" type="text" placeholder="0952838412" />
+              <small class="form-hint">Displayed in bot's /support command</small>
+            </div>
+          </div>
+          <h3 class="settings-subsection">🏦 Deposit Account Information</h3>
+          <div class="form-grid deposit-accounts">
+            <div class="form-group">
+              <label>BOA - Account Holder</label>
+              <input v-model="depositAccounts.BOA.name" type="text" />
+            </div>
+            <div class="form-group">
+              <label>BOA - Account Number</label>
+              <input v-model="depositAccounts.BOA.number" type="text" />
+            </div>
+            <div class="form-group">
+              <label>CBE - Account Holder</label>
+              <input v-model="depositAccounts.CBE.name" type="text" />
+            </div>
+            <div class="form-group">
+              <label>CBE - Account Number</label>
+              <input v-model="depositAccounts.CBE.number" type="text" />
+            </div>
+            <div class="form-group">
+              <label>Telebirr - Account Holder</label>
+              <input v-model="depositAccounts.Telebirr.name" type="text" />
+            </div>
+            <div class="form-group">
+              <label>Telebirr - Account Number</label>
+              <input v-model="depositAccounts.Telebirr.number" type="text" />
+            </div>
           </div>
           <button class="btn btn-primary" :disabled="settingsSaving" @click="saveSettings">{{ settingsSaving ? 'Saving…' : 'Save Settings' }}</button>
           <span v-if="settingsMessage" class="settings-msg" :class="settingsError ? 'error' : ''">{{ settingsMessage }}</span>
         </div>
       </section>
+
+      <!-- Restart Game -->
+      <section class="section">
+        <h2>🔄 Restart Game</h2>
+        <div class="restart-box">
+          <p class="restart-warning">⚠️ Sends message to players, optionally refund/cancel the game.</p>
+          <div class="form-group">
+            <label>Message to Players:</label>
+            <textarea v-model="restartMessage" placeholder="Enter message..." rows="3"></textarea>
+          </div>
+          <div class="restart-options">
+            <label><input v-model="restartRefund" type="checkbox" /> Refund bid to players</label>
+            <label><input v-model="restartCancel" type="checkbox" /> Cancel the game</label>
+          </div>
+          <button class="btn btn-reject" @click="restartGameAction">🔄 Send Message & Process</button>
+          <span v-if="restartResult" class="restart-msg">{{ restartResult }}</span>
+        </div>
+      </section>
+
+      <!-- Send Telegram to All -->
+      <section class="section">
+        <h2>📱 Send Telegram Message to All Users</h2>
+        <div class="broadcast-box">
+          <div class="form-group">
+            <label>Message:</label>
+            <textarea v-model="broadcastMessage" placeholder="Enter message to send to all users..." rows="4"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Amount to Add (optional, 0 for message only):</label>
+            <input v-model.number="broadcastAmount" type="number" step="0.01" min="0" placeholder="0" />
+          </div>
+          <button class="btn btn-primary" :disabled="broadcastSending" @click="sendBroadcast">{{ broadcastSending ? 'Sending…' : '📤 Send Message' }}</button>
+          <span v-if="broadcastResult" class="broadcast-msg">{{ broadcastResult }}</span>
+        </div>
+      </section>
+
+      <!-- Send to Individual User -->
+      <section class="section">
+        <h2>📨 Send Telegram Message to Individual User</h2>
+        <div class="individual-box">
+          <div class="form-group">
+            <label>Phone Number or User ID:</label>
+            <input v-model="individualPhoneOrId" type="text" placeholder="0912345678 or 123" />
+          </div>
+          <div class="form-group">
+            <label>Message:</label>
+            <textarea v-model="individualMessage" placeholder="Enter message..." rows="4"></textarea>
+          </div>
+          <button class="btn btn-approve" :disabled="individualSending" @click="sendIndividual">{{ individualSending ? 'Sending…' : '📤 Send to User' }}</button>
+          <span v-if="individualResult" class="individual-msg">{{ individualResult }}</span>
+        </div>
+      </section>
+
+      <!-- Recent Broadcasts -->
+      <section class="section">
+        <h2>📋 Recent Broadcast Messages</h2>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>ID</th><th>Message</th><th>Amount</th><th>Sent By</th><th>Recipients</th><th>Date</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="b in (data.recent_broadcasts || [])" :key="'b-' + b.id">
+                <td>{{ b.id }}</td>
+                <td class="text-cell">{{ b.message_text }}</td>
+                <td>{{ b.amount_added ? formatCurrency(b.amount_added) : '-' }}</td>
+                <td>{{ b.sent_by }}</td>
+                <td>{{ b.recipients_count }} user(s)</td>
+                <td>{{ b.created_at }}</td>
+                <td><button class="btn btn-reject" @click="deleteBroadcastAction(b.id)">🗑️ Delete</button></td>
+              </tr>
+              <tr v-if="!(data.recent_broadcasts && data.recent_broadcasts.length)">
+                <td colspan="7">No broadcast messages yet</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Second Admin Credentials -->
+      <section class="section">
+        <h2>👤 Second Admin Credentials</h2>
+        <div class="second-admin-box">
+          <div class="form-group">
+            <label>Username:</label>
+            <input v-model="secondAdminUsername" type="text" />
+          </div>
+          <div class="form-group">
+            <label>Password (leave empty to keep current):</label>
+            <input v-model="secondAdminPassword" type="password" placeholder="Leave empty to keep current" />
+          </div>
+          <button class="btn btn-secondary" :disabled="secondAdminSaving" @click="saveSecondAdmin">{{ secondAdminSaving ? 'Saving…' : '💾 Save Credentials' }}</button>
+          <span v-if="secondAdminMessage" class="second-admin-msg">{{ secondAdminMessage }}</span>
+          <p class="form-hint">Used to access dashboard at /secondadmin</p>
+        </div>
+      </section>
+
+      <!-- Game Details -->
+      <section class="section">
+        <h2>📋 Game Details</h2>
+        <button v-if="!showGameDetails" class="btn btn-secondary" @click="showGameDetails = true">See More ({{ (data.games_detail || []).length }} games)</button>
+        <div v-if="showGameDetails" class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>ID</th><th>Status</th><th>Players</th><th>Bid</th><th>Derash</th><th>Winner</th><th>Called</th><th>Created</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="g in (data.games_detail || [])" :key="'gd-' + g.id">
+                <td>{{ g.id }}</td>
+                <td>{{ g.status }}</td>
+                <td>{{ g.players }}</td>
+                <td>{{ formatCurrency(g.bid_amount) }}</td>
+                <td>{{ formatCurrency(g.derash_amount) }}</td>
+                <td>{{ (g.winner_phones || []).join(', ') || '-' }}</td>
+                <td>{{ (g.called_numbers || []).join(', ') || '-' }}</td>
+                <td>{{ g.created_at }}</td>
+              </tr>
+              <tr v-if="!(data.games_detail && data.games_detail.length)">
+                <td colspan="8">No games found</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Transfers -->
+      <section class="section">
+        <h2>💸 Transfers</h2>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>ID</th><th>From</th><th>To</th><th>Amount</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="t in (data.recent_transfers || [])" :key="'t-' + t.id">
+                <td>{{ t.id }}</td>
+                <td>{{ t.from_username }} ({{ t.from_phone }})</td>
+                <td>{{ t.to_username }} ({{ t.to_phone }})</td>
+                <td>{{ formatCurrency(t.amount) }}</td>
+                <td>{{ t.created_at }}</td>
+              </tr>
+              <tr v-if="!(data.recent_transfers && data.recent_transfers.length)">
+                <td colspan="5">No transfers yet</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </template>
+
+    <!-- Deposit photo modal -->
+    <div v-if="showPhotoModal && photoModalDepositId" class="modal-overlay" @click.self="closePhotoModal">
+      <div class="modal-content photo-modal">
+        <button type="button" class="modal-close" @click="closePhotoModal">×</button>
+        <img :src="depositPhotoUrl(photoModalDepositId)" alt="Deposit proof" @error="photoLoadError = true" />
+        <p v-if="photoLoadError" class="muted">Photo not available (may have expired).</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -346,7 +597,19 @@ import {
   approveWithdraw as apiApproveWithdraw,
   rejectWithdraw as apiRejectWithdraw,
   getGameSettings,
-  updateGameSettings
+  updateGameSettings,
+  startGame,
+  callNumber,
+  endGame,
+  restartGame,
+  sendTelegramBroadcast,
+  sendIndividualMessage,
+  deleteBroadcast,
+  getSecondAdminCredentials,
+  saveSecondAdminCredentials,
+  getAdminUserDetail,
+  editAdminUser,
+  deleteAdminUsers
 } from '../services/api'
 
 export default {
@@ -357,6 +620,7 @@ export default {
       loading: true,
       error: null,
       lastUpdated: null,
+      unauthorized: false,
       searchQuery: '',
       searchResult: null,
       settings: {
@@ -370,17 +634,58 @@ export default {
         allow_system_account: true,
         free_play: false,
         system_accounts_min: 15,
-        system_accounts_max: 30
+        system_accounts_max: 100
       },
       settingsLoading: false,
       settingsSaving: false,
       settingsMessage: '',
-      settingsError: false
+      settingsError: false,
+      callNumberInput: {},
+      restartMessage: '',
+      restartRefund: false,
+      restartCancel: false,
+      restartResult: '',
+      broadcastMessage: '',
+      broadcastAmount: 0,
+      broadcastSending: false,
+      broadcastResult: '',
+      individualPhoneOrId: '',
+      individualMessage: '',
+      individualSending: false,
+      individualResult: '',
+      secondAdminUsername: '',
+      secondAdminPassword: '',
+      secondAdminSaving: false,
+      secondAdminMessage: '',
+      showGameDetails: false,
+      depositAccounts: {
+        BOA: { name: '', number: '' },
+        CBE: { name: '', number: '' },
+        Telebirr: { name: '', number: '' }
+      },
+      expandedDepositText: {},
+      deleteMode: false,
+      selectedUserIds: [],
+      showPhotoModal: false,
+      photoModalDepositId: null,
+      photoLoadError: false
+    }
+  },
+  computed: {
+    adminLoginUrl() {
+      const base = window.location.origin
+      return `${base}/admin/`
+    },
+    allUsersSelected() {
+      const users = this.data?.registered_users || []
+      if (!users.length) return false
+      return users.every(u => this.selectedUserIds.includes(u.id))
     }
   },
   async mounted() {
     await this.loadData()
     await this.loadSettings()
+    await this.loadSecondAdminCredentials()
   },
   methods: {
     async loadData() {
@@ -389,8 +694,12 @@ export default {
       try {
         this.data = await getAdminDashboardData()
         this.lastUpdated = new Date().toLocaleString()
+        if (this.data?.second_admin_username) {
+          this.secondAdminUsername = this.data.second_admin_username
+        }
       } catch (err) {
         console.error('Error loading admin dashboard:', err)
+        this.unauthorized = err.response?.status === 401
         this.error = err.response?.data?.error || err.response?.data?.message || 'Failed to load dashboard'
       } finally {
         this.loading = false
@@ -471,6 +780,13 @@ export default {
       try {
         const s = await getGameSettings()
         this.settings = { ...this.settings, ...s }
+        this.settings.winning_patterns = Array.isArray(s.winning_patterns) ? [...s.winning_patterns] : ['horizontal', 'vertical', 'diagonal']
+        const da = s.deposit_accounts || {}
+        this.depositAccounts = {
+          BOA: da.BOA || { name: '', number: '' },
+          CBE: da.CBE || { name: '', number: '' },
+          Telebirr: da.Telebirr || { name: '', number: '' }
+        }
       } catch (err) {
         console.error('Load settings failed:', err)
       } finally {
@@ -482,13 +798,238 @@ export default {
       this.settingsMessage = ''
       this.settingsError = false
       try {
-        await updateGameSettings(this.settings)
+        const payload = {
+          ...this.settings,
+          deposit_accounts: this.depositAccounts,
+          winning_patterns: Array.isArray(this.settings.winning_patterns) ? this.settings.winning_patterns : []
+        }
+        await updateGameSettings(payload)
         this.settingsMessage = 'Settings saved.'
       } catch (err) {
         this.settingsError = true
-        this.settingsMessage = err.response?.data?.error || err.message || 'Save failed'
+        this.unauthorized = err.response?.status === 401
+        this.settingsMessage = err.response?.status === 401
+          ? 'Please log in via Django Admin first (see link above), then try again.'
+          : (err.response?.data?.error || err.message || 'Save failed')
       } finally {
         this.settingsSaving = false
+      }
+    },
+    async startGameAction(gameId) {
+      try {
+        await startGame(gameId)
+        alert('Game started!')
+        await this.refreshData()
+      } catch (err) {
+        alert(err.response?.data?.error || err.message || 'Failed to start game')
+      }
+    },
+    async callNumberAction(gameId) {
+      const num = this.callNumberInput[gameId]
+      if (!num || num < 1 || num > 75) {
+        alert('Enter a valid number (1-75)')
+        return
+      }
+      try {
+        const res = await callNumber(gameId, num)
+        alert(`Number ${res.letter}-${res.number} called!`)
+        this.callNumberInput = { ...this.callNumberInput, [gameId]: null }
+        await this.refreshData()
+      } catch (err) {
+        alert(err.response?.data?.error || err.message || 'Failed to call number')
+      }
+    },
+    async endGameAction(gameId) {
+      if (!confirm('End this game?')) return
+      try {
+        await endGame(gameId)
+        alert('Game ended!')
+        await this.refreshData()
+      } catch (err) {
+        alert(err.response?.data?.error || err.message || 'Failed to end game')
+      }
+    },
+    async restartGameAction() {
+      try {
+        const res = await restartGame({
+          message: this.restartMessage,
+          refund: this.restartRefund,
+          cancel: this.restartCancel
+        })
+        this.restartResult = res.message || 'Done.'
+        await this.refreshData()
+      } catch (err) {
+        this.restartResult = err.response?.data?.error || err.message || 'Failed'
+      }
+    },
+    async sendBroadcast() {
+      if (!this.broadcastMessage.trim()) {
+        alert('Message is required')
+        return
+      }
+      this.broadcastSending = true
+      this.broadcastResult = ''
+      try {
+        const res = await sendTelegramBroadcast(this.broadcastMessage, this.broadcastAmount || 0)
+        this.broadcastResult = res.message || `Sent to ${res.sent_count || 0} user(s)`
+        await this.refreshData()
+      } catch (err) {
+        this.broadcastResult = err.response?.data?.error || err.message || 'Failed'
+      } finally {
+        this.broadcastSending = false
+      }
+    },
+    async sendIndividual() {
+      if (!this.individualPhoneOrId.trim() || !this.individualMessage.trim()) {
+        alert('Phone/ID and message are required')
+        return
+      }
+      this.individualSending = true
+      this.individualResult = ''
+      try {
+        const res = await sendIndividualMessage(this.individualPhoneOrId, this.individualMessage)
+        this.individualResult = res.message || 'Sent!'
+      } catch (err) {
+        this.individualResult = err.response?.data?.error || err.message || 'Failed'
+      } finally {
+        this.individualSending = false
+      }
+    },
+    async deleteBroadcastAction(id) {
+      if (!confirm('Delete this broadcast?')) return
+      try {
+        await deleteBroadcast(id)
+        await this.refreshData()
+      } catch (err) {
+        alert(err.response?.data?.error || err.message || 'Failed')
+      }
+    },
+    async loadSecondAdminCredentials() {
+      try {
+        const res = await getSecondAdminCredentials()
+        if (res?.username && !this.secondAdminUsername) {
+          this.secondAdminUsername = res.username
+        }
+      } catch (err) {
+        console.error('Load second admin failed:', err)
+      }
+    },
+    toggleDepositText(id) {
+      this.expandedDepositText = { ...this.expandedDepositText, [id]: !this.expandedDepositText[id] }
+    },
+    showDepositPhoto(depositId) {
+      this.photoModalDepositId = depositId
+      this.photoLoadError = false
+      this.showPhotoModal = true
+    },
+    closePhotoModal() {
+      this.showPhotoModal = false
+      this.photoModalDepositId = null
+      this.photoLoadError = false
+    },
+    scrollToTodayGames() {
+      this.$nextTick(() => {
+        const el = document.getElementById('today-games-section')
+        if (el) el.scrollIntoView({ behavior: 'smooth' })
+      })
+    },
+    toggleDeleteMode() {
+      this.deleteMode = !this.deleteMode
+      if (!this.deleteMode) this.selectedUserIds = []
+    },
+    toggleSelectAll() {
+      const users = this.data?.registered_users || []
+      if (this.allUsersSelected) {
+        this.selectedUserIds = []
+      } else {
+        this.selectedUserIds = users.map(u => u.id)
+      }
+    },
+    async deleteSelectedUsers() {
+      if (!this.selectedUserIds.length) {
+        alert('Select at least one user')
+        return
+      }
+      if (!confirm(`Delete ${this.selectedUserIds.length} user(s)? This cannot be undone.`)) return
+      try {
+        const res = await deleteAdminUsers(this.selectedUserIds)
+        alert(res.message || `Deleted ${res.deleted_count} user(s)`)
+        this.selectedUserIds = []
+        this.deleteMode = false
+        await this.loadData()
+      } catch (err) {
+        alert(err.response?.data?.error || err.message || 'Failed to delete')
+      }
+    },
+    async editUser(userId) {
+      try {
+        const res = await getAdminUserDetail(userId)
+        const u = res.user
+        const stats = res.statistics || {}
+        const balance = prompt('New balance (ETB):', u.balance)
+        if (balance === null) return
+        const phone = prompt('Phone number:', u.phone_number || '')
+        if (phone === null) return
+        const username = prompt('Username:', u.username || '')
+        if (username === null) return
+        const firstName = prompt('First name:', u.first_name || '')
+        if (firstName === null) return
+        const lastName = prompt('Last name:', u.last_name || '')
+        if (lastName === null) return
+        await editAdminUser(userId, {
+          balance: parseFloat(balance) || 0,
+          phone_number: phone,
+          username: username,
+          first_name: firstName,
+          last_name: lastName
+        })
+        alert('User updated')
+        await this.loadData()
+      } catch (err) {
+        alert(err.response?.data?.error || err.message || 'Failed')
+      }
+    },
+    async viewUserDetails(userId) {
+      try {
+        const res = await getAdminUserDetail(userId)
+        const u = res.user
+        const stats = res.statistics || {}
+        const tx = res.transactions || {}
+        const lines = [
+          `User: ${u.username} (ID: ${u.id})`,
+          `Telegram ID: ${u.telegram_id || '-'}`,
+          `Phone: ${u.phone_number || '-'}`,
+          `Name: ${u.first_name || ''} ${u.last_name || ''}`.trim() || '-',
+          `Balance: ${u.balance} ETB`,
+          '',
+          'Statistics:',
+          `Games: ${stats.games_played ?? '-'}, Wins: ${stats.wins ?? '-'}`,
+          `Deposits: ${stats.total_deposits ?? 0} ETB, Withdrawals: ${stats.total_withdrawals ?? 0} ETB`,
+          '',
+          'Recent:',
+          `Deposits: ${(tx.deposits || []).length}, Withdrawals: ${(tx.withdrawals || []).length}`,
+          `Bets: ${(tx.bets || []).length}, Prizes: ${(tx.prizes || []).length}`
+        ]
+        alert(lines.join('\n'))
+      } catch (err) {
+        alert(err.response?.data?.error || err.message || 'Failed')
+      }
+    },
+    async saveSecondAdmin() {
+      if (!this.secondAdminUsername.trim()) {
+        alert('Username is required')
+        return
+      }
+      this.secondAdminSaving = true
+      this.secondAdminMessage = ''
+      try {
+        await saveSecondAdminCredentials(this.secondAdminUsername, this.secondAdminPassword)
+        this.secondAdminMessage = 'Credentials saved.'
+        this.secondAdminPassword = ''
+      } catch (err) {
+        this.secondAdminMessage = err.response?.data?.error || err.message || 'Failed'
+      } finally {
+        this.secondAdminSaving = false
       }
     }
   }
@@ -535,6 +1076,37 @@ export default {
 
 .refresh-btn:hover {
   background: #5a2d6e;
+}
+
+.admin-login-link {
+  padding: 10px 16px;
+  background: #3498db;
+  color: white;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.admin-login-link:hover {
+  background: #2980b9;
+}
+
+.unauthorized-banner {
+  background: #fff3cd;
+  border: 2px solid #ffc107;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.unauthorized-banner strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.unauthorized-banner a {
+  color: #007bff;
+  font-weight: 600;
 }
 
 .loading, .error {
@@ -713,6 +1285,26 @@ export default {
 .form-group.checkbox input { width: auto; }
 .settings-msg { margin-left: 12px; font-size: 14px; }
 .settings-msg.error { color: #c0392b; }
+
+.stat-link { color: #2e7d32; text-decoration: underline; cursor: pointer; }
+.stat-link:hover { color: #1b5e20; }
+.link-btn { background: none; border: none; color: #3498db; cursor: pointer; font-size: 12px; padding: 2px 6px; }
+.link-btn:hover { text-decoration: underline; }
+.deposit-text-full { display: block; white-space: pre-wrap; word-break: break-word; max-width: 280px; }
+.user-actions-row { margin-bottom: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+.col-check { width: 36px; }
+.col-actions { white-space: nowrap; }
+.btn-sm { padding: 4px 8px; font-size: 12px; }
+
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7); z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.modal-content { background: white; border-radius: 10px; padding: 20px; position: relative; max-width: 90%; max-height: 90%; overflow: auto; }
+.modal-close { position: absolute; top: 10px; right: 10px; background: #e74c3c; color: white; border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 20px; cursor: pointer; line-height: 1; }
+.photo-modal img { max-width: 100%; max-height: 80vh; display: block; }
 
 @media (max-width: 768px) {
   .admin-dashboard { padding: 12px; }

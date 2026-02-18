@@ -69,11 +69,19 @@ adminApi.interceptors.response.use(
   }
 )
 
-// Add token to requests if available
+// Add token and CSRF to requests
 api.interceptors.request.use((config) => {
   const token = getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  // CSRF for session-based admin requests (Django)
+  const csrfToken = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('csrftoken='))
+    ?.split('=')[1]
+  if (csrfToken) {
+    config.headers['X-CSRFToken'] = csrfToken
   }
   return config
 })
@@ -229,8 +237,56 @@ export async function startGame(gameId) {
   return response.data
 }
 
-export async function restartGame() {
-  const response = await api.post('/admin/games/restart/')
+export async function restartGame(params = {}) {
+  const response = await api.post('/admin/games/restart/', params)
+  return response.data
+}
+
+export async function callNumber(gameId, number) {
+  const response = await api.post(`/admin/games/${gameId}/call-number/`, { number })
+  return response.data
+}
+
+export async function endGame(gameId) {
+  const response = await api.post(`/admin/games/${gameId}/end/`)
+  return response.data
+}
+
+export async function sendTelegramBroadcast(message, amount = 0) {
+  const response = await api.post('/admin/send-telegram-message/', { message, amount })
+  return response.data
+}
+
+export async function sendIndividualMessage(phoneOrId, message) {
+  const body = { message }
+  const trimmed = String(phoneOrId || '').trim()
+  if (/^\d+$/.test(trimmed)) {
+    body.user_id = trimmed
+  } else {
+    body.phone_number = trimmed
+  }
+  const response = await api.post('/admin/send-individual-message/', body)
+  return response.data
+}
+
+export async function deleteBroadcast(broadcastId) {
+  const response = await api.post(`/admin/broadcasts/${broadcastId}/delete/`)
+  return response.data
+}
+
+// Admin user management (uses /api/ routes)
+export async function getAdminUserDetail(userId) {
+  const response = await api.get(`/admin/users/${userId}/`)
+  return response.data
+}
+
+export async function editAdminUser(userId, payload) {
+  const response = await api.put(`/admin/users/${userId}/edit/`, payload)
+  return response.data
+}
+
+export async function deleteAdminUsers(userIds) {
+  const response = await api.post('/admin/users/delete/', { user_ids: userIds })
   return response.data
 }
 
@@ -246,7 +302,7 @@ export async function refreshDepositsWithdrawals() {
 }
 
 export async function searchUser(query) {
-  const response = await adminApi.get('/admin-dashboard/search-user/', { params: { q: query } })
+  const response = await adminApi.get('/admin-dashboard/search-user/', { params: { phone: query } })
   return response.data
 }
 
@@ -282,6 +338,16 @@ export async function getGameSettings() {
 
 export async function updateGameSettings(settings) {
   const response = await adminApi.post('/admin-dashboard/settings/', settings)
+  return response.data
+}
+
+export async function getSecondAdminCredentials() {
+  const response = await adminApi.get('/admin-dashboard/second-admin-credentials/')
+  return response.data
+}
+
+export async function saveSecondAdminCredentials(username, password) {
+  const response = await adminApi.post('/admin-dashboard/second-admin-credentials/', { username, password })
   return response.data
 }
 

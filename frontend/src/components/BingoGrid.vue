@@ -70,7 +70,7 @@ export default {
   border-radius: 12px;
   margin: 5px;
   width: 100%;
-  height: 50px;
+  min-height: 100%;
   box-sizing: border-box;
   box-shadow: var(--card-shadow);
   border: 1px solid rgba(255, 255, 255, 0.5);

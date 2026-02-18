@@ -874,7 +874,7 @@ def game_settings_api(request):
                     min_val = 1
                 settings_obj.system_accounts_min = min_val
             if 'system_accounts_max' in data:
-                max_val = int(data['system_accounts_max'])
+                max_val = min(100, int(data['system_accounts_max']))  # Cap at 100 (matches FAKE_USER_NAMES count)
                 if max_val < settings_obj.system_accounts_min:
                     max_val = settings_obj.system_accounts_min
                 settings_obj.system_accounts_max = max_val
@@ -1656,6 +1656,45 @@ def admin_dashboard_api(request):
         'pending_withdraws_count': pending_withdraws_count,
         'approved_deposits_count': approved_deposits_count,
         'approved_withdraws_count': approved_withdraws_count,
+        'recent_transfers': [
+            {
+                'id': t.id,
+                'from_username': t.from_user.username,
+                'from_phone': t.from_user.phone_number or 'N/A',
+                'to_username': t.to_user.username,
+                'to_phone': t.to_user.phone_number or 'N/A',
+                'amount': float(t.amount),
+                'created_at': t.created_at.strftime('%Y-%m-%d %H:%M'),
+            }
+            for t in Transfer.objects.all().order_by('-created_at')[:10].select_related('from_user', 'to_user')
+        ],
+        'games_detail': [
+            {
+                'id': g.id,
+                'status': g.status,
+                'players': g.total_players,
+                'bid_amount': float(g.bet_amount),
+                'derash_amount': float(g.derash_amount),
+                'winner_phones': list({(w.phone_number or 'N/A') for w in [g.winner] + list(g.winners.all()) if w}),
+                'called_numbers': [cn.number for cn in g.called_numbers.all()[:10]],
+                'created_at': g.created_at.strftime('%Y-%m-%d %H:%M'),
+            }
+            for g in Game.objects.all().order_by('-created_at')[:10].prefetch_related(
+                'winners', Prefetch('called_numbers', queryset=CalledNumber.objects.all().only('number'))
+            ).select_related('winner')
+        ],
+        'recent_broadcasts': [
+            {
+                'id': b.id,
+                'message_text': (b.message_text or '')[:100] + ('…' if len(b.message_text or '') > 100 else ''),
+                'amount_added': float(b.amount_added) if b.amount_added else None,
+                'sent_by': b.sent_by.username if b.sent_by else 'System',
+                'recipients_count': b.recipients.count(),
+                'created_at': b.created_at.strftime('%Y-%m-%d %H:%M'),
+            }
+            for b in BroadcastMessage.objects.all().order_by('-created_at')[:5].select_related('sent_by')
+        ],
+        'second_admin_username': (SecondAdmin.objects.first().username or '') if SecondAdmin.objects.exists() else '',
     })
 
 

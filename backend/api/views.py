@@ -2063,7 +2063,7 @@ def admin_users_list(request):
         deposits = Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(
             total=Sum('amount')
         )['total'] or Decimal('0')
-        withdrawals = Transaction.objects.filter(user=user, transaction_type='withdrawal').aggregate(
+        withdrawals = Transaction.objects.filter(user=user, transaction_type='withdraw').aggregate(
             total=Sum('amount')
         )['total'] or Decimal('0')
         
@@ -2098,7 +2098,7 @@ def admin_user_detail(request, user_id):
     games_played = Game.objects.filter(gamecards__user=user).distinct()
     wins = Game.objects.filter(winner=user)
     deposits = Transaction.objects.filter(user=user, transaction_type='deposit').order_by('-created_at')[:50]
-    withdrawals = Transaction.objects.filter(user=user, transaction_type='withdrawal').order_by('-created_at')[:50]
+    withdrawals = Transaction.objects.filter(user=user, transaction_type='withdraw').order_by('-created_at')[:50]
     bets = Transaction.objects.filter(user=user, transaction_type='bet').order_by('-created_at')[:50]
     prizes = Transaction.objects.filter(user=user, transaction_type='prize').order_by('-created_at')[:50]
     
@@ -2112,7 +2112,7 @@ def admin_user_detail(request, user_id):
             'total_deposits': float(Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(
                 total=Sum('amount')
             )['total'] or Decimal('0')),
-            'total_withdrawals': float(Transaction.objects.filter(user=user, transaction_type='withdrawal').aggregate(
+            'total_withdrawals': float(Transaction.objects.filter(user=user, transaction_type='withdraw').aggregate(
                 total=Sum('amount')
             )['total'] or Decimal('0')),
         },

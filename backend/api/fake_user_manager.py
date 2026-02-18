@@ -19,12 +19,25 @@ from .redis_utils import (
 )
 
 
-# Predefined list of 30 fake user names
+# Predefined list of 100 fake user names (Ethiopian-style: English transliteration + Amharic)
 FAKE_USER_NAMES = [
+    # Original 30
     'abel_xo', 'yaredo', 'tekle', 'seesy', 'daniel', 'sinamaw', 'great', 'abathun',
     'likinaw', 'abrsh', 'abrham', 'dani_boy', 'aman', 'amanuel', 'ayu_091', 'ayenew',
     'yohanes', 'yoni', 'beki', 'user_1085371232', 'user_1085371388', 'user_9823892323',
-    'user_2223989876', 'ተሾመ', 'ዘላለም', 'ተክሉ', 'ሰለሞን', 'አንቴ', 'ዮሴፍ', 'ብሩክ'
+    'user_2223989876', 'ተሾመ', 'ዘላለም', 'ተክሉ', 'ሰለሞን', 'አንቴ', 'ዮሴፍ', 'ብሩክ',
+    # 70 new Ethiopian-style names (English + Amharic)
+    'abebe_et', 'tesfaye', 'tadesse', 'getachew', 'haile_g', 'alem_k', 'dawit09', 'solomon_x',
+    'yonas_b', 'birhanu', 'ephrem', 'kassahun', 'melaku', 'negash', 'samuel_d', 'david_eth',
+    'hanna_t', 'tewodros', 'mekonnen', 'zewdu', 'adem', 'bisrat', 'tigist', 'hiwot',
+    'marta', 'helen_et', 'desta', 'kebede', 'feleke', 'asnake', 'worku', 'tadele',
+    'abebe_t', 'meron', 'tsion', 'sara_09', 'mahlet', 'beti', 'elias', 'girma',
+    'user_0912345678', 'user_0987654321', 'sol_kid', 'dani_eth', 'yared_b', 'tewabech',
+    'ሃይሌ', 'አለም', 'ብርሃኑ', 'ኢፍሬም', 'ቃሳሁን', 'ዳዊት', 'ሳሙኤል', 'አብርሃም',
+    'ዮሃንስ', 'ንጉስ', 'ዘውዲቱ', 'ሰላም', 'ተስፋ', 'ደስታ', 'እምነት', 'ክብረት',
+    'ገብረእምንት', 'ምስራቅ', 'ደሴት', 'እዝራ', 'ሚካኤል',
+    # 3 more to reach 100
+    'askale', 'tigabu', 'ሐበሻ'
 ]
 
 
@@ -35,7 +48,7 @@ def initialize_fake_users():
 
 
 def get_random_fake_users(count: int) -> List[FakeUser]:
-    """Get random fake users (between 20-30)"""
+    """Get random fake users (up to system_accounts_max, max 100)"""
     active_users = list(FakeUser.objects.filter(is_active=True))
     if not active_users:
         initialize_fake_users()

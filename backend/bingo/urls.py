@@ -15,6 +15,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include, re_path
+from django.views.generic import RedirectView
 from django.views.generic import TemplateView
 from django.conf import settings
 from django.conf.urls.static import static
@@ -44,6 +45,7 @@ def serve_spa_index(request):
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('admin', RedirectView.as_view(url='/admin/', permanent=True)),
     # Admin dashboard and secondadmin PAGE routes removed so SPA (index.html) is served for /admin-dashboard and /secondadmin
     path('admin-dashboard/search-user/', admin_views.search_user, name='search-user'),
     path('admin-dashboard/deposits/<int:deposit_id>/approve/', admin_views.approve_deposit_request_api, name='approve-deposit'),

@@ -946,8 +946,15 @@ export default {
           isFakeUserWinner: isFakeUserWinner
         })
         
-        // Show winner banner immediately for all winners (real and fake)
-        showWinnerBanner()
+        // FIX: Show banner immediately for real users, after 3-second delay for fake users
+        // (gives real players chance to claim bingo with same number)
+        if (isFakeUserWinner) {
+          setTimeout(() => {
+            showWinnerBanner()
+          }, 3000)
+        } else {
+          showWinnerBanner()
+        }
         
         // Redirect to completed view after 8 seconds (handled by WinnerBanner timer)
       })
@@ -1575,7 +1582,7 @@ export default {
   flex-direction: row;
   gap: 8px;
   padding: 2px 5px 5px 5px; /* Reduced top padding to move bingo grid up */
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .bingo-screen {
@@ -1584,6 +1591,14 @@ export default {
   max-width: 40%;
   display: flex;
   flex-direction: column;
+  align-self: stretch;
+  min-height: 100%;
+}
+
+/* Ensure bingo grid background covers full section height */
+.bingo-screen :deep(.bingo-grid) {
+  flex: 1;
+  min-height: 100%;
 }
 
 .user-card-section {
