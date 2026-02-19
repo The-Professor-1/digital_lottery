@@ -790,8 +790,14 @@ export default {
           this._completedRedirectTimeoutId = null
         }
         
-        // CRITICAL FIX: Update game status to 'completed' immediately when winner is declared
-        if (this.game) {
+        const isFakeUserWinner = (data.winners && data.winners.length > 0 && data.winners[0].is_fake) ||
+                                 (data.winner && data.winner.is_fake) ||
+                                 (data.winners && data.winners.length > 0 && data.winners[0].winner && data.winners[0].winner.is_fake) ||
+                                 (data.is_fake)
+        
+        // For real user winner: set game completed now. For fake user: wait 3s then set completed
+        // so real players can still tick called numbers during the 3s delay (no "not called yet" error).
+        if (this.game && !isFakeUserWinner) {
           this.game.status = 'completed'
         }
         
@@ -816,13 +822,12 @@ export default {
         // Set flag to prevent loadGame from running and interfering with banner
         this._winnerBannerActive = true
         
-        const isFakeUserWinner = (data.winners && data.winners.length > 0 && data.winners[0].is_fake) ||
-                                 (data.winner && data.winner.is_fake) ||
-                                 (data.winners && data.winners.length > 0 && data.winners[0].winner && data.winners[0].winner.is_fake) ||
-                                 (data.is_fake)
-        
-        // Helper function to set winner data and show banner
+        // Helper function to set winner data and show banner (and set game completed when called for fake user)
         const showWinnerBanner = () => {
+          // For fake user: set game completed only when we show the banner (after 3s delay)
+          if (this.game && isFakeUserWinner) {
+            this.game.status = 'completed'
+          }
           // Record when winner banner is shown - enforce 8-second minimum display
           this.winnerBannerShownAt = Date.now()
           
@@ -1664,21 +1669,24 @@ export default {
 .wait-message-box {
   background: #fff3cd;
   border: 2px solid #ffc107;
-  border-radius: 10px;
-  padding: 20px;
-  margin: 20px 0;
+  border-radius: 12px;
+  padding: 28px 32px;
+  margin: 24px 0;
+  min-width: 320px;
+  min-height: 100px;
+  box-sizing: border-box;
 }
 
 .wait-message-box h3 {
   color: #856404;
   margin: 0 0 15px 0;
-  font-size: 20px;
+  font-size: 26px;
 }
 
 .wait-message-box p {
   color: #856404;
   margin: 10px 0;
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .no-winner-overlay {

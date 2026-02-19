@@ -1095,7 +1095,7 @@ export default {
   left: 0;
   right: 0;
   background: var(--primary-light);
-  padding: 16px 0px 12px; /* Slightly more top padding to center card in container */
+  padding: 20px 0px 12px; /* More top padding so card heading stays inside border */
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
   border-top: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 16px 16px 0 0;
@@ -1134,7 +1134,7 @@ export default {
   overflow: visible;
   position: relative;
   padding: 0;
-  margin: 12px 0 0 0; /* Slight top margin to shift card down for better centering in container */
+  margin: 16px 0 0 0; /* Top margin so card heading stays below section border */
 }
 
 .selected-card-display.compact :deep(.user-card) {
