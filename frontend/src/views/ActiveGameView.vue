@@ -1670,10 +1670,10 @@ export default {
   background: #fff3cd;
   border: 2px solid #ffc107;
   border-radius: 12px;
-  padding: 20px 24px;
-  margin: 18px 0;
-  min-width: 120px;
-  min-height: 170px;
+  padding: 15px 20px;
+  margin: 10px 0;
+  min-width: 140px;
+  min-height: 220px;
   box-sizing: border-box;
 }
 

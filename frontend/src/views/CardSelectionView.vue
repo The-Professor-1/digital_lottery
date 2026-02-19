@@ -1134,7 +1134,7 @@ export default {
   overflow: visible;
   position: relative;
   padding: 0;
-  margin: 30px 0 0 0; /* Top margin so card heading stays below section border */
+  margin: 40px 0 0 0; /* Top margin so card heading stays below section border */
 }
 
 .selected-card-display.compact :deep(.user-card) {
