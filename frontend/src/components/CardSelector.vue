@@ -70,6 +70,7 @@ export default {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
   gap: 4px;
+  margin-top: 5px;
 }
 
 .card-option {
@@ -84,7 +85,7 @@ export default {
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
-  margin-top: 5px;
+  margin-top: 2px;
   font-size: 15px;
   min-height: 28px;
   min-width: 28px;

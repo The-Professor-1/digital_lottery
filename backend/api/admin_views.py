@@ -20,6 +20,7 @@ import calendar
 channel_layer = get_channel_layer()
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def admin_dashboard_login(request):
     """Inline login for admin dashboard: authenticate with Django auth (staff only), return JSON."""

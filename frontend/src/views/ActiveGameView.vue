@@ -63,8 +63,8 @@
           @mark-number="handleMarkNumber"
           @claim-bingo="handleClaimBingo"
         />
-        <!-- Show "wait" when no card and banner not yet shown: active game OR completed but winner not yet received (e.g. 3s delay) -->
-        <div v-else-if="game && !userCard && !showWinnerBanner && (game.status === 'active' || (game.status === 'completed' && !winner && (!winners || !winners.length)))" class="no-card-message">
+        <!-- Show "wait" when no card and banner not yet shown: active game, or completed but winner not yet received, or winner declared but banner delayed (e.g. 3s for fake user) -->
+        <div v-else-if="(!userCard && !showWinnerBanner) && ( (game && (game.status === 'active' || (game.status === 'completed' && !winner && (!winners || !winners.length)))) || _winnerBannerActive )" class="no-card-message">
           <div class="wait-message-box">
             <h3>⏳ ይህ ጨዋታ እስኪጠናቀቅ ይጠብቁ</h3>
           </div>
@@ -202,8 +202,15 @@ export default {
   methods: {
     async loadGame() {
       try {
-        // CRITICAL: If winner banner is showing, preserve winner state and don't do anything
-        // that might interfere with the banner display
+        // CRITICAL: When winner is declared (e.g. fake user) we set _winnerBannerActive immediately
+        // but may delay showing the banner by 3s. Do NOT fetch or update anything in that window.
+        if (this._winnerBannerActive) {
+          if (this.interval) {
+            clearInterval(this.interval)
+            this.interval = null
+          }
+          return
+        }
         const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : Infinity
         // Use the independent showWinnerBanner flag instead of checking winner data
         const isBannerShowing = this.showWinnerBanner || this._winnerBannerActive
@@ -370,11 +377,11 @@ export default {
                 this.$router.push('/select-card').catch(() => {})
                 return
               }
-              // Don't clear userCard when winner is declared but banner not yet shown (e.g. 3s delay for fake user).
-              // Also never clear when we already had a card: 404 can mean game just completed (API may not return cards for completed games).
+              // Don't clear userCard when winner is declared, game already completed, or we had a card.
               const winnerDeclared = this._winnerBannerActive || this.winner || (this.winners && this.winners.length)
               const hadCard = !!this.userCard
-              if (!winnerDeclared && !hadCard) {
+              const gameAlreadyCompleted = this.game && this.game.status === 'completed'
+              if (!winnerDeclared && !hadCard && !gameAlreadyCompleted) {
                 // Spectator in active game: no card to show
                 this.userCard = null
               }
