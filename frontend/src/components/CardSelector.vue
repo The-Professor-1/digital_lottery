@@ -84,6 +84,7 @@ export default {
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
+  margin-top: 20px;
   font-size: 15px;
   min-height: 28px;
   min-width: 28px;

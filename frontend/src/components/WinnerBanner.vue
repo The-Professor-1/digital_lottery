@@ -396,7 +396,6 @@ export default {
   max-width: 150px;
   background: white;
   border-radius: 6px;
-  padding: 6px;
   transform: scale(0.7);
   transform-origin: center;
 }

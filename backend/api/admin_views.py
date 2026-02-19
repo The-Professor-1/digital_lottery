@@ -33,7 +33,15 @@ def admin_dashboard_login(request):
     if not username or not password:
         return JsonResponse({'error': 'Username and password required'}, status=400)
     user = authenticate(request, username=username, password=password)
-    if user is not None and user.is_staff:
+    # Fallback: some deployments use custom auth backends; try direct User lookup + check_password
+    if user is None:
+        try:
+            u = User.objects.get(username=username)
+            if u.check_password(password) and (u.is_staff or u.is_superuser) and u.is_active:
+                user = u
+        except (User.DoesNotExist, User.MultipleObjectsReturned):
+            pass
+    if user is not None and (user.is_staff or user.is_superuser):
         login(request, user)
         return JsonResponse({'success': True, 'message': 'Logged in'})
     return JsonResponse({'error': 'Invalid credentials or not a staff user'}, status=401)

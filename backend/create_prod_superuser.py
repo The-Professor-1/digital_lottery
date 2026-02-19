@@ -27,7 +27,7 @@ if User.objects.filter(username=username).exists():
     user.save()
     print(f'✅ User "{username}" updated to superuser with new password!')
 else:
-    # Create new superuser
+    # Create new superuser (set flags explicitly after create in case manager doesn't pass them)
     user = User.objects.create_user(
         username=username,
         email=email,
@@ -36,6 +36,10 @@ else:
         is_staff=True,
         is_active=True
     )
+    user.is_superuser = True
+    user.is_staff = True
+    user.is_active = True
+    user.save(update_fields=['is_superuser', 'is_staff', 'is_active'])
     print(f'✅ Superuser created successfully!')
     print(f'   Username: {user.username}')
     print(f'   Email: {user.email}')

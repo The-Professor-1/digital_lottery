@@ -20,7 +20,7 @@
         />
       </div>
       <div class="wallet-section-top">
-        <span class="wallet-label">ያለዎት ገንዘብ ፡</span>
+        <span class="wallet-label">ቀሪ ሂሳብ ፡</span>
         <span class="wallet-amount">{{ userBalance || 0 }} ብር</span>
       </div>
       <div class="bet-section-top">

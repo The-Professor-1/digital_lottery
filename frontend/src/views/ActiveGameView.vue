@@ -63,7 +63,8 @@
           @mark-number="handleMarkNumber"
           @claim-bingo="handleClaimBingo"
         />
-        <div v-else-if="game && game.status === 'active'" class="no-card-message">
+        <!-- Show "wait" when no card and banner not yet shown: active game OR completed but winner not yet received (e.g. 3s delay) -->
+        <div v-else-if="game && !userCard && !showWinnerBanner && (game.status === 'active' || (game.status === 'completed' && !winner && (!winners || !winners.length)))" class="no-card-message">
           <div class="wait-message-box">
             <h3>⏳ ይህ ጨዋታ እስኪጠናቀቅ ይጠብቁ</h3>
           </div>
@@ -370,11 +371,11 @@ export default {
                 return
               }
               // Don't clear userCard when winner is declared but banner not yet shown (e.g. 3s delay for fake user).
-              // A race can occur: loadGame passed initial check, then winner_declared set _winnerBannerActive;
-              // getMyCard may then return 404 for completed game. Preserve UI so user's card stays visible.
+              // Also never clear when we already had a card: 404 can mean game just completed (API may not return cards for completed games).
               const winnerDeclared = this._winnerBannerActive || this.winner || (this.winners && this.winners.length)
-              if (!winnerDeclared) {
-                // If game is active, stay here and show "wait" message (spectator)
+              const hadCard = !!this.userCard
+              if (!winnerDeclared && !hadCard) {
+                // Spectator in active game: no card to show
                 this.userCard = null
               }
             }
