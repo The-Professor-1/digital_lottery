@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.urls import reverse
 from django.shortcuts import redirect
-from .models import User, Game, GameCard, CalledNumber, Deposit, Transaction, GameSettings, DepositRequest, WithdrawRequest
+from .models import User, Game, GameCard, CalledNumber, Deposit, Transaction, GameSettings, DepositRequest, TelebirrReceipt, WithdrawRequest
 from decimal import Decimal
 
 
@@ -114,6 +114,10 @@ class GameSettingsAdmin(admin.ModelAdmin):
             'fields': ('deposit_accounts',),
             'description': 'Enter account holder name and account number for each platform'
         }),
+        ('Telebirr Auto-Verify', {
+            'fields': ('telebirr_verify_api_key',),
+            'description': 'API key for verifyapi.leulzenebe.pro. When set, Telebirr deposits are verified automatically from receipt text.'
+        }),
         ('Support Settings', {
             'fields': ('support_phone',),
             'description': 'Support phone number for customer support'
@@ -183,6 +187,14 @@ class DepositRequestAdmin(admin.ModelAdmin):
         
         self.message_user(request, f"{count} deposit requests rejected.")
     reject_requests.short_description = "Reject selected deposit requests"
+
+
+@admin.register(TelebirrReceipt)
+class TelebirrReceiptAdmin(admin.ModelAdmin):
+    list_display = ['reference', 'user', 'amount', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['reference', 'user__username']
+    readonly_fields = ['created_at']
 
 
 @admin.register(WithdrawRequest)

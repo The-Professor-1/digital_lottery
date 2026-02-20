@@ -444,6 +444,11 @@
               <label>Telebirr - Account Number</label>
               <input v-model="depositAccounts.Telebirr.number" type="text" />
             </div>
+            <div class="form-group full-width">
+              <label>Telebirr Verify API Key</label>
+              <input v-model="settings.telebirr_verify_api_key" type="password" placeholder="API key for auto-verify (optional)" autocomplete="off" />
+              <small class="form-hint">When set, Telebirr deposits are verified automatically from receipt text (verifyapi.leulzenebe.pro).</small>
+            </div>
           </div>
           <button class="btn btn-primary" :disabled="settingsSaving" @click="saveSettings">{{ settingsSaving ? 'Saving…' : 'Save Settings' }}</button>
           <span v-if="settingsMessage" class="settings-msg" :class="settingsError ? 'error' : ''">{{ settingsMessage }}</span>
@@ -658,7 +663,8 @@ export default {
         allow_system_account: true,
         free_play: false,
         system_accounts_min: 15,
-        system_accounts_max: 100
+        system_accounts_max: 100,
+        telebirr_verify_api_key: ''
       },
       settingsLoading: false,
       settingsSaving: false,

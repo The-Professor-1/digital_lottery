@@ -341,6 +341,14 @@ class GameSettings(models.Model):
         help_text="Bank account details: {'BOA': {'name': '...', 'number': '...'}, 'CBE': {...}, 'Telebirr': {...}}"
     )
     
+    # Telebirr receipt verification API (optional - when set, Telebirr deposits are auto-verified)
+    telebirr_verify_api_key = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text="API key for verifyapi.leulzenebe.pro to verify Telebirr receipts"
+    )
+    
     # Support phone number
     support_phone = models.CharField(
         max_length=20,
@@ -479,6 +487,21 @@ class DepositRequest(models.Model):
 
     def __str__(self):
         return f"Deposit {self.id} - {self.user.username} - {self.amount} {self.platform} - {self.status}"
+
+
+class TelebirrReceipt(models.Model):
+    """Stores used Telebirr transaction references to prevent reuse (double-credit)."""
+    reference = models.CharField(max_length=64, unique=True, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='telebirr_receipts')
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'telebirr_receipts'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Telebirr {self.reference} - {self.user.username} - {self.amount}"
 
 
 class WithdrawRequest(models.Model):

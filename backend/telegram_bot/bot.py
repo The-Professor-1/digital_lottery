@@ -13,7 +13,13 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import connection, connections
-from api.models import Game, Deposit, DepositRequest, WithdrawRequest, GameSettings, Transfer, Transaction
+from api.models import Game, Deposit, DepositRequest, TelebirrReceipt, WithdrawRequest, GameSettings, Transfer, Transaction
+from api.telebirr_verify import (
+    parse_telebirr_receipt_text,
+    verify_telebirr_receipt,
+    amount_from_api_total,
+    credited_party_matches,
+)
 from api.auth_utils import generate_jwt_token
 from api.game_logic import get_available_card_numbers
 from api.phone_utils import normalize_phone_number, find_user_by_phone
@@ -459,6 +465,7 @@ def clear_financial_command_states(context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('deposit_platform', None)
     context.user_data.pop('deposit_text', None)
     context.user_data.pop('deposit_photo_id', None)
+    context.user_data.pop('waiting_for_telebirr_text', None)
     
     # Clear withdraw states
     context.user_data.pop('waiting_for_withdraw_amount', None)
@@ -1263,6 +1270,118 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
     
+    # Telebirr auto-verify: user sent receipt text
+    elif context.user_data.get('waiting_for_telebirr_text'):
+        keyboard = [[InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        parsed = parse_telebirr_receipt_text(text)
+        if not parsed:
+            await update.message.reply_text(
+                "እባክዎ ሙሉ ቴክስት ይላኩ።\n\n"
+                "ከቴሌብር የተላከልዎትን ሙሉ ማስታወቂያ በሙሉ ያስገቡ (መጠን፣ ታራክሽን ቁጥር፣ ቀን ጨምሮ)።",
+                reply_markup=reply_markup
+            )
+            return
+        reference = parsed['reference']
+        amount_from_text = parsed['amount']
+        # "Wait until verified" message
+        await update.message.reply_text(
+            "⏳ ቴክስትዎ ተቀብሏል። እስኪረጋገጥ ትንሽ ይጠብቁ።",
+            reply_markup=reply_markup
+        )
+        context.user_data.pop('waiting_for_telebirr_text', None)
+        context.user_data.pop('deposit_platform', None)
+        try:
+            async def get_user():
+                return await sync_to_async(User.objects.get)(telegram_id=user.id)
+            telegram_user = await db_operation_with_retry(get_user)
+        except User.DoesNotExist:
+            await update.message.reply_text("እባክዎ በመጀመሪያ ይመዝገቡ።")
+            return
+        async def get_settings():
+            return await sync_to_async(GameSettings.get_settings)()
+        settings = await db_operation_with_retry(get_settings)
+        api_key = (getattr(settings, 'telebirr_verify_api_key', None) or '').strip()
+        if not api_key:
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        # Check if reference already used (reject duplicate)
+        async def receipt_exists():
+            return await sync_to_async(TelebirrReceipt.objects.filter(reference=reference).exists)()
+        if await db_operation_with_retry(receipt_exists):
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        # Call verify API (sync) in thread
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, lambda: verify_telebirr_receipt(reference, api_key))
+        if not result.get('success') or not result.get('data'):
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        data = result['data']
+        credited_name = (data.get('creditedPartyName') or '').strip()
+        credited_account_no = (data.get('creditedPartyAccountNo') or '').strip()
+        total_paid_str = data.get('totalPaidAmount') or ''
+        receipt_no = (data.get('receiptNo') or '').strip()
+        account_holder = (settings.deposit_accounts or {}).get('Telebirr', {}) or {}
+        expected_name = (account_holder.get('name') or '').strip()
+        expected_number = (account_holder.get('number') or '').strip()
+        if not expected_name and not expected_number:
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        if not credited_party_matches(credited_name, credited_account_no, expected_name, expected_number):
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        amount_from_api = amount_from_api_total(total_paid_str)
+        if amount_from_api is None:
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        # Optional: compare receipt no with reference
+        if receipt_no and reference and receipt_no.upper() != reference.upper():
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        # Credit user and store receipt
+        async def finalize_deposit():
+            await sync_to_async(TelebirrReceipt.objects.create)(
+                user=telegram_user, reference=reference, amount=amount_from_api
+            )
+            telegram_user.balance = Decimal(str(telegram_user.balance)) + amount_from_api
+            await sync_to_async(telegram_user.save)()
+            await sync_to_async(Transaction.objects.create)(
+                user=telegram_user,
+                transaction_type='deposit',
+                amount=amount_from_api,
+                description=f'Telebirr deposit verified - Ref: {reference}'
+            )
+            await sync_to_async(DepositRequest.objects.create)(
+                user=telegram_user,
+                amount=amount_from_api,
+                platform='Telebirr',
+                deposit_text=text[:2000],
+                status='approved'
+            )
+        await db_operation_with_retry(finalize_deposit)
+        await update.message.reply_text(
+            "✅ ገንዘቡ ገቢ ሆኗል!\n\n"
+            f"💰 መጠን: {amount_from_api} ብር\n"
+            "🏦 ወደ: Telebirr\n\n"
+            "በሂሳብዎ ላይ ያለውን ለመመልከት /balance ይጫኑ።"
+        )
+        return
+    
     # Deposit states
     elif context.user_data.get('waiting_for_deposit'):
         try:
@@ -1682,7 +1801,7 @@ async def handle_deposit_platform_selection(update: Update, context: ContextType
 
 
 async def handle_deposit_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle deposit confirmation - Ask for amount"""
+    """Handle deposit confirmation - Ask for amount, or for Telebirr (when API key set) ask only receipt text"""
     query = update.callback_query
     platform = context.user_data.get('deposit_platform', '')
     
@@ -1690,6 +1809,22 @@ async def handle_deposit_confirm(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Telebirr with auto-verify: ask only for full receipt text (no amount)
+    if platform == 'Telebirr':
+        async def get_settings():
+            return await sync_to_async(GameSettings.get_settings)()
+        settings = await db_operation_with_retry(get_settings)
+        api_key = (getattr(settings, 'telebirr_verify_api_key', None) or '').strip()
+        if api_key:
+            message = (
+                "እባክዎ ከቴሌብር የተላከልዎትን ሙሉ ቴክስት ብቻ ይላኩ።\n\n"
+                "መጠን አይገባም - ከተጽሁፉ ቴክስት ይረጋገጣል።"
+            )
+            await query.edit_message_text(message, reply_markup=reply_markup)
+            await query.answer()
+            context.user_data['waiting_for_telebirr_text'] = True
+            return
     
     message = (
         f"እባክዎ ገቢ ያደረጉትን የገንዘብ መጠን ያስገቡ:\n\n"

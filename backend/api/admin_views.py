@@ -856,6 +856,7 @@ def game_settings_api(request):
             'system_accounts_min': getattr(settings, 'system_accounts_min', 15),
             'system_accounts_max': getattr(settings, 'system_accounts_max', 30),
             'winning_patterns': getattr(settings, 'winning_patterns', ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']),
+            'telebirr_verify_api_key': getattr(settings, 'telebirr_verify_api_key', '') or '',
         }
         return JsonResponse(response_data)
     
@@ -916,6 +917,8 @@ def game_settings_api(request):
                     # Ensure at least one pattern is enabled
                     if not settings_obj.winning_patterns:
                         settings_obj.winning_patterns = ['horizontal']  # Default to horizontal if none selected
+            if 'telebirr_verify_api_key' in data:
+                settings_obj.telebirr_verify_api_key = (data['telebirr_verify_api_key'] or '').strip()
             
             settings_obj.save()
             
