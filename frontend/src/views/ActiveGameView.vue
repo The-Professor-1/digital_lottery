@@ -1662,7 +1662,7 @@ export default {
 
 .no-card-message {
   text-align: center;
-  padding: 20px;
+  padding: 10px;
   color: var(--gray-medium);
 }
 
@@ -1670,23 +1670,23 @@ export default {
   background: #fff3cd;
   border: 2px solid #ffc107;
   border-radius: 12px;
-  padding: 15px 20px;
+  padding: 15px 30px;
   margin: 10px 0;
   min-width: 140px;
-  min-height: 220px;
+  min-height: 280px;
   box-sizing: border-box;
 }
 
 .wait-message-box h3 {
   color: #856404;
   margin: 0 0 15px 0;
-  font-size: 26px;
+  font-size: 20px;
 }
 
 .wait-message-box p {
   color: #856404;
   margin: 10px 0;
-  font-size: 18px;
+  font-size: 15px;
 }
 
 .no-winner-overlay {
