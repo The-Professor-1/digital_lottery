@@ -486,6 +486,127 @@ def task_process_bingo_winners(self, game_id: int):
         return {'error': str(e)}
 
 
+@shared_task(bind=True, queue='gameplay')
+def task_broadcast_winner_declared_delayed(game_id: int):
+    """
+    Broadcast winner_declared (and game_ended) after a short delay (0.4s) so any co-winner
+    who claimed in the same moment is included. Reads from Redis so the list is up-to-date.
+    Called from claim_bingo_unified when we're the first winner (instead of immediate broadcast).
+    """
+    try:
+        from .models import Game, GameCard, FakeUserGameCard
+        from .redis_utils import get_bingo_winners, get_called_numbers_list_from_redis, batch_broadcast_to_game
+        from .serializers import UserSerializer
+        from .game_logic import check_bingo, get_winning_number
+        from .fake_user_manager import check_fake_user_bingo
+
+        game = Game.objects.get(id=game_id)
+        redis_winners = get_bingo_winners(game_id)
+        if not redis_winners:
+            return {'error': 'No winners in Redis'}
+
+        real_ids = [w['card_id'] for w in redis_winners if w.get('user_id') is not None]
+        fake_ids = [w['card_id'] for w in redis_winners if w.get('user_id') is None]
+        real_cards = list(GameCard.objects.filter(id__in=real_ids, game=game, is_winner=True).select_related('user')) if real_ids else []
+        fake_cards = list(FakeUserGameCard.objects.filter(id__in=fake_ids, game=game, is_winner=True).select_related('fake_user')) if fake_ids else []
+        all_count = len(real_cards) + len(fake_cards)
+        if all_count == 0:
+            return {'error': 'No winner cards'}
+
+        game.refresh_from_db()
+        total_prize = float(game.total_derash or 0)
+        prize_per = total_prize / all_count if all_count else 0.0
+        called_numbers = get_called_numbers_list_from_redis(game_id)
+        called_set = set(called_numbers) if called_numbers else set()
+
+        winners_data = []
+        for c in real_cards:
+            _, pat = check_bingo(c, game)
+            wn = get_winning_number(c, pat, called_numbers)
+            winners_data.append({
+                'winner': UserSerializer(c.user).data,
+                'username': c.user.username,
+                'is_fake': False,
+                'card_number': c.card_number,
+                'card_id': c.id,
+                'card_layout': c.card_layout,
+                'selected_numbers': c.selected_numbers or [],
+                'winning_pattern': pat,
+                'last_called_number': wn or (called_numbers[-1] if called_numbers else None),
+                'called_numbers': called_numbers,
+                'prize': prize_per
+            })
+        for c in fake_cards:
+            _, pattern = check_fake_user_bingo(c, called_set, game)
+            wn = None
+            if pattern and called_numbers and c.card_layout:
+                layout = c.card_layout
+                pattern_numbers = []
+                if pattern.startswith('row_'):
+                    row_idx = int(pattern.split('_')[1])
+                    pattern_numbers = [cell.get('number') for cell in layout[row_idx] if cell.get('number') is not None]
+                elif pattern.startswith('col_'):
+                    col_idx = int(pattern.split('_')[1])
+                    pattern_numbers = [layout[r][col_idx].get('number') for r in range(5) if layout[r][col_idx].get('number') is not None]
+                elif pattern == 'diagonal_1':
+                    pattern_numbers = [layout[i][i].get('number') for i in range(5) if layout[i][i].get('number') is not None]
+                elif pattern == 'diagonal_2':
+                    pattern_numbers = [layout[i][4-i].get('number') for i in range(5) if layout[i][4-i].get('number') is not None]
+                elif pattern == 'corner':
+                    corners = [layout[0][0], layout[0][4], layout[4][0], layout[4][4], layout[2][2]]
+                    pattern_numbers = [cell.get('number') for cell in corners if cell and cell.get('number') is not None]
+                else:
+                    pattern_numbers = [cell.get('number') for row in layout for cell in row if cell.get('number') is not None]
+                for num in reversed(called_numbers):
+                    if num in pattern_numbers:
+                        wn = num
+                        break
+            winners_data.append({
+                'winner': {'id': None, 'username': c.fake_user.name, 'name': c.fake_user.name, 'is_fake': True},
+                'username': c.fake_user.name,
+                'is_fake': True,
+                'card_number': c.card_number,
+                'card_id': c.id,
+                'card_layout': c.card_layout,
+                'selected_numbers': c.selected_numbers or [],
+                'winning_pattern': getattr(c, 'winning_pattern', None),
+                'last_called_number': wn or (called_numbers[-1] if called_numbers else None),
+                'called_numbers': called_numbers,
+                'prize': prize_per
+            })
+
+        primary = winners_data[0]['winner'] if winners_data else None
+        batch_broadcast_to_game(game_id, [
+            {
+                'type': 'winner_declared',
+                'data': {
+                    'winners': winners_data,
+                    'winner': primary,
+                    'total_prize': total_prize,
+                    'prize': prize_per,
+                    'winner_count': all_count
+                }
+            },
+            {
+                'type': 'game_ended',
+                'data': {
+                    'game_id': game_id,
+                    'status': 'completed',
+                    'completed_at': game.completed_at.isoformat() if game.completed_at else None,
+                    'winner': primary,
+                    'winner_count': all_count
+                }
+            }
+        ])
+        print(f"Broadcasted winner_declared (delayed) for game {game_id}: {all_count} winner(s)")
+        return {'success': True, 'winner_count': all_count}
+    except Exception as e:
+        print(f"Error in task_broadcast_winner_declared_delayed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e)}
+
+
 @shared_task(bind=True, max_retries=3, queue='gameplay')
 def task_auto_call_numbers(self, game_id: int):
     """

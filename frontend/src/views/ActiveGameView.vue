@@ -840,114 +840,78 @@ export default {
           this.$forceUpdate()
         }
         
-        // Handle multiple winners (new format)
+        // Handle multiple winners (new format). Prefer events with more winners so a delayed
+        // single-winner broadcast does not overwrite a co-winner update.
         if (data.winners && data.winners.length > 0) {
-          this.winners = data.winners
-          // For fake users, winner might be null but username is in the winner data
-          // Use winner object if available, otherwise create one from username
-          if (data.winners[0].winner) {
-            this.winner = data.winners[0].winner
-          } else if (data.winners[0].username) {
-            // Fake user - create winner object from username
-            this.winner = {
-              id: null,
-              username: data.winners[0].username,
-              name: data.winners[0].username,
-              is_fake: true
-            }
-          } else {
-            this.winner = data.winners[0].winner || null
-          }
-          this.winnerPrize = data.prize || data.winners[0].prize || 0
-          this.totalPrize = data.total_prize || null
-          
-          // Check if current user is among the winners
-          if (this.userCard && this.userCard.user) {
-            const currentUserId = this.userCard.user.id
-            const currentUserWinner = data.winners.find(w => 
-              w.winner && (w.winner.id === currentUserId || w.winner.id === Number(currentUserId))
-            )
-            
-            if (currentUserWinner) {
-              this.isCurrentUserWinner = true
-              this.winnerCard = {
-                card_layout: currentUserWinner.card_layout,
-                card_number: currentUserWinner.card_number,
-                winning_pattern: currentUserWinner.winning_pattern,
-                selected_numbers: currentUserWinner.selected_numbers || [],
-                called_numbers: currentUserWinner.called_numbers || [],
-                last_called_number: currentUserWinner.last_called_number || null
+          const currentCount = this.winners ? this.winners.length : 0
+          if (data.winners.length >= currentCount) {
+            this.winners = data.winners
+            if (data.winners[0].winner) {
+              this.winner = data.winners[0].winner
+            } else if (data.winners[0].username) {
+              this.winner = {
+                id: null,
+                username: data.winners[0].username,
+                name: data.winners[0].username,
+                is_fake: true
               }
             } else {
-              this.isCurrentUserWinner = false
-              // Use first winner's card as default (for fake users or other real users)
-              if (data.winners[0].card_layout) {
+              this.winner = data.winners[0].winner || null
+            }
+            this.winnerPrize = data.prize ?? data.winners[0].prize ?? 0
+            this.totalPrize = data.total_prize ?? null
+          }
+          
+          if (this.winners) {
+            if (this.userCard && this.userCard.user) {
+              const currentUserId = this.userCard.user.id
+              const currentUserWinner = this.winners.find(w =>
+                w.winner && (w.winner.id === currentUserId || w.winner.id === Number(currentUserId))
+              )
+              if (currentUserWinner) {
+                this.isCurrentUserWinner = true
                 this.winnerCard = {
-                  card_layout: data.winners[0].card_layout,
-                  card_number: data.winners[0].card_number,
-                  winning_pattern: data.winners[0].winning_pattern,
-                  selected_numbers: data.winners[0].selected_numbers || [],
-                  called_numbers: data.winners[0].called_numbers || [],
-                  last_called_number: data.winners[0].last_called_number || null
+                  card_layout: currentUserWinner.card_layout,
+                  card_number: currentUserWinner.card_number,
+                  winning_pattern: currentUserWinner.winning_pattern,
+                  selected_numbers: currentUserWinner.selected_numbers || [],
+                  called_numbers: currentUserWinner.called_numbers || [],
+                  last_called_number: currentUserWinner.last_called_number || null
+                }
+              } else {
+                this.isCurrentUserWinner = false
+                if (this.winners[0].card_layout) {
+                  this.winnerCard = {
+                    card_layout: this.winners[0].card_layout,
+                    card_number: this.winners[0].card_number,
+                    winning_pattern: this.winners[0].winning_pattern,
+                    selected_numbers: this.winners[0].selected_numbers || [],
+                    called_numbers: this.winners[0].called_numbers || [],
+                    last_called_number: this.winners[0].last_called_number || null
+                  }
                 }
               }
             }
           }
         } else {
-          // Single winner (backward compatible format)
-          this.winners = null
-          // For fake users, winner might be null but username is available
-          if (data.winner) {
-            this.winner = data.winner
-          } else if (data.username) {
-            // Fake user - create winner object from username
-            this.winner = {
-              id: null,
-              username: data.username,
-              name: data.username,
-              is_fake: data.is_fake || false
+          // Single winner (backward compatible format) - only apply if we don't already have multiple winners
+          if (!this.winners || this.winners.length <= 1) {
+            this.winners = null
+            if (data.winner) {
+              this.winner = data.winner
+            } else if (data.username) {
+              this.winner = {
+                id: null,
+                username: data.username,
+                name: data.username,
+                is_fake: data.is_fake || false
+              }
+            } else {
+              this.winner = data.winner || null
             }
-          } else {
-            this.winner = data.winner || null
-          }
-          this.winnerPrize = data.prize || this.game?.total_derash || 0
-          
-          // Set winnerCard for single winner format
-          if (data.card_layout) {
-            this.winnerCard = {
-              card_layout: data.card_layout,
-              card_number: data.card_number,
-              winning_pattern: data.winning_pattern,
-              selected_numbers: data.selected_numbers || [],
-              called_numbers: data.called_numbers || [],
-              last_called_number: data.last_called_number || null
-            }
-          }
-        this.totalPrize = null
-        // Record when winner banner is shown (if not already set)
-        if (!this.winnerBannerShownAt) {
-          this.winnerBannerShownAt = Date.now()
-        }
-          
-          // Check if current user is the winner
-          if (this.userCard && data.winner && this.userCard.user && 
-              (this.userCard.user.id === data.winner.id || this.userCard.user === data.winner.id)) {
-            this.isCurrentUserWinner = true
-            this.winnerCard = {
-              ...this.userCard,
-              winning_pattern: data.winning_pattern,
-              selected_numbers: data.selected_numbers || this.userCard.selected_numbers || [],
-              called_numbers: data.called_numbers || [],
-              last_called_number: data.last_called_number || null
-            }
-          } else {
-            this.isCurrentUserWinner = false
-            // Load winner's card if available
-            if (data.card_id || data.card_number) {
-              // Try to get winner's card
-              this.loadWinnerCard(data)
-            } else if (data.card_layout) {
-              // Use card layout from WebSocket data
+            this.winnerPrize = data.prize ?? this.game?.total_derash ?? 0
+            this.totalPrize = null
+            if (data.card_layout) {
               this.winnerCard = {
                 card_layout: data.card_layout,
                 card_number: data.card_number,
@@ -957,6 +921,34 @@ export default {
                 last_called_number: data.last_called_number || null
               }
             }
+            if (this.userCard && data.winner && this.userCard.user &&
+                (this.userCard.user.id === data.winner.id || this.userCard.user === data.winner.id)) {
+              this.isCurrentUserWinner = true
+              this.winnerCard = {
+                ...this.userCard,
+                winning_pattern: data.winning_pattern,
+                selected_numbers: data.selected_numbers || this.userCard.selected_numbers || [],
+                called_numbers: data.called_numbers || [],
+                last_called_number: data.last_called_number || null
+              }
+            } else {
+              this.isCurrentUserWinner = false
+              if (data.card_id || data.card_number) {
+                this.loadWinnerCard(data)
+              } else if (data.card_layout) {
+                this.winnerCard = {
+                  card_layout: data.card_layout,
+                  card_number: data.card_number,
+                  winning_pattern: data.winning_pattern,
+                  selected_numbers: data.selected_numbers || [],
+                  called_numbers: data.called_numbers || [],
+                  last_called_number: data.last_called_number || null
+                }
+              }
+            }
+          }
+          if (!this.winnerBannerShownAt) {
+            this.winnerBannerShownAt = Date.now()
           }
         }
         

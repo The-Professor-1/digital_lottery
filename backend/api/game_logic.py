@@ -635,41 +635,16 @@ def claim_bingo_unified(card, game: Game, is_fake_user: bool = False) -> Tuple[b
                         'called_numbers': called_numbers_list
                     }
                 
-                # PHASE 5 OPTIMIZATION: Batch winner_declared and game_ended events
-                from .redis_utils import batch_broadcast_to_game
-                batch_broadcast_to_game(
-                    game.id,
-                    [
-                        {
-                            'type': 'winner_declared',
-                            'data': {
-                                'winners': [winner_data],
-                                'winner': winner_data['winner'],
-                                'total_prize': float(game.derash_amount) if game.derash_amount else 0.0,
-                                'prize': float(game.derash_amount) if game.derash_amount else 0.0,
-                                'winner_count': 1
-                            }
-                        },
-                        {
-                            'type': 'game_ended',
-                            'data': {
-                                'game_id': game.id,
-                                'status': 'completed',
-                                'completed_at': game.completed_at.isoformat() if game.completed_at else None,
-                                'winner': winner_data['winner'],
-                                'winner_count': 1
-                            }
-                        }
-                    ]
-                )
-                
-                print(f"Broadcasted winner: {'fake user ' + card.fake_user.name if is_fake_user else 'real user ' + str(card.user.id)}")
+                # Broadcast after short delay (0.4s) so any co-winner in same moment is included
+                from .tasks import task_broadcast_winner_declared_delayed, task_process_bingo_winners
+                task_broadcast_winner_declared_delayed.apply_async(args=[game.id], countdown=0.4)
+                print(f"Scheduled delayed winner broadcast for game {game.id} (0.4s)")
             except Exception as e:
                 print(f"WebSocket broadcast error in claim_bingo_unified: {e}")
                 import traceback
                 traceback.print_exc()
             
-            # Trigger task after window: 3 sec if first winner is fake, else 1 sec
+            # Trigger payout task after window: 3 sec if first winner is fake, else 1 sec
             from .tasks import task_process_bingo_winners
             task_process_bingo_winners.apply_async(
                 args=[game.id],
