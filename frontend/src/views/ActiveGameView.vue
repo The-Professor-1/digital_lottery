@@ -1675,11 +1675,14 @@ export default {
   min-width: 140px;
   min-height: 280px;
   box-sizing: border-box;
+  display:flex;
+  align-items:center;
+  justify-content: center;
 }
 
 .wait-message-box h3 {
   color: #856404;
-  margin: 0 0 15px 0;
+  margin: 0 0 75px 0;
   font-size: 26px;
   display:flex;
   align-items:center;
