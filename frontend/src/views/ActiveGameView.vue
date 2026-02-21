@@ -796,6 +796,21 @@ export default {
                                  (data.winners && data.winners.length > 0 && data.winners[0].winner && data.winners[0].winner.is_fake) ||
                                  (data.is_fake)
         
+        // Ensure last called number(s) are in calledNumbers so real user can still tick (and claim co-winner)
+        // even if number_called arrived after winner_declared or was missed.
+        if (data.winners && data.winners.length > 0) {
+          const toAdd = new Set(this.calledNumbers)
+          data.winners.forEach(w => {
+            const n = w.last_called_number
+            if (n != null && !toAdd.has(n)) toAdd.add(n)
+          })
+          if (data.called_numbers && Array.isArray(data.called_numbers)) {
+            data.called_numbers.forEach(n => { if (n != null && !toAdd.has(n)) toAdd.add(n) })
+          }
+          this.calledNumbers = Array.from(toAdd)
+          if (this.game) this.game.current_call_count = this.calledNumbers.length
+        }
+        
         // For real user winner: set game completed now. For fake user: wait 3s then set completed
         // so real players can still tick called numbers during the 3s delay (no "not called yet" error).
         if (this.game && !isFakeUserWinner) {

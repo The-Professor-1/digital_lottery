@@ -113,9 +113,11 @@ def verify_cbe_receipt(reference: str, account_suffix: str, api_key: str) -> dic
 
 
 def _first_name(full_name: str) -> str:
-    if not full_name:
+    """First word of name, normalized to lowercase for case-insensitive comparison."""
+    if not full_name or not isinstance(full_name, str):
         return ''
-    return (full_name.strip().split() or [''])[0].lower()
+    parts = full_name.strip().split()
+    return (parts[0].strip().lower() if parts else '')
 
 
 def _last4_digits(value: str) -> str:
@@ -129,14 +131,22 @@ def cbe_receiver_matches(
     expected_holder_name: str,
     expected_account_number: str,
 ) -> bool:
-    """True if receiver first name and receiver account last 4 digits match our CBE settings."""
+    """
+    True if receiver matches our CBE settings:
+    - Compare first name only (from settings name e.g. 'Nigus Libe' or 'Nigus'), case-insensitive.
+    - Compare account last 4 digits if both provided.
+    """
     expected_name = (expected_holder_name or '').strip()
     expected_number = (expected_account_number or '').strip()
     receiver_name = (api_receiver_name or '').strip()
     receiver_account = (api_receiver_account or '').strip()
 
-    if expected_name and _first_name(receiver_name) != _first_name(expected_name):
+    # First name from settings (e.g. "Nigus Libe" -> "nigus", "Nigus" -> "nigus")
+    expected_first = _first_name(expected_name)
+    receiver_first = _first_name(receiver_name)
+    if expected_first and receiver_first != expected_first:
         return False
+    # Account: last 4 digits must match if we have both
     if expected_number and receiver_account:
         if _last4_digits(expected_number) != _last4_digits(receiver_account):
             return False

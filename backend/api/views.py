@@ -956,19 +956,16 @@ class GameCardViewSet(viewsets.ReadOnlyModelViewSet):
         
         number = serializer.validated_data['number']
         
-        # Check if number was called in the game (REDIS-FIRST: check Redis, not DB)
+        # Check if number was called in the game (REDIS-FIRST, then DB fallback)
+        # When a fake user wins, game stays active for the tie window; ensure real users can still
+        # tick the last called number even if Redis is briefly out of sync.
         game = card.game
         from .redis_utils import get_called_numbers_from_redis
         called_numbers = get_called_numbers_from_redis(game.id)
-        
-        # If Redis unavailable, fallback to DB (shouldn't happen, but safety)
-        if called_numbers is None:
-            if not CalledNumber.objects.filter(game=game, number=number).exists():
-                return Response(
-                    {'error': 'This number has not been called yet'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        elif number not in called_numbers:
+        number_was_called = (called_numbers is not None and number in called_numbers)
+        if not number_was_called and game.status == 'active':
+            number_was_called = CalledNumber.objects.filter(game=game, number=number).exists()
+        if not number_was_called:
             return Response(
                 {'error': 'This number has not been called yet'},
                 status=status.HTTP_400_BAD_REQUEST
