@@ -11,6 +11,7 @@ class User(AbstractUser):
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
     referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals', help_text='User who referred this user')
     referral_reward_given = models.BooleanField(default=False, help_text='Whether referral reward was already given for THIS user\'s registration (prevents duplicate rewards if user re-registers)')
+    withdrawal_approved = models.BooleanField(default=False, help_text='True when user has deposited at least 50 BR and played at least 5 games (allows withdrawal)')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -502,6 +503,23 @@ class TelebirrReceipt(models.Model):
 
     def __str__(self):
         return f"Telebirr {self.reference} - {self.user.username} - {self.amount}"
+
+
+class CbeReceipt(models.Model):
+    """Stores used CBE transaction reference+suffix to prevent reuse (double-credit)."""
+    reference = models.CharField(max_length=64, db_index=True)
+    account_suffix = models.CharField(max_length=16, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cbe_receipts')
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'cbe_receipts'
+        ordering = ['-created_at']
+        unique_together = [['reference', 'account_suffix']]
+
+    def __str__(self):
+        return f"CBE {self.reference}/{self.account_suffix} - {self.user.username} - {self.amount}"
 
 
 class WithdrawRequest(models.Model):

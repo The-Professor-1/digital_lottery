@@ -489,18 +489,42 @@ def task_process_bingo_winners(self, game_id: int):
 @shared_task(bind=True, queue='gameplay')
 def task_broadcast_winner_declared_delayed(game_id: int):
     """
-    Broadcast winner_declared (and game_ended) after a short delay (0.4s) so any co-winner
-    who claimed in the same moment is included. Reads from Redis so the list is up-to-date.
-    Called from claim_bingo_unified when we're the first winner (instead of immediate broadcast).
+    Runs once after the fixed tie window (3s if first was fake, 1s if first was real).
+    Sets game completed, then broadcasts winner_declared and game_ended with whoever is
+    in the winner list at this moment (no extra wait per co-winner).
     """
     try:
+        from django.utils import timezone
         from .models import Game, GameCard, FakeUserGameCard
-        from .redis_utils import get_bingo_winners, get_called_numbers_list_from_redis, batch_broadcast_to_game
+        from .redis_utils import (
+            get_bingo_winners,
+            get_called_numbers_list_from_redis,
+            batch_broadcast_to_game,
+            sync_game_state_to_redis,
+        )
         from .serializers import UserSerializer
         from .game_logic import check_bingo, get_winning_number
         from .fake_user_manager import check_fake_user_bingo
 
         game = Game.objects.get(id=game_id)
+        # Set game completed only when this task runs (after the tie window)
+        if game.status == 'active':
+            now = timezone.now()
+            Game.objects.filter(id=game_id, status='active').update(status='completed', completed_at=now)
+            game.refresh_from_db()
+            sync_game_state_to_redis(game)
+            print(f"Game {game_id} marked completed in delayed task (tie window ended)")
+            # Update withdrawal_approval for all real players in this game (may now have 5+ games)
+            from .models import User
+            from .user_utils import update_user_withdrawal_approval
+            for uid in GameCard.objects.filter(game_id=game_id).values_list('user_id', flat=True).distinct():
+                if uid:
+                    try:
+                        u = User.objects.get(pk=uid)
+                        update_user_withdrawal_approval(u)
+                    except User.DoesNotExist:
+                        pass
+
         redis_winners = get_bingo_winners(game_id)
         if not redis_winners:
             return {'error': 'No winners in Redis'}

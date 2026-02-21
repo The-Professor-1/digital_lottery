@@ -63,8 +63,9 @@ jobs:
 
                 echo "🔄 Restarting services..."
                 sudo systemctl restart gunicorn
+                sudo systemctl restart redis
                 sudo systemctl restart celery
                 sudo systemctl restart celery-beat || true
+                sudo systemctl restart bingo-telegram-bot || true
 
                 echo "✅ Deployment completed successfully!"
-

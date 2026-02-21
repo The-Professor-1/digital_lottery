@@ -13,12 +13,17 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import connection, connections
-from api.models import Game, Deposit, DepositRequest, TelebirrReceipt, WithdrawRequest, GameSettings, Transfer, Transaction
+from api.models import Game, Deposit, DepositRequest, TelebirrReceipt, CbeReceipt, WithdrawRequest, GameSettings, Transfer, Transaction
 from api.telebirr_verify import (
     parse_telebirr_receipt_text,
     verify_telebirr_receipt,
     amount_from_api_total,
     credited_party_matches,
+)
+from api.cbe_verify import (
+    parse_cbe_receipt_text,
+    verify_cbe_receipt,
+    cbe_receiver_matches,
 )
 from api.auth_utils import generate_jwt_token
 from api.game_logic import get_available_card_numbers
@@ -189,7 +194,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         logger.error(f"Error storing referrer: {e}")
                 
                 # Show registration prompt
-                welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+                welcome_msg = "እንኳን ወደ Good ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
                 # Show only register button
                 keyboard = [
                     [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
@@ -235,7 +240,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.info(f"Created new user {user.id} with referrer {referrer_telegram_id}")
             
             # Show registration prompt
-            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ Good ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             # Show only register button
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
@@ -348,7 +353,7 @@ async def play_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Check if user is registered
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ Good ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -466,6 +471,7 @@ def clear_financial_command_states(context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('deposit_text', None)
     context.user_data.pop('deposit_photo_id', None)
     context.user_data.pop('waiting_for_telebirr_text', None)
+    context.user_data.pop('waiting_for_cbe_text', None)
     
     # Clear withdraw states
     context.user_data.pop('waiting_for_withdraw_amount', None)
@@ -494,7 +500,7 @@ async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if user is registered
     if not await is_user_registered(user.id):
-        welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+        welcome_msg = "እንኳን ወደ Good ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
         keyboard = [
             [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
         ]
@@ -527,9 +533,8 @@ async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     settings = await db_operation_with_retry(get_settings)
     accounts = settings.deposit_accounts
     
-    # Show platform selection buttons
+    # Show platform selection buttons (BOA removed - no receipt verification available)
     keyboard = [
-        [InlineKeyboardButton("🏦 BOA(አቢሲኒያ ባንክ)", callback_data="deposit_platform_BOA")],
         [InlineKeyboardButton("🏦 CBE(ንግድ ባንክ)", callback_data="deposit_platform_CBE")],
         [InlineKeyboardButton("📱 Telebirr(ቴሌብር)", callback_data="deposit_platform_Telebirr")],
         [InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]
@@ -554,7 +559,7 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if user is registered
     if not await is_user_registered(user.id):
-        welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+        welcome_msg = "እንኳን ወደ Good ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
         keyboard = [
             [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
         ]
@@ -579,7 +584,24 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.callback_query.answer()
         await show_main_menu(update, context)
         return
-    
+
+    # Withdrawal approval: at least 50 BR total deposit and 5 games played
+    from api.user_utils import update_user_withdrawal_approval
+    await sync_to_async(update_user_withdrawal_approval)(telegram_user)
+    await sync_to_async(telegram_user.refresh_from_db)()
+    if not telegram_user.withdrawal_approved:
+        not_approved_msg = (
+            "ወጭ ለመጠየቅ ቢያንስ 50ብር ገቢ ማድረግና 5 ጨዋታ መጫዎት አለብዎት፡፡"
+        )
+        keyboard = [[InlineKeyboardButton("🔙 ዋና መስኮት", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        if update.message:
+            await update.message.reply_text(not_approved_msg, reply_markup=reply_markup)
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(not_approved_msg, reply_markup=reply_markup)
+            await update.callback_query.answer()
+        return
+
     # Get minimum withdraw amount from settings
     from api.models import GameSettings
     async def get_settings():
@@ -595,7 +617,7 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     withdraw_msg = (
         f"💸 ገንዘብ ለማውጣት\n\n"
         f"💰 ያለዎት ሂሳብ: {telegram_user.balance} ብር\n"
-        f"📊 ዝቅተኛ መጠን: {min_withdraw} ብር\n\n"
+        f"📊 ዝቅተኛ የሚቻለው መጠን: {min_withdraw} ብር\n\n"
         "እባክዎ ለመውጣት የሚፈልጉትን መጠን ያስገቡ:"
     )
     
@@ -622,7 +644,7 @@ async def transfer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Check if user is registered
         if not await is_user_registered(user.id):
-            welcome_msg = "እንኳን ወደ ጉድ ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
+            welcome_msg = "እንኳን ወደ Good ቢንጎ በደህና መጡ! 🎉\n\n/register በመንካት ይመዝገቡ፡፡"
             keyboard = [
                 [InlineKeyboardButton("📝 ለመመዝገብ", callback_data="register")]
             ]
@@ -980,27 +1002,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_main_menu(update, context)
         return
     
-    # Check if user is in deposit flow
-    if context.user_data.get('waiting_for_deposit_amount'):
-        # Photo sent before amount - reject it and ask for text only
-        await update.message.reply_text(
-            "❌ እባክዎ ቴክስት ብቻ ያስገቡ።\n\n"
-            "ምስል አይቀበልም። እባክዎ የገንዘብ መጠንን በቁጥር ያስገቡ:"
-        )
-    elif context.user_data.get('waiting_for_deposit'):
-        # Amount already provided, but user sent photo - reject it and ask for text only
-        keyboard = [
-            [InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]
-        ]
+    # Deposit flow is receipt-text only (no photo); if user sent photo during receipt wait, ask for text
+    if context.user_data.get('waiting_for_telebirr_text') or context.user_data.get('waiting_for_cbe_text'):
+        keyboard = [[InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
         await update.message.reply_text(
-            "❌ እባክዎ ቴክስት ብቻ ያስገቡ።\n\n"
-            "ምስል አይቀበልም። እባክዎ ከባንክ የተላከልዎትን ቴክስት ብቻ ያስገቡ።",
+            "❌ እባክዎ ቴክስት ብቻ ያስገቡ።\n\nምስል አይቀበልም። ከባንክ የተላከልዎትን ሙሉ ቴክስት ይላኩ።",
             reply_markup=reply_markup
         )
     else:
-        # Photo sent without context - ask to start deposit flow
         await update.message.reply_text(
             "እባክዎ ገንዘብ ለማስገባት ከዋና ማውጫ '💰 ገንዘብ ለማስገባት' ይምረጡ።"
         )
@@ -1278,7 +1288,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not parsed:
             await update.message.reply_text(
                 "እባክዎ ሙሉ ቴክስት ይላኩ።\n\n"
-                "ከቴሌብር የተላከልዎትን ሙሉ ማስታወቂያ በሙሉ ያስገቡ (መጠን፣ ታራክሽን ቁጥር፣ ቀን ጨምሮ)።",
+                "ከቴሌብር የተላከልዎትን ሙሉ ቴክስት ያስገቡ (መጠን፣ ታራክሽን ቁጥር፣ ቀን ጨምሮ)።",
                 reply_markup=reply_markup
             )
             return
@@ -1286,7 +1296,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount_from_text = parsed['amount']
         # "Wait until verified" message
         await update.message.reply_text(
-            "⏳ ቴክስትዎ ተቀብሏል። እስኪረጋገጥ ትንሽ ይጠብቁ።",
+            "⏳ ጥያቄዎ ተልኳል! እስኪረጋገጥ ትንሽ ይጠብቁ።",
             reply_markup=reply_markup
         )
         context.user_data.pop('waiting_for_telebirr_text', None)
@@ -1304,7 +1314,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_key = (getattr(settings, 'telebirr_verify_api_key', None) or '').strip()
         if not api_key:
             await update.message.reply_text(
-                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና በትክክል ይሞክሩ።"
             )
             return
         # Check if reference already used (reject duplicate)
@@ -1312,7 +1322,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await sync_to_async(TelebirrReceipt.objects.filter(reference=reference).exists)()
         if await db_operation_with_retry(receipt_exists):
             await update.message.reply_text(
-                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና በትክክል ይሞክሩ።"
             )
             return
         # Call verify API (sync) in thread
@@ -1320,7 +1330,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = await loop.run_in_executor(None, lambda: verify_telebirr_receipt(reference, api_key))
         if not result.get('success') or not result.get('data'):
             await update.message.reply_text(
-                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+                "⚠️ ሲስተም አይሰራም። እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።\n\n"
+                
             )
             return
         data = result['data']
@@ -1333,42 +1344,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         expected_number = (account_holder.get('number') or '').strip()
         if not expected_name and not expected_number:
             await update.message.reply_text(
-                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና በትክክል ይሞክሩ።"
             )
             return
         if not credited_party_matches(credited_name, credited_account_no, expected_name, expected_number):
             await update.message.reply_text(
-                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
-            )
-            return
-        amount_from_api = amount_from_api_total(total_paid_str)
-        if amount_from_api is None:
-            await update.message.reply_text(
-                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ በትክክል እንደገና ይሞክሩ።"
             )
             return
         # Optional: compare receipt no with reference
         if receipt_no and reference and receipt_no.upper() != reference.upper():
             await update.message.reply_text(
-                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና በትክክል ይሞክሩ።"
             )
             return
-        # Credit user and store receipt
+        # Credit amount from user's receipt text (transfer amount), not API total (includes fees)
+        amount_to_credit = parsed['amount']
         async def finalize_deposit():
             await sync_to_async(TelebirrReceipt.objects.create)(
-                user=telegram_user, reference=reference, amount=amount_from_api
+                user=telegram_user, reference=reference, amount=amount_to_credit
             )
-            telegram_user.balance = Decimal(str(telegram_user.balance)) + amount_from_api
+            telegram_user.balance = Decimal(str(telegram_user.balance)) + amount_to_credit
             await sync_to_async(telegram_user.save)()
             await sync_to_async(Transaction.objects.create)(
                 user=telegram_user,
                 transaction_type='deposit',
-                amount=amount_from_api,
+                amount=amount_to_credit,
                 description=f'Telebirr deposit verified - Ref: {reference}'
             )
             await sync_to_async(DepositRequest.objects.create)(
                 user=telegram_user,
-                amount=amount_from_api,
+                amount=amount_to_credit,
                 platform='Telebirr',
                 deposit_text=text[:2000],
                 status='approved'
@@ -1376,142 +1382,114 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db_operation_with_retry(finalize_deposit)
         await update.message.reply_text(
             "✅ ገንዘቡ ገቢ ሆኗል!\n\n"
-            f"💰 መጠን: {amount_from_api} ብር\n"
+            f"💰 መጠን: {amount_to_credit} ብር\n"
             "🏦 ወደ: Telebirr\n\n"
             "በሂሳብዎ ላይ ያለውን ለመመልከት /balance ይጫኑ።"
         )
         return
-    
-    # Deposit states
-    elif context.user_data.get('waiting_for_deposit'):
+
+    # CBE auto-verify: user sent receipt text
+    elif context.user_data.get('waiting_for_cbe_text'):
+        keyboard = [[InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        parsed = parse_cbe_receipt_text(text)
+        if not parsed:
+            await update.message.reply_text(
+                "እባክዎ ሙሉ ቴክስት ይላኩ።\n\n"
+                "ከCBE የተላከልዎትን ሙሉ ቴክስት ያስገቡ (መጠን፣ ቀን፣ አገናኝ ጨምሮ)።",
+                reply_markup=reply_markup
+            )
+            return
+        reference = parsed['reference']
+        account_suffix = parsed['account_suffix']
+        amount_from_text = parsed['amount']
+        await update.message.reply_text(
+            "⏳ ጥያቄዎ ተልኳል! እስኪረጋገጥ ትንሽ ይጠብቁ።",
+            reply_markup=reply_markup
+        )
+        context.user_data.pop('waiting_for_cbe_text', None)
+        context.user_data.pop('deposit_platform', None)
         try:
             async def get_user():
                 return await sync_to_async(User.objects.get)(telegram_id=user.id)
             telegram_user = await db_operation_with_retry(get_user)
-            
-            platform = context.user_data.get('deposit_platform', '')
-            amount = context.user_data.get('deposit_amount', 0)
-            photo_id = context.user_data.get('deposit_photo_id', '')
-            
-            # Store the text/screenshot
-            deposit_text = text
-            if photo_id:
-                deposit_text = f"{deposit_text}\nPhoto file_id: {photo_id}".strip()
-            
-            # Create deposit request
-            async def create_deposit_request():
-                return await sync_to_async(DepositRequest.objects.create)(
-                    user=telegram_user,
-                    amount=Decimal(str(amount)),
-                    platform=platform,
-                    deposit_text=deposit_text or f"Amount: {amount}",
-                    photo_file_id=photo_id or None,
-                    status='pending'
-                )
-            deposit_request = await db_operation_with_retry(create_deposit_request)
-            
-            reply_markup = None
-            
-            await update.message.reply_text(
-                f"✅ የገንዘብ ማስገቢያ ጥያቄዎ ተልኳል!\n\n"
-                f"💰 መጠን: {amount} ብር\n"
-                f"🏦 ወደ: {platform}\n"
-                f"📋 ሁኔታ: በማረጋገጥ ላይ\n\n"
-                f"እባክዎ እስኪረጋገጥ ትንሽ ይጠብቁ።",
-                reply_markup=reply_markup
-            )
-            
-            # Clear context
-            context.user_data.pop('deposit_text', None)
-            context.user_data.pop('deposit_amount', None)
-            context.user_data.pop('waiting_for_deposit', None)
-            context.user_data.pop('deposit_photo_id', None)
-            context.user_data.pop('deposit_platform', None)
-            
         except User.DoesNotExist:
             await update.message.reply_text("እባክዎ በመጀመሪያ ይመዝገቡ።")
-            context.user_data['waiting_for_deposit'] = False
-    
-    elif context.user_data.get('waiting_for_deposit_amount'):
-        try:
-            amount = float(text)
-            if amount <= 0:
-                raise ValueError("Amount must be positive")
-            
-            # Store amount and ask for screenshot/text
-            context.user_data['deposit_amount'] = amount
-            context.user_data['waiting_for_deposit_amount'] = False
-            context.user_data['waiting_for_deposit'] = True
-            
-            keyboard = [
-                [InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
+            return
+        async def get_settings():
+            return await sync_to_async(GameSettings.get_settings)()
+        settings = await db_operation_with_retry(get_settings)
+        api_key = (getattr(settings, 'telebirr_verify_api_key', None) or '').strip()
+        if not api_key:
             await update.message.reply_text(
-                f"✅ መጠን ተቀብሏል: {amount} ብር\n\n"
-                f"እባክዎ ከባንክ የተላከልዎትን ቴክስት ብቻ ያስገቡ።",
-                reply_markup=reply_markup
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
             )
-            
-        except ValueError:
-            keyboard = [
-                [InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            return
+        async def receipt_exists():
+            return await sync_to_async(
+                CbeReceipt.objects.filter(reference=reference, account_suffix=account_suffix).exists
+            )()
+        if await db_operation_with_retry(receipt_exists):
             await update.message.reply_text(
-                "ልክ ያልሆነ መጠን። እባክዎ ትክክለኛ የገንዘብ መጠን ያስገቡ:",
-                reply_markup=reply_markup
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
             )
-        except User.DoesNotExist:
-            await update.message.reply_text("እባክዎ በመጀመሪያ ይመዝገቡ።")
-            await show_main_menu(update, context)
-            context.user_data.pop('waiting_for_deposit_amount', None)
-    
-    elif context.user_data.get('waiting_for_deposit_text'):
-        try:
-            async def get_user():
-                return await sync_to_async(User.objects.get)(telegram_id=user.id)
-            telegram_user = await db_operation_with_retry(get_user)
-            platform = context.user_data.get('deposit_platform', '')
-            amount = context.user_data.get('deposit_amount', 0)
-            
-            # Update deposit request with text
-            async def get_deposit_request():
-                return await sync_to_async(
-                    lambda: DepositRequest.objects.filter(
-                        user=telegram_user,
-                        platform=platform,
-                        amount=Decimal(str(amount)),
-                        status='pending'
-                    ).order_by('-created_at').first()
-                )()
-            deposit_request = await db_operation_with_retry(get_deposit_request)
-            
-            if deposit_request:
-                deposit_request.deposit_text = text
-                async def save_deposit_request():
-                    await sync_to_async(deposit_request.save)()
-                await db_operation_with_retry(save_deposit_request)
-            
-            reply_markup = None
-            
+            return
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, lambda: verify_cbe_receipt(reference, account_suffix, api_key)
+        )
+        if not result.get('success') or not result.get('data'):
             await update.message.reply_text(
-                f"✅ ጥያቄዎ ተልኳል!\n"
-                f"መጠን: {amount} ብር\n"
-                f"ሁኔታ: በማረጋገጥ ላይ\n\n"
-                f"እባክዎ እስኪረጋገጥ ትንሽ ይጠብቁ።",
-                reply_markup=reply_markup
+                "⚠️ ሲስተም አይሰራም። እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።\n\n"
+              
             )
-            
-            # Clear context
-            context.user_data.pop('waiting_for_deposit_text', None)
-            context.user_data.pop('deposit_platform', None)
-            context.user_data.pop('deposit_amount', None)
-            
-        except User.DoesNotExist:
-            await update.message.reply_text("እባክዎ በመጀመሪያ ይመዝገቡ።")
-            await show_main_menu(update, context)
+            return
+        data = result['data']
+        receiver_name = (data.get('receiver') or '').strip()
+        receiver_account = (data.get('receiverAccount') or '').strip()
+        amount_raw = data.get('amount')
+        account_holder = (settings.deposit_accounts or {}).get('CBE', {}) or {}
+        expected_name = (account_holder.get('name') or '').strip()
+        expected_number = (account_holder.get('number') or '').strip()
+        if not expected_name and not expected_number:
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        if not cbe_receiver_matches(receiver_name, receiver_account, expected_name, expected_number):
+            await update.message.reply_text(
+                "❌ የገንዘብ ማስገቢያ ጥያቄዎ ተቀባይነት አላገኘም።\n\nእባክዎ እንደገና ይሞክሩ።"
+            )
+            return
+        # Credit amount from user's receipt text (transfer amount), not API response (may include fees)
+        amount_to_credit = amount_from_text
+        async def finalize_deposit():
+            await sync_to_async(CbeReceipt.objects.create)(
+                user=telegram_user, reference=reference, account_suffix=account_suffix, amount=amount_to_credit
+            )
+            telegram_user.balance = Decimal(str(telegram_user.balance)) + amount_to_credit
+            await sync_to_async(telegram_user.save)()
+            await sync_to_async(Transaction.objects.create)(
+                user=telegram_user,
+                transaction_type='deposit',
+                amount=amount_to_credit,
+                description=f'CBE deposit verified - Ref: {reference}'
+            )
+            await sync_to_async(DepositRequest.objects.create)(
+                user=telegram_user,
+                amount=amount_to_credit,
+                platform='CBE',
+                deposit_text=text[:2000],
+                status='approved'
+            )
+        await db_operation_with_retry(finalize_deposit)
+        await update.message.reply_text(
+            "✅ ገንዘቡ ገቢ ሆኗል!\n\n"
+            f"💰 መጠን: {amount_to_credit} ብር\n"
+            "🏦 ወደ: CBE\n\n"
+            "በሂሳብዎ ላይ ያለውን ለመመልከት /balance ይጫኑ።"
+        )
+        return
     
     # Withdraw states
     elif context.user_data.get('waiting_for_withdraw_amount'):
@@ -1534,7 +1512,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.message.reply_text(
-                    f"ዝቅተኛ መጠን: {min_withdraw} ብር\n"
+                f"ዝቅተኛ የሚቻለው መጠን: {min_withdraw} ብር\n"
                     f"እባክዎ {min_withdraw} ብር ወይም ከዚያ በላይ ያስገቡ:",
                     reply_markup=reply_markup
                 )
@@ -1551,9 +1529,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             
-            # Show platform selection
+            # Show platform selection (BOA removed - same as deposit)
             keyboard = [
-                [InlineKeyboardButton("🏦 BOA(አቢሲኒያ ባንክ)", callback_data="withdraw_platform_BOA")],
                 [InlineKeyboardButton("🏦 CBE(ንግድ ባንክ)", callback_data="withdraw_platform_CBE")],
                 [InlineKeyboardButton("📱 Telebirr(ቴሌብር)", callback_data="withdraw_platform_Telebirr")],
                 [InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]
@@ -1793,7 +1770,7 @@ async def handle_deposit_platform_selection(update: Update, context: ContextType
         f"የሂሳብ ቁጥር: {account_number}\n\n"
         f"📍 እባክዎ ወደ {platform_name} በመሄድ ወደተጠቀሰው ሂሳብ ገንዘብ ያስገቡ።\n"
         f"ከዚያ ወደዚህ በመመለስ ገቢ አድርጌዋለሁ የሚለውን ይጫኑ።\n"
-        f"ከዚያ መጀመሪያ ያስተላለፉትን መጠን ቀጥሎ ከ {platform_name} የተላከልዎትን ቴክስት ያስገቡ።"
+        f"ከዚያ ከ {platform_name} የተላከልዎትን ሙሉ ቴክስት ኮፒ አድርገው ያስገቡ።"
     )
     
     await query.edit_message_text(message, reply_markup=reply_markup)
@@ -1801,7 +1778,7 @@ async def handle_deposit_platform_selection(update: Update, context: ContextType
 
 
 async def handle_deposit_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle deposit confirmation - Ask for amount, or for Telebirr (when API key set) ask only receipt text"""
+    """Handle deposit confirmation - All deposits use receipt-only flow (CBE/Telebirr API checker)."""
     query = update.callback_query
     platform = context.user_data.get('deposit_platform', '')
     
@@ -1810,30 +1787,35 @@ async def handle_deposit_confirm(update: Update, context: ContextTypes.DEFAULT_T
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # Telebirr with auto-verify: ask only for full receipt text (no amount)
+    # Telebirr: ask only for full receipt text (API checker flow)
     if platform == 'Telebirr':
-        async def get_settings():
-            return await sync_to_async(GameSettings.get_settings)()
-        settings = await db_operation_with_retry(get_settings)
-        api_key = (getattr(settings, 'telebirr_verify_api_key', None) or '').strip()
-        if api_key:
-            message = (
-                "እባክዎ ከቴሌብር የተላከልዎትን ሙሉ ቴክስት ብቻ ይላኩ።\n\n"
-                "መጠን አይገባም - ከተጽሁፉ ቴክስት ይረጋገጣል።"
-            )
-            await query.edit_message_text(message, reply_markup=reply_markup)
-            await query.answer()
-            context.user_data['waiting_for_telebirr_text'] = True
-            return
+        message = (
+            "እባክዎ ከቴሌብር የተላከልዎትን ሙሉ ቴክስት ብቻ ይላኩ።\n\n"
+            "መጠን አይገባም - ከተጽሁፉ ቴክስት ይረጋገጣል።"
+        )
+        await query.edit_message_text(message, reply_markup=reply_markup)
+        await query.answer()
+        context.user_data['waiting_for_telebirr_text'] = True
+        return
+
+    # CBE: ask only for full receipt text (API checker flow)
+    if platform == 'CBE':
+        message = (
+            "እባክዎ ከCBE የተላከልዎትን ሙሉ ቴክስት ብቻ ይላኩ።\n\n"
+            "መጠን አይገባም - ከተጽሁፉ ቴክስት ይረጋገጣል።"
+        )
+        await query.edit_message_text(message, reply_markup=reply_markup)
+        await query.answer()
+        context.user_data['waiting_for_cbe_text'] = True
+        return
     
-    message = (
-        f"እባክዎ ገቢ ያደረጉትን የገንዘብ መጠን ያስገቡ:\n\n"
-        f"ወደ: {platform}"
+    # Should not reach here (only CBE and Telebirr are deposit options); clear and ask to choose again
+    context.user_data.pop('deposit_platform', None)
+    await query.edit_message_text(
+        "እባክዎ ገንዘብ ለማስገባት ከዋና ማውጫ '💰 ገንዘብ ለማስገባት' ይምረጡ እና የፕላትፎርም ይምረጡ።",
+        reply_markup=reply_markup
     )
-    
-    await query.edit_message_text(message, reply_markup=reply_markup)
     await query.answer()
-    context.user_data['waiting_for_deposit_amount'] = True
 
 
 async def handle_withdraw_platform_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, platform: str):
@@ -1983,7 +1965,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         platform = query.data.replace("deposit_platform_", "")
         await handle_deposit_platform_selection(update, context, platform)
     elif query.data.startswith("deposit_confirm_"):
-        # Handle deposit confirmation - ask for amount
+        # Handle deposit confirmation - ask for receipt text only (API checker flow)
         await handle_deposit_confirm(update, context)
     elif query.data == "withdraw":
         # Clear any existing states before starting withdraw

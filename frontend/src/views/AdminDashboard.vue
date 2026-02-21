@@ -317,13 +317,17 @@
         <div class="user-actions-row">
           <button type="button" class="btn btn-reject" @click="toggleDeleteMode">{{ deleteMode ? 'Cancel' : 'Delete Users' }}</button>
           <button v-if="deleteMode" type="button" class="btn btn-reject" @click="deleteSelectedUsers">Delete Selected ({{ selectedUserIds.length }})</button>
+          <template v-else>
+            <button v-if="registeredLimit <= 10 && (data.registered_users_count || 0) > 10" type="button" class="btn btn-secondary" @click="seeMoreUsers">See more ({{ data.registered_users_count || 0 }} total)</button>
+            <button v-else-if="registeredLimit > 10" type="button" class="btn btn-secondary" @click="seeLessUsers">See less</button>
+          </template>
         </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
                 <th v-if="deleteMode" class="col-check"><input type="checkbox" :checked="allUsersSelected" @change="toggleSelectAll" title="Select all" /></th>
-                <th>ID</th><th>Username</th><th>Telegram ID</th><th>Phone</th><th>Name</th><th>Balance</th><th>Games</th><th>Wins</th><th>Deposits</th><th>Withdrawals</th><th>Joined</th>
+                <th>ID</th><th>Username</th><th>Telegram ID</th><th>Phone</th><th>Name</th><th>Balance</th><th>Games</th><th>Wins</th><th>Deposits</th><th>Withdrawals</th><th>Approved</th><th>Joined</th>
                 <th v-if="!deleteMode">Actions</th>
               </tr>
             </thead>
@@ -340,6 +344,7 @@
                 <td>{{ u.wins }}</td>
                 <td>{{ formatCurrency(u.total_deposits) }}</td>
                 <td>{{ formatCurrency(u.total_withdrawals) }}</td>
+                <td>{{ u.withdrawal_approved ? '✓' : '–' }}</td>
                 <td>{{ u.created_at }}</td>
                 <td v-if="!deleteMode" class="col-actions">
                   <button type="button" class="btn btn-secondary btn-sm" @click="editUser(u.id)">Edit</button>
@@ -347,7 +352,7 @@
                 </td>
               </tr>
               <tr v-if="!(data.registered_users && data.registered_users.length)">
-                <td :colspan="deleteMode ? 13 : 12">No registered users yet</td>
+                <td :colspan="deleteMode ? 14 : 13">No registered users yet</td>
               </tr>
             </tbody>
           </table>
@@ -473,13 +478,22 @@
         </div>
       </section>
 
-      <!-- Send Telegram to All -->
+      <!-- Send Telegram Message (by audience) -->
       <section class="section">
-        <h2>📱 Send Telegram Message to All Users</h2>
+        <h2>📱 Send Telegram Message</h2>
         <div class="broadcast-box">
           <div class="form-group">
+            <label>Send to:</label>
+            <select v-model="broadcastTarget" class="broadcast-target-select">
+              <option value="broadcast">Broadcast (all users)</option>
+              <option value="deposit_requesters">Deposit askers</option>
+              <option value="withdrawal_requesters">Withdrawal askers</option>
+              <option value="not_approved">Not approved (deposit &lt; 50 BR or &lt; 5 games)</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>Message:</label>
-            <textarea v-model="broadcastMessage" placeholder="Enter message to send to all users..." rows="4"></textarea>
+            <textarea v-model="broadcastMessage" placeholder="Enter message..." rows="4"></textarea>
           </div>
           <div class="form-group">
             <label>Amount to Add (optional, 0 for message only):</label>
@@ -677,6 +691,7 @@ export default {
       restartResult: '',
       broadcastMessage: '',
       broadcastAmount: 0,
+      broadcastTarget: 'broadcast',
       broadcastSending: false,
       broadcastResult: '',
       individualPhoneOrId: '',
@@ -703,7 +718,8 @@ export default {
       loginUsername: '',
       loginPassword: '',
       loginError: '',
-      loginLoading: false
+      loginLoading: false,
+      registeredLimit: 10
     }
   },
   computed: {
@@ -727,7 +743,7 @@ export default {
       this.loading = true
       this.error = null
       try {
-        this.data = await getAdminDashboardData()
+        this.data = await getAdminDashboardData({ registered_limit: this.registeredLimit })
         this.lastUpdated = new Date().toLocaleString()
         if (this.data?.second_admin_username) {
           this.secondAdminUsername = this.data.second_admin_username
@@ -741,6 +757,14 @@ export default {
       }
     },
     async refreshData() {
+      await this.loadData()
+    },
+    async seeMoreUsers() {
+      this.registeredLimit = 500
+      await this.loadData()
+    },
+    async seeLessUsers() {
+      this.registeredLimit = 10
       await this.loadData()
     },
     async refreshDeposits() {
@@ -905,7 +929,7 @@ export default {
       this.broadcastSending = true
       this.broadcastResult = ''
       try {
-        const res = await sendTelegramBroadcast(this.broadcastMessage, this.broadcastAmount || 0)
+        const res = await sendTelegramBroadcast(this.broadcastMessage, this.broadcastAmount || 0, this.broadcastTarget)
         this.broadcastResult = res.message || `Sent to ${res.sent_count || 0} user(s)`
         await this.refreshData()
       } catch (err) {

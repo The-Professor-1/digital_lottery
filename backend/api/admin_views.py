@@ -514,12 +514,18 @@ def search_user(request):
         
         # Get user statistics
         games_played = Game.objects.filter(gamecards__user=user).distinct().count()
+        # Total wins: games where user is winner (FK) or in winners (M2M)
+        total_wins = Game.objects.filter(Q(winner=user) | Q(winners=user)).distinct().count()
+        total_deposits = Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(s=Sum('amount'))['s'] or Decimal('0')
+        total_withdrawals = Transaction.objects.filter(user=user, transaction_type='withdraw').aggregate(s=Sum('amount'))['s'] or Decimal('0')
         deposits = DepositRequest.objects.filter(user=user, status='approved')
         withdrawals = WithdrawRequest.objects.filter(user=user, status='approved')
-        
         deposit_history = deposits.values('amount', 'platform', 'created_at')[:10]
         withdraw_history = withdrawals.values('amount', 'platform', 'created_at')[:10]
-        
+        # Refresh approval in case it was updated elsewhere
+        from .user_utils import update_user_withdrawal_approval
+        update_user_withdrawal_approval(user)
+        user.refresh_from_db()
         return JsonResponse({
             'user': {
                 'id': user.id,
@@ -528,8 +534,12 @@ def search_user(request):
                 'phone_number': user.phone_number,
                 'balance': float(user.balance),
                 'created_at': user.created_at.isoformat(),
+                'withdrawal_approved': user.withdrawal_approved,
             },
             'games_played': games_played,
+            'total_wins': total_wins,
+            'total_deposits': float(total_deposits),
+            'total_withdrawals': float(total_withdrawals),
             'deposit_history': list(deposit_history),
             'withdraw_history': list(withdraw_history),
         })
@@ -1510,21 +1520,23 @@ def admin_dashboard_api(request):
             'created_at': game.created_at.strftime('%H:%M'),
         })
     
-    # Registered users - OPTIMIZED: Limited to 100 most recent
-    registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:20].annotate(
+    # Registered users - limit from query param (default 10), "See more" requests more
+    try:
+        users_limit = max(1, min(500, int(request.GET.get('registered_limit', 10))))
+    except (ValueError, TypeError):
+        users_limit = 10
+    registered_users_count = User.objects.filter(telegram_id__isnull=False).count()
+    registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:users_limit].annotate(
         games_played=Count('gamecards__game', distinct=True),
-        wins=Count('won_games', distinct=True),
         user_total_deposits=Sum('transactions__amount', filter=Q(transactions__transaction_type='deposit')),
         user_total_withdrawals=Sum('transactions__amount', filter=Q(transactions__transaction_type='withdraw'))
     )
-    
     registered_users = []
     for user in registered_users_raw:
         games_played = user.games_played or 0
-        wins = user.wins or 0
+        wins = Game.objects.filter(Q(winner=user) | Q(winners=user)).distinct().count()
         user_total_deposits = user.user_total_deposits or Decimal('0')
         user_total_withdrawals = user.user_total_withdrawals or Decimal('0')
-        
         registered_users.append({
             'id': user.id,
             'username': user.username,
@@ -1536,6 +1548,7 @@ def admin_dashboard_api(request):
             'wins': wins,
             'total_deposits': float(user_total_deposits),
             'total_withdrawals': float(user_total_withdrawals),
+            'withdrawal_approved': user.withdrawal_approved,
             'created_at': user.created_at.strftime('%Y-%m-%d %H:%M'),
         })
     
@@ -1679,6 +1692,7 @@ def admin_dashboard_api(request):
         'today_games': today_games_data,
         'today_games_count': today_games_count,  # Total count for "show more" functionality
         'registered_users': registered_users,
+        'registered_users_count': registered_users_count,
         'pending_deposits': pending_deposits_data,
         'pending_withdraws': pending_withdraws_data,
         'approved_deposits': approved_deposits_data,

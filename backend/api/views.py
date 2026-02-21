@@ -1780,6 +1780,7 @@ def send_telegram_message(request):
         
         message = body.get('message', '').strip()
         amount = Decimal(str(body.get('amount', 0) or 0))
+        target = (body.get('target') or 'broadcast').strip().lower()
         
         if not message:
             return JsonResponse({
@@ -1787,8 +1788,9 @@ def send_telegram_message(request):
             }, status=400)
         
         # Create broadcast message record
-        from .models import BroadcastMessage, BroadcastMessageRecipient
+        from .models import BroadcastMessage, BroadcastMessageRecipient, DepositRequest, WithdrawRequest
         from django.utils import timezone
+        from django.db.models import Sum, Q
         
         broadcast = BroadcastMessage.objects.create(
             message_text=message,
@@ -1796,8 +1798,19 @@ def send_telegram_message(request):
             sent_by=request.user if request.user.is_authenticated else None
         )
         
-        # Get all users with telegram_id
-        users = User.objects.filter(telegram_id__isnull=False)
+        # Filter users by target
+        base_users = User.objects.filter(telegram_id__isnull=False)
+        if target == 'deposit_requesters':
+            user_ids = DepositRequest.objects.values_list('user_id', flat=True).distinct()
+            users = base_users.filter(id__in=user_ids)
+        elif target == 'withdrawal_requesters':
+            user_ids = WithdrawRequest.objects.values_list('user_id', flat=True).distinct()
+            users = base_users.filter(id__in=user_ids)
+        elif target == 'not_approved':
+            users = base_users.filter(withdrawal_approved=False)
+        else:
+            # broadcast: all users
+            users = base_users
         sent_count = 0
         credited_count = 0
         

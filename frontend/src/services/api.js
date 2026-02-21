@@ -252,8 +252,8 @@ export async function endGame(gameId) {
   return response.data
 }
 
-export async function sendTelegramBroadcast(message, amount = 0) {
-  const response = await api.post('/admin/send-telegram-message/', { message, amount })
+export async function sendTelegramBroadcast(message, amount = 0, target = 'broadcast') {
+  const response = await api.post('/admin/send-telegram-message/', { message, amount, target })
   return response.data
 }
 
@@ -296,8 +296,8 @@ export async function adminDashboardLogin(username, password) {
   return response.data
 }
 
-export async function getAdminDashboardData() {
-  const response = await adminApi.get('/admin-dashboard/api/')
+export async function getAdminDashboardData(params = {}) {
+  const response = await adminApi.get('/admin-dashboard/api/', { params })
   return response.data
 }
 

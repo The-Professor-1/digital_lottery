@@ -518,238 +518,27 @@ def claim_bingo_unified(card, game: Game, is_fake_user: bool = False) -> Tuple[b
         add_bingo_winner(game.id, card.id, user_id)
         
         if is_first_winner:
-            # CRITICAL: Use atomic update() to ensure immediate visibility
-            updated = Game.objects.filter(
-                id=game.id,
-                status='active',
-                winner__isnull=True
-            ).update(
-                status='completed',
-                completed_at=claim_time,
-                winner=card.user if not is_fake_user else None  # Fake users don't set winner
-            )
-            
-            if updated == 0:
-                # Another process already completed the game
-                game.refresh_from_db()
-                print(f"WARNING: Game {game.id} was already completed by another process")
-                return (False, None, "Game was already completed")
-            
-            # Add first winner to game.winners (for real users) for split-prize consistency
+            # Do NOT set game completed yet: keep game active for the tie window (3s fake / 1s real)
+            # so real players can tick numbers and claim as co-winners. Completed + broadcast happen in delayed task.
             game.refresh_from_db()
             if not is_fake_user and card.user_id:
                 game.winners.add(card.user)
+            print(f"SUCCESS: Game {game.id} first claim by {'fake user' if is_fake_user else f'real user {card.user.id}'} (window open)")
             
-            # PHASE 4 OPTIMIZATION: Sync game state to Redis immediately (before refresh)
-            from .redis_utils import sync_game_state_to_redis
-            sync_game_state_to_redis(game)
-            
-            game.refresh_from_db()
-            print(f"SUCCESS: Game {game.id} completed by {'fake user' if is_fake_user else f'real user {card.user.id}'}")
-            
-            # Broadcast winner immediately
-            try:
-                from channels.layers import get_channel_layer
-                from asgiref.sync import async_to_sync
-                from .serializers import UserSerializer
-                from .redis_utils import get_called_numbers_list_from_redis
-                
-                channel_layer = get_channel_layer()
-                called_numbers_list = get_called_numbers_list_from_redis(game.id)
-                
-                # Prepare winner data
-                if is_fake_user:
-                    # For fake users, find the winning number from the pattern
-                    winning_number = None
-                    if winning_pattern and called_numbers_list:
-                        # Try to find the number that completed the pattern
-                        layout = card.card_layout
-                        if layout:
-                            pattern_numbers = []
-                            if winning_pattern.startswith('row_'):
-                                row_idx = int(winning_pattern.split('_')[1])
-                                pattern_numbers = [cell.get('number') for cell in layout[row_idx] if cell.get('number') is not None]
-                            elif winning_pattern.startswith('col_'):
-                                col_idx = int(winning_pattern.split('_')[1])
-                                pattern_numbers = [layout[row_idx][col_idx].get('number') for row_idx in range(5) if layout[row_idx][col_idx].get('number') is not None]
-                            elif winning_pattern == 'diagonal_1':
-                                pattern_numbers = [layout[i][i].get('number') for i in range(5) if layout[i][i].get('number') is not None]
-                            elif winning_pattern == 'diagonal_2':
-                                pattern_numbers = [layout[i][4-i].get('number') for i in range(5) if layout[i][4-i].get('number') is not None]
-                            elif winning_pattern == 'corner':
-                                corners = [layout[0][0], layout[0][4], layout[4][0], layout[4][4], layout[2][2]]
-                                pattern_numbers = [cell.get('number') for cell in corners if cell.get('number') is not None]
-                            elif winning_pattern == 'full_card':
-                                pattern_numbers = [cell.get('number') for row in layout for cell in row if cell.get('number') is not None]
-                            
-                            # Find the last called number that's in the pattern
-                            for number in reversed(called_numbers_list):
-                                if number in pattern_numbers:
-                                    winning_number = number
-                                    break
-                    
-                    if not winning_number:
-                        winning_number = called_numbers_list[-1] if called_numbers_list else None
-                    
-                    # Card already has fake_user relationship loaded from line 422, no need to refresh again
-                    # Just ensure we have the latest card_layout (should already be up to date)
-                    card.refresh_from_db()
-                    
-                    # Create a winner object for fake users (so frontend can display name properly)
-                    fake_winner_obj = {
-                        'id': None,
-                        'username': card.fake_user.name,
-                        'name': card.fake_user.name,
-                        'is_fake': True
-                    }
-                    
-                    winner_data = {
-                        'winner': fake_winner_obj,  # Include winner object with username for frontend
-                        'username': card.fake_user.name,
-                        'is_fake': True,
-                        'card_number': card.card_number,
-                        'card_id': card.id,
-                        'card_layout': card.card_layout,  # Include card layout with marked cells
-                        'selected_numbers': card.selected_numbers or [],  # Include marked numbers
-                        'winning_pattern': winning_pattern,
-                        'last_called_number': winning_number,
-                        'called_numbers': called_numbers_list
-                    }
-                else:
-                    winning_number = get_winning_number(card, winning_pattern, called_numbers_list)
-                    
-                    # Card already has user relationship loaded from line 424, no need to refresh again
-                    # Just ensure we have the latest card_layout (should already be up to date)
-                    card.refresh_from_db()
-                    
-                    winner_data = {
-                        'winner': UserSerializer(card.user).data,
-                        'username': card.user.username,
-                        'is_fake': False,
-                        'card_number': card.card_number,
-                        'card_id': card.id,
-                        'card_layout': card.card_layout,  # Include card layout with marked cells
-                        'selected_numbers': card.selected_numbers or [],  # Include marked numbers
-                        'winning_pattern': winning_pattern,
-                        'last_called_number': winning_number,
-                        'called_numbers': called_numbers_list
-                    }
-                
-                # Broadcast after short delay (0.4s) so any co-winner in same moment is included
-                from .tasks import task_broadcast_winner_declared_delayed, task_process_bingo_winners
-                task_broadcast_winner_declared_delayed.apply_async(args=[game.id], countdown=0.4)
-                print(f"Scheduled delayed winner broadcast for game {game.id} (0.4s)")
-            except Exception as e:
-                print(f"WebSocket broadcast error in claim_bingo_unified: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            # Trigger payout task after window: 3 sec if first winner is fake, else 1 sec
-            from .tasks import task_process_bingo_winners
-            task_process_bingo_winners.apply_async(
-                args=[game.id],
-                countdown=3 if is_fake_user else 1
-            )
+            # Fixed one-time window: 3s if first is fake, 1s if first is real. We do NOT wait extra seconds
+            # when more co-winners join; the same single countdown runs once, then we set completed and announce all.
+            from .tasks import task_broadcast_winner_declared_delayed, task_process_bingo_winners
+            window_sec = 3 if is_fake_user else 1
+            task_broadcast_winner_declared_delayed.apply_async(args=[game.id], countdown=window_sec)
+            print(f"Scheduled winner broadcast + game complete for game {game.id} in {window_sec}s (fixed window, no extra wait per co-winner)")
+            task_process_bingo_winners.apply_async(args=[game.id], countdown=window_sec)
         else:
-            # Co-winner within window: add to game.winners if real, then broadcast all winners
+            # Co-winner within window: add to list only. Do NOT schedule any new task or extend the timer;
+            # the single delayed task (scheduled on first claim) will run after the fixed window and announce all.
             game.refresh_from_db()
             if not is_fake_user and card.user_id:
                 game.winners.add(card.user)
-            
-            # Broadcast winner_declared with FULL winners list so all clients see multiple winners
-            try:
-                from .redis_utils import get_bingo_winners, get_called_numbers_list_from_redis
-                from channels.layers import get_channel_layer
-                from asgiref.sync import async_to_sync
-                from .serializers import UserSerializer
-                
-                redis_winners = get_bingo_winners(game.id)
-                if not redis_winners:
-                    return (True, winning_pattern, None)
-                
-                real_ids = [w['card_id'] for w in redis_winners if w['user_id'] is not None]
-                fake_ids = [w['card_id'] for w in redis_winners if w['user_id'] is None]
-                
-                real_cards = list(GameCard.objects.filter(id__in=real_ids, game=game, is_winner=True).select_related('user')) if real_ids else []
-                fake_cards = list(FakeUserGameCard.objects.filter(id__in=fake_ids, game=game, is_winner=True).select_related('fake_user')) if fake_ids else []
-                
-                called_numbers_list = get_called_numbers_list_from_redis(game.id)
-                total_prize = float(game.derash_amount) if game.derash_amount else 0.0
-                all_count = len(real_cards) + len(fake_cards)
-                prize_per = total_prize / all_count if all_count else 0.0
-                
-                winners_data = []
-                for c in real_cards:
-                    _, pat = check_bingo(c, game)
-                    wn = get_winning_number(c, pat or winning_pattern, called_numbers_list)
-                    winners_data.append({
-                        'winner': UserSerializer(c.user).data,
-                        'username': c.user.username,
-                        'is_fake': False,
-                        'card_number': c.card_number,
-                        'card_id': c.id,
-                        'card_layout': c.card_layout,
-                        'selected_numbers': c.selected_numbers or [],
-                        'winning_pattern': pat or winning_pattern,
-                        'last_called_number': wn or (called_numbers_list[-1] if called_numbers_list else None),
-                        'called_numbers': called_numbers_list,
-                        'prize': prize_per
-                    })
-                for c in fake_cards:
-                    layout = c.card_layout or []
-                    wn = None
-                    if c.winning_pattern and called_numbers_list:
-                        pattern_numbers = []
-                        if c.winning_pattern.startswith('row_'):
-                            row_idx = int(c.winning_pattern.split('_')[1])
-                            pattern_numbers = [cell.get('number') for cell in layout[row_idx] if cell.get('number') is not None]
-                        elif c.winning_pattern.startswith('col_'):
-                            col_idx = int(c.winning_pattern.split('_')[1])
-                            pattern_numbers = [layout[r][col_idx].get('number') for r in range(5) if layout[r][col_idx].get('number') is not None]
-                        elif c.winning_pattern == 'diagonal_1':
-                            pattern_numbers = [layout[i][i].get('number') for i in range(5) if layout[i][i].get('number') is not None]
-                        elif c.winning_pattern == 'diagonal_2':
-                            pattern_numbers = [layout[i][4-i].get('number') for i in range(5) if layout[i][4-i].get('number') is not None]
-                        elif c.winning_pattern == 'corner':
-                            corners = [layout[0][0], layout[0][4], layout[4][0], layout[4][4], layout[2][2]]
-                            pattern_numbers = [cell.get('number') for cell in corners if cell.get('number') is not None]
-                        else:
-                            pattern_numbers = [cell.get('number') for row in layout for cell in row if cell.get('number') is not None]
-                        for num in reversed(called_numbers_list):
-                            if num in pattern_numbers:
-                                wn = num
-                                break
-                    winners_data.append({
-                        'winner': {'id': None, 'username': c.fake_user.name, 'name': c.fake_user.name, 'is_fake': True},
-                        'username': c.fake_user.name,
-                        'is_fake': True,
-                        'card_number': c.card_number,
-                        'card_id': c.id,
-                        'card_layout': c.card_layout,
-                        'selected_numbers': c.selected_numbers or [],
-                        'winning_pattern': c.winning_pattern,
-                        'last_called_number': wn or (called_numbers_list[-1] if called_numbers_list else None),
-                        'called_numbers': called_numbers_list,
-                        'prize': prize_per
-                    })
-                
-                from .redis_utils import batch_broadcast_to_game
-                primary = winners_data[0]['winner'] if winners_data else None
-                batch_broadcast_to_game(game.id, [{
-                    'type': 'winner_declared',
-                    'data': {
-                        'winners': winners_data,
-                        'winner': primary,
-                        'total_prize': total_prize,
-                        'prize': prize_per,
-                        'winner_count': all_count
-                    }
-                }])
-                print(f"Broadcasted {all_count} co-winners for game {game.id}")
-            except Exception as e:
-                print(f"WebSocket broadcast error (co-winners): {e}")
-                import traceback
-                traceback.print_exc()
+            print(f"Co-winner added for game {game.id}; broadcast will happen when delayed task runs")
         
         return (True, winning_pattern, None)
     
@@ -774,8 +563,9 @@ def start_game(game: Game) -> bool:
     # No grace period needed - game starts immediately when timer ends
     # State transitions are handled atomically with locks
     
-    # CRITICAL: Cache game settings at game start to prevent mid-game changes
-    # This ensures settings remain consistent throughout the active game
+    # CRITICAL: Cache game settings at game start to prevent mid-game changes.
+    # free_play: when True, number calling is random (no extra processing). When False,
+    # task_auto_call_numbers uses get_safe_number_to_call so real users don't win (fake users can).
     settings = GameSettings.get_settings()
     game_settings_cache_key = f'game:{game.id}:settings'
     cache.set(game_settings_cache_key, {
