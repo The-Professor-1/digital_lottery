@@ -1502,7 +1502,10 @@ def admin_dashboard_api(request):
     # Approved requests (limit to 5 for initial display)
     approved_deposits = DepositRequest.objects.filter(status='approved').order_by('-created_at')[:5]
     approved_withdraws = WithdrawRequest.objects.filter(status='approved').order_by('-created_at')[:5]
-    failed_deposits = FailedDepositRequest.objects.select_related('user').order_by('-created_at')[:20]
+    try:
+        failed_deposits = FailedDepositRequest.objects.select_related('user').order_by('-created_at')[:20]
+    except Exception:
+        failed_deposits = []
     
     # Count totals for show more functionality
     pending_deposits_count = DepositRequest.objects.filter(status='pending').count()
@@ -1690,18 +1693,21 @@ def admin_dashboard_api(request):
         })
     
     failed_deposits_data = []
-    for fd in failed_deposits:
-        failed_deposits_data.append({
-            'id': fd.id,
-            'username': fd.user.username,
-            'amount': float(fd.amount) if fd.amount else None,
-            'platform': fd.platform,
-            'deposit_text': (fd.deposit_text or '')[:500],
-            'failure_reason': fd.failure_reason,
-            'reference': fd.reference,
-            'account_suffix': fd.account_suffix,
-            'created_at': fd.created_at.strftime('%Y-%m-%d %H:%M'),
-        })
+    try:
+        for fd in failed_deposits:
+            failed_deposits_data.append({
+                'id': fd.id,
+                'username': fd.user.username,
+                'amount': float(fd.amount) if fd.amount else None,
+                'platform': fd.platform,
+                'deposit_text': (fd.deposit_text or '')[:500],
+                'failure_reason': fd.failure_reason,
+                'reference': fd.reference,
+                'account_suffix': fd.account_suffix,
+                'created_at': fd.created_at.strftime('%Y-%m-%d %H:%M'),
+            })
+    except Exception:
+        failed_deposits_data = []
     
     return JsonResponse({
         'games_today': games_today,

@@ -1803,7 +1803,6 @@ async def handle_deposit_confirm(update: Update, context: ContextTypes.DEFAULT_T
     if platform == 'Telebirr':
         message = (
             "እባክዎ ከቴሌብር የተላከልዎትን ሙሉ ቴክስት ብቻ ይላኩ።\n\n"
-            "መጠን አይገባም - ከተጽሁፉ ቴክስት ይረጋገጣል።"
         )
         await query.edit_message_text(message, reply_markup=reply_markup)
         await query.answer()
@@ -1814,7 +1813,6 @@ async def handle_deposit_confirm(update: Update, context: ContextTypes.DEFAULT_T
     if platform == 'CBE':
         message = (
             "እባክዎ ከCBE የተላከልዎትን ሙሉ ቴክስት ብቻ ይላኩ።\n\n"
-            "መጠን አይገባም - ከተጽሁፉ ቴክስት ይረጋገጣል።"
         )
         await query.edit_message_text(message, reply_markup=reply_markup)
         await query.answer()
