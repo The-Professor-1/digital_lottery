@@ -214,7 +214,7 @@ def try_acquire_bingo_window(game_id, first_claim_is_fake=False):
         window_key = get_bingo_window_key(game_id)
         is_first = r.setnx(window_key, "1")
         if is_first:
-            window_seconds = 2 if first_claim_is_fake else 1
+            window_seconds = 3 if first_claim_is_fake else 1
             r.expire(window_key, window_seconds)
             return (True, True)
         # Co-winner: allow while window key exists and TTL >= 0.

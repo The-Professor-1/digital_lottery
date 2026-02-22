@@ -343,17 +343,17 @@ export default {
 
 .winners-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
   margin: 12px 0;
-  max-height: 280px;
+  max-height: 420px;
   overflow-y: auto;
 }
 
 .winner-item {
   background: rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  padding: 10px;
+  border-radius: 10px;
+  padding: 12px;
   text-align: center;
 }
 
@@ -379,7 +379,7 @@ export default {
 }
 
 .winner-name-multiple {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: bold;
 }
 
@@ -394,18 +394,19 @@ export default {
 }
 
 .winner-card-display-small {
-  margin: 6px auto;
-  max-width: 150px;
+  margin: 8px auto;
+  max-width: 220px;
   background: white;
-  border-radius: 6px;
-  transform: scale(0.7);
+  border-radius: 8px;
+  padding: 6px;
+  transform: scale(0.88);
   transform-origin: center;
 }
 
 .winner-prize {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: bold;
-  margin-top: 6px;
+  margin-top: 8px;
   padding: 6px;
   background: rgba(255, 255, 255, 0.2);
   border-radius: 5px;
