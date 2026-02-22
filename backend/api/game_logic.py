@@ -530,7 +530,7 @@ def claim_bingo_unified(card, game: Game, is_fake_user: bool = False) -> Tuple[b
             
             # Real first: 1s window; fake first: 2s. Single countdown, then task reads Redis and announces all.
             from .tasks import task_process_bingo_winners
-            window_sec = 2 if is_fake_user else 1
+            window_sec = 2
             task_process_bingo_winners.apply_async(args=[game.id], countdown=window_sec)
             print(f"Scheduled task_process_bingo_winners for game {game.id} in {window_sec}s (completes game, credits, broadcasts)")
         else:
