@@ -137,9 +137,22 @@ def verify_cbe_receipt(
             'error_type': 'verification_failed',
         }
 
+    # API can return either nested {"success": true, "data": {...}} or flat {"success": true, "payer": ..., "amount": ...}
+    data = body.get('data') if isinstance(body, dict) else None
+    if not data and isinstance(body, dict):
+        data = {
+            'payer': body.get('payer'),
+            'payerAccount': body.get('payerAccount'),
+            'receiver': body.get('receiver'),
+            'receiverAccount': body.get('receiverAccount'),
+            'amount': body.get('amount'),
+            'date': body.get('date'),
+            'reference': body.get('reference'),
+            'reason': body.get('reason'),
+        }
     return {
         'success': True,
-        'data': body.get('data'),
+        'data': data,
         'error': None,
         'error_type': None,
     }

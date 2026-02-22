@@ -1463,13 +1463,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if result.get('error_type') == 'api_error':
                 await update.message.reply_text(
                     "⚠️ የCBE ማረጋገጫ አገልግሎት በአሁኑ ጊዜ አይገኝም። እባክዎ በጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።\n\n"
-                    "(CBE verification service temporarily unavailable. Please try again in a few minutes.)"
-                )
+                     )
             else:
                 await update.message.reply_text(
                     "⚠️ ሲስተም አይሰራም። እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።\n\n"
-                    "If this receipt works on the verifier website, the server may be outside Ethiopia (regional restriction). Enable CBE fallback proxy in admin."
-                )
+                     )
             return
         data = result['data']
         # Use ONLY amount from API response (user can edit text; never trust user amount for balance)
