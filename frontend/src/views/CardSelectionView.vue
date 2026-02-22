@@ -658,22 +658,20 @@ export default {
       }
       this.startingGame = true
       
-      // Stop the periodic loadGame calls
-      if (this.interval) {
-        clearInterval(this.interval)
-        this.interval = null
-      }
-      
-      // Stop WebSocket to prevent state updates during transition
-      if (this.ws) {
-        this.ws.disconnect()
-        this.ws = null
-      }
-      
       try {
-        // Call API to start game using the API service
+        // Call API to start game (backend starts only when min players reached)
         console.log('Calling start game API for game:', this.game.id)
         const gameData = await startGame(this.game.id)
+        
+        // Success: stop updates and redirect (keep WS connected until we leave so game_started can be received if we didn't start)
+        if (this.interval) {
+          clearInterval(this.interval)
+          this.interval = null
+        }
+        if (this.ws) {
+          this.ws.disconnect()
+          this.ws = null
+        }
         
         // ATOMIC TRANSITION: Update state atomically before redirect
         this.game = gameData
@@ -681,54 +679,39 @@ export default {
         
         console.log('Game started successfully:', gameData)
         
-        // Set redirecting flag BEFORE navigation
         this.isRedirecting = true
-        
-        // Use nextTick to ensure state is updated before navigation
         this.$nextTick(() => {
-          this.$router.push('/game').catch(() => {
-            // Ignore navigation errors (e.g., already navigating)
-          })
+          this.$router.push('/game').catch(() => {})
         })
       } catch (error) {
         console.error('Error starting game:', error)
         console.error('Error details:', error.response?.data || error.message)
         
-        // Try to reload game status - maybe game was started by another user
+        // Game may still be waiting (e.g. only 1 player) - refetch and restart timer so countdown restarts
         try {
           const game = await getCurrentGame()
+          this.game = game
           if (game.status === 'active') {
             console.log('Game is already active, redirecting')
             this.isRedirecting = true
             this.$router.push('/game').catch(() => {})
-          } else if (this.selectedCard) {
-            // User has a card, redirect anyway
-            console.log('User has card, redirecting to game')
-            this.isRedirecting = true
-            this.$router.push('/game').catch(() => {})
-          } else {
-            // Restart interval if redirect failed (only if WS not connected)
-            if (!this.wsConnected) {
-              this.startPolling()
-            }
-            // Restart timer if game is still waiting
-            if (this.game && this.game.status === 'waiting' && !this.timerInterval) {
+          } else if (game.status === 'waiting') {
+            // Timer hit 0 but game still waiting (e.g. 1 player) - restart timer from full so it counts down again
+            if (!this.interval) this.startPolling()
+            this.timerSeconds = game.card_selection_timer || 30
+            if (!this.timerInterval) {
               this.startTimer()
             }
           }
         } catch (e) {
           console.error('Error reloading game:', e)
-          // If user has a card, redirect anyway
           if (this.selectedCard) {
             this.isRedirecting = true
             this.$router.push('/game').catch(() => {})
           } else {
-            // Restart interval if redirect failed (only if WS not connected)
-            if (!this.wsConnected) {
-              this.startPolling()
-            }
-            // Restart timer if game is still waiting
+            if (!this.interval) this.startPolling()
             if (this.game && this.game.status === 'waiting' && !this.timerInterval) {
+              this.timerSeconds = this.game.card_selection_timer || 30
               this.startTimer()
             }
           }

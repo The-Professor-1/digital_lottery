@@ -1241,9 +1241,10 @@ export default {
             }
             
             let translatedMsg = errorMsg
-            if (errorMsg.includes('Invalid BINGO claim') || errorMsg.includes('BINGO pattern not complete')) {
+            // Backend may already return Amharic; otherwise translate English
+            if (errorMsg.includes('ቢንጎ አልሰሩም') || errorMsg.includes('Invalid BINGO claim') || errorMsg.includes('BINGO pattern not complete')) {
               translatedMsg = 'ቢንጎ አልሰሩም'
-            } else if (errorMsg.includes('not called')) {
+            } else if (errorMsg.includes('ይህ ቁጥር አልተጠራም') || errorMsg.includes('አልተጠራትም') || errorMsg.includes('not called')) {
               translatedMsg = 'ይህ ቁጥር አልተጠራም'
             } else if (errorMsg.includes('claimed bingo first') || errorMsg.includes('Another player') || errorMsg.includes('Game is already completed')) {
               translatedMsg = 'በሌላ ተጫዋች ተቀድመዋል!'

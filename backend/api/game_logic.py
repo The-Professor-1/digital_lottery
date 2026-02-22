@@ -452,14 +452,14 @@ def claim_bingo_unified(card, game: Game, is_fake_user: bool = False) -> Tuple[b
         db_called = set(CalledNumber.objects.filter(game=game).values_list('number', flat=True))
         called_set = called_set | db_called
         if not called_set:
-            return (False, None, "No numbers have been called yet")
+            return (False, None, "እስካሁን ምንም ቁጥር አልተጠራም")
         
         # Validate that all marked numbers on card were actually called
         if is_fake_user:
             # For fake users, check selected_numbers against called_numbers
             marked_numbers = set(card.selected_numbers or [])
             if not marked_numbers.issubset(called_set):
-                return (False, None, "Some marked numbers were not called")
+                return (False, None, "አንዳንድ ቁጥሮች አልተጠራትም")
             
             # Check bingo using fake user bingo checker
             from .fake_user_manager import check_fake_user_bingo
@@ -472,13 +472,13 @@ def claim_bingo_unified(card, game: Game, is_fake_user: bool = False) -> Tuple[b
                     for cell in row:
                         if cell.get('marked', False) and cell.get('number') is not None:
                             if cell['number'] not in called_set:
-                                return (False, None, f"Number {cell['number']} is marked but was not called")
+                                return (False, None, "ይህ ቁጥር አልተጠራም")
             
             # Check bingo using real user bingo checker
             has_bingo, winning_pattern = check_bingo(card, game)
         
         if not has_bingo:
-            return (False, None, "BINGO pattern not complete")
+            return (False, None, "ቢንጎ አልሰሩም")
         
         # CRITICAL: Check free_play setting for priority logic
         # If free_play is OFF and this is a fake user, check if any real user has bingo

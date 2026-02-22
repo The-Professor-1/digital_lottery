@@ -4,19 +4,20 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.urls import reverse
 from django.shortcuts import redirect
-from .models import User, Game, GameCard, CalledNumber, Deposit, Transaction, GameSettings, DepositRequest, TelebirrReceipt, CbeReceipt, WithdrawRequest, FailedDepositRequest
+from .models import User, Game, GameCard, CalledNumber, Deposit, Transaction, GameSettings, DepositRequest, TelebirrReceipt, CbeReceipt, WithdrawRequest, FailedDepositRequest, TotalStats, DailyStats
 from decimal import Decimal
 
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ['username', 'telegram_id', 'phone_number', 'balance', 'is_superuser', 'is_staff', 'created_at']
+    list_display = ['username', 'telegram_id', 'phone_number', 'balance', 'total_games_played', 'total_wins', 'total_deposits_amount', 'total_withdrawals_amount', 'is_superuser', 'is_staff', 'created_at']
     list_filter = ['created_at', 'is_active', 'is_superuser', 'is_staff']
     search_fields = ['username', 'telegram_id', 'phone_number']
     readonly_fields = ['created_at', 'updated_at']
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Telegram Info', {'fields': ('telegram_id', 'phone_number')}),
         ('Balance', {'fields': ('balance',)}),
+        ('Cached totals (survive prune)', {'fields': ('total_games_played', 'total_wins', 'total_deposits_amount', 'total_withdrawals_amount')}),
         ('Timestamps', {'fields': ('created_at', 'updated_at')}),
     )
 
@@ -281,3 +282,23 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
         
         self.message_user(request, f"{count} withdraw requests rejected.")
     reject_requests.short_description = "Reject selected withdraw requests"
+
+
+@admin.register(TotalStats)
+class TotalStatsAdmin(admin.ModelAdmin):
+    list_display = ['id', 'total_games', 'total_revenue', 'total_deposits', 'total_withdrawals', 'total_balance', 'updated_at']
+    readonly_fields = ['total_games', 'total_revenue', 'total_deposits', 'total_withdrawals', 'total_balance', 'updated_at']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(DailyStats)
+class DailyStatsAdmin(admin.ModelAdmin):
+    list_display = ['date', 'games_count', 'revenue', 'deposits', 'withdrawals', 'updated_at']
+    list_filter = ['date']
+    readonly_fields = ['date', 'games_count', 'revenue', 'deposits', 'withdrawals', 'updated_at']
+    date_hierarchy = 'date'

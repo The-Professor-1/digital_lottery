@@ -1368,6 +1368,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 amount=amount_to_credit,
                 description=f'Telebirr deposit verified - Ref: {reference}'
             )
+            try:
+                from api.stats_utils import record_deposit
+                await sync_to_async(record_deposit)(amount_to_credit, telegram_user)
+            except Exception:
+                pass
             await sync_to_async(DepositRequest.objects.create)(
                 user=telegram_user,
                 amount=amount_to_credit,
@@ -1487,6 +1492,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 amount=amount_to_credit,
                 description=f'CBE deposit verified - Ref: {reference}'
             )
+            try:
+                from api.stats_utils import record_deposit
+                await sync_to_async(record_deposit)(amount_to_credit, telegram_user)
+            except Exception:
+                pass
             await sync_to_async(DepositRequest.objects.create)(
                 user=telegram_user,
                 amount=amount_to_credit,

@@ -243,8 +243,9 @@ def task_process_bingo_winners(self, game_id: int):
     This task is called 1 second after the first winner claims bingo.
     """
     try:
-        from .models import Game, GameCard, Transaction
-        from .redis_utils import get_bingo_winners, cleanup_game_redis_keys
+        from django.utils import timezone
+        from .models import Game, GameCard, Transaction, User
+        from .redis_utils import get_bingo_winners, cleanup_game_redis_keys, sync_game_state_to_redis
         from decimal import Decimal
         
         game = Game.objects.get(id=game_id)
@@ -284,6 +285,29 @@ def task_process_bingo_winners(self, game_id: int):
             print(f"No winner cards found for game {game_id}")
             cleanup_game_redis_keys(game_id)
             return {'error': 'No winner cards found'}
+        
+        # Set game completed and winner(s) so /completed view sees completed and redirects to card selection
+        game.refresh_from_db()
+        if game.status == 'active':
+            now = timezone.now()
+            first_real_user = real_winner_cards[0].user if real_winner_cards else None
+            Game.objects.filter(id=game_id, status='active').update(
+                status='completed', completed_at=now,
+                winner_id=first_real_user.id if first_real_user else None
+            )
+            game.refresh_from_db()
+            if real_winner_cards:
+                game.winners.set([c.user for c in real_winner_cards])
+            sync_game_state_to_redis(game)
+            from .user_utils import update_user_withdrawal_approval
+            for uid in GameCard.objects.filter(game_id=game_id).values_list('user_id', flat=True).distinct():
+                if uid:
+                    try:
+                        u = User.objects.get(pk=uid)
+                        update_user_withdrawal_approval(u)
+                    except User.DoesNotExist:
+                        pass
+            print(f"Game {game_id} marked completed in task_process_bingo_winners (split prize)")
         
         # Refresh game to get latest derash
         game.refresh_from_db()
@@ -507,14 +531,27 @@ def task_broadcast_winner_declared_delayed(game_id: int):
         from .fake_user_manager import check_fake_user_bingo
 
         game = Game.objects.get(id=game_id)
-        # Set game completed only when this task runs (after the tie window)
+        # If task_process_bingo_winners already ran and set completed, skip broadcast to avoid duplicate
+        if game.status == 'completed':
+            # Still update withdrawal_approval for players
+            from .models import User
+            from .user_utils import update_user_withdrawal_approval
+            for uid in GameCard.objects.filter(game_id=game_id).values_list('user_id', flat=True).distinct():
+                if uid:
+                    try:
+                        u = User.objects.get(pk=uid)
+                        update_user_withdrawal_approval(u)
+                    except User.DoesNotExist:
+                        pass
+            return {'skipped': True, 'reason': 'Game already completed by task_process_bingo_winners'}
+
+        # Set game completed only when this task runs (e.g. if task_process_bingo_winners didn't run first)
         if game.status == 'active':
             now = timezone.now()
             Game.objects.filter(id=game_id, status='active').update(status='completed', completed_at=now)
             game.refresh_from_db()
             sync_game_state_to_redis(game)
             print(f"Game {game_id} marked completed in delayed task (tie window ended)")
-            # Update withdrawal_approval for all real players in this game (may now have 5+ games)
             from .models import User
             from .user_utils import update_user_withdrawal_approval
             for uid in GameCard.objects.filter(game_id=game_id).values_list('user_id', flat=True).distinct():
@@ -3027,6 +3064,20 @@ def task_finalize_game(self, game_id: int):
         except Exception as e:
             print(f"WebSocket broadcast error (game_ended): {e}")
         
+        # Update aggregate stats (survives prune) so dashboard and user search stay correct
+        try:
+            from .models import GameCard, GameSettings
+            from .stats_utils import record_game_completed
+            from decimal import Decimal
+            real_count = GameCard.objects.filter(game=game).count()
+            settings = GameSettings.get_settings()
+            pct = getattr(settings, 'percentage_cut', Decimal('10')) or Decimal('10')
+            revenue = (Decimal(str(real_count)) * game.bet_amount * pct) / Decimal('100')
+            record_game_completed(game, revenue)
+        except Exception as e:
+            logger.warning(f"Stats update failed for game {game_id}: {e}")
+            print(f"Stats update failed for game {game_id}: {e}")
+        
         # CRITICAL: Cleanup ALL Redis state AFTER broadcasting
         # This prevents any scheduled tasks from seeing stale state
         cleanup_game_live_state(game_id)
@@ -3122,6 +3173,18 @@ def task_finalize_redis_system_winner(game_id: int, winner_dict: dict):
         game.status = 'completed'
         game.completed_at = timezone.now()
         game.save(update_fields=['status', 'completed_at', 'current_call_count'])
+        # Update aggregate stats (survives prune)
+        try:
+            from .models import GameCard, GameSettings
+            from .stats_utils import record_game_completed
+            from decimal import Decimal
+            real_count = GameCard.objects.filter(game=game).count()
+            settings = GameSettings.get_settings()
+            pct = getattr(settings, 'percentage_cut', Decimal('10')) or Decimal('10')
+            revenue = (Decimal(str(real_count)) * game.bet_amount * pct) / Decimal('100')
+            record_game_completed(game, revenue)
+        except Exception as e:
+            logger.warning(f"Stats update failed for game {game_id}: {e}")
         cleanup_game_live_state(game_id)
         name = winner_dict.get('name', 'System')
         card_number = winner_dict.get('card_number')

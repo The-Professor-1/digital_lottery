@@ -12,6 +12,11 @@ class User(AbstractUser):
     referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals', help_text='User who referred this user')
     referral_reward_given = models.BooleanField(default=False, help_text='Whether referral reward was already given for THIS user\'s registration (prevents duplicate rewards if user re-registers)')
     withdrawal_approved = models.BooleanField(default=False, help_text='True when user has deposited at least 50 BR and played at least 5 games (allows withdrawal)')
+    # Cached totals (updated on game/deposit/withdraw; used when detail records are pruned)
+    total_games_played = models.PositiveIntegerField(default=0, help_text='Total games user has played (survives prune)')
+    total_wins = models.PositiveIntegerField(default=0, help_text='Total games user has won (survives prune)')
+    total_deposits_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)], help_text='Sum of all deposits (survives prune)')
+    total_withdrawals_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)], help_text='Sum of all withdrawals (survives prune)')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -702,3 +707,45 @@ class FakeUserGameCard(models.Model):
     
     def __str__(self):
         return f"FakeCard {self.card_number} - Game {self.game.id} - {self.fake_user.name}"
+
+
+class TotalStats(models.Model):
+    """Singleton: site-wide totals. Updated on every game/deposit/withdraw. Survives prune."""
+    total_games = models.PositiveIntegerField(default=0)
+    total_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    total_deposits = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    total_withdrawals = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    total_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'total_stats'
+        verbose_name_plural = 'Total stats'
+
+    @classmethod
+    def get_singleton(cls):
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={
+            'total_games': 0, 'total_revenue': 0, 'total_deposits': 0,
+            'total_withdrawals': 0, 'total_balance': 0,
+        })
+        return obj
+
+
+class DailyStats(models.Model):
+    """One row per calendar day. Updated on every game/deposit/withdraw. Survives prune."""
+    date = models.DateField(unique=True, db_index=True)
+    games_count = models.PositiveIntegerField(default=0)
+    revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    deposits = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    withdrawals = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'daily_stats'
+        ordering = ['-date']
+        verbose_name_plural = 'Daily stats'
+
+    @classmethod
+    def get_or_create_for_date(cls, d):
+        obj, _ = cls.objects.get_or_create(date=d, defaults={'games_count': 0, 'revenue': 0, 'deposits': 0, 'withdrawals': 0})
+        return obj

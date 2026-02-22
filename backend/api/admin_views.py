@@ -512,12 +512,21 @@ def search_user(request):
         if not user:
             return JsonResponse({'error': 'User not found'}, status=404)
         
-        # Get user statistics
-        games_played = Game.objects.filter(gamecards__user=user).distinct().count()
-        # Total wins: games where user is winner (FK) or in winners (M2M)
-        total_wins = Game.objects.filter(Q(winner=user) | Q(winners=user)).distinct().count()
-        total_deposits = Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(s=Sum('amount'))['s'] or Decimal('0')
-        total_withdrawals = Transaction.objects.filter(user=user, transaction_type='withdraw').aggregate(s=Sum('amount'))['s'] or Decimal('0')
+        # Use cached totals (survives prune); fallback to live query if cache not yet backfilled
+        games_played = getattr(user, 'total_games_played', None)
+        total_wins = getattr(user, 'total_wins', None)
+        total_deposits = getattr(user, 'total_deposits_amount', None)
+        total_withdrawals = getattr(user, 'total_withdrawals_amount', None)
+        if games_played is None:
+            games_played = Game.objects.filter(gamecards__user=user).distinct().count()
+        if total_wins is None:
+            total_wins = Game.objects.filter(Q(winner=user) | Q(winners=user)).distinct().count()
+        if total_deposits is None:
+            total_deposits = Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(s=Sum('amount'))['s'] or Decimal('0')
+        if total_withdrawals is None:
+            total_withdrawals = Transaction.objects.filter(user=user, transaction_type='withdraw').aggregate(s=Sum('amount'))['s'] or Decimal('0')
+        total_deposits = total_deposits or Decimal('0')
+        total_withdrawals = total_withdrawals or Decimal('0')
         deposits = DepositRequest.objects.filter(user=user, status='approved')
         withdrawals = WithdrawRequest.objects.filter(user=user, status='approved')
         deposit_history = deposits.values('amount', 'platform', 'created_at')[:10]
@@ -748,6 +757,11 @@ def approve_deposit_request_api(request, deposit_id):
             description=f'Deposit approved - {deposit_request.platform} - Request ID: {deposit_request.id}'
         )
         try:
+            from .stats_utils import record_deposit
+            record_deposit(deposit_request.amount, deposit_request.user)
+        except Exception:
+            pass
+        try:
             from telegram_bot.notifications import send_notification_sync
             send_notification_sync(
                 deposit_request.user.telegram_id,
@@ -777,6 +791,68 @@ def reject_deposit_request_api(request, deposit_id):
         return JsonResponse({'success': True, 'message': 'Deposit request deleted'})
     except DepositRequest.DoesNotExist:
         return JsonResponse({'error': 'Deposit request not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def delete_failed_deposit_api(request, failed_id):
+    """Delete a failed deposit request record (support cleanup)."""
+    if not (request.user.is_staff or request.session.get('second_admin_authenticated')):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    try:
+        fd = FailedDepositRequest.objects.get(id=failed_id)
+        fd.delete()
+        return JsonResponse({'success': True, 'message': 'Failed deposit record deleted'})
+    except FailedDepositRequest.DoesNotExist:
+        return JsonResponse({'error': 'Failed deposit record not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def approve_failed_deposit_api(request, failed_id):
+    """Manually approve a failed deposit: credit user, create transaction/CbeReceipt, then delete the failed record."""
+    if not (request.user.is_staff or request.session.get('second_admin_authenticated')):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    try:
+        fd = FailedDepositRequest.objects.select_related('user').get(id=failed_id)
+        amount = fd.amount
+        if amount is None or amount <= 0:
+            return JsonResponse({'error': 'Cannot approve: no valid amount on this failed record'}, status=400)
+        user = fd.user
+        from .models import CbeReceipt
+        if fd.platform == 'CBE' and fd.reference and fd.account_suffix:
+            if CbeReceipt.objects.filter(reference=fd.reference, account_suffix=fd.account_suffix).exists():
+                return JsonResponse({'error': 'This transaction was already used'}, status=400)
+            CbeReceipt.objects.create(user=user, reference=fd.reference, account_suffix=fd.account_suffix, amount=amount)
+        user.balance = Decimal(str(user.balance)) + amount
+        user.save()
+        Transaction.objects.create(
+            user=user,
+            transaction_type='deposit',
+            amount=amount,
+            description=f'Deposit approved from failed record - {fd.platform} - Failed ID: {fd.id}'
+        )
+        try:
+            from .stats_utils import record_deposit
+            record_deposit(amount, user)
+        except Exception:
+            pass
+        try:
+            from telegram_bot.notifications import send_notification_sync
+            send_notification_sync(
+                user.telegram_id,
+                f"✅ ገንዘቡ ገቢ ሆኗል!\n\n💰 መጠን: {amount} ብር\n🏦 ወደ: {fd.platform}\n\nበሂሳብዎ ላይ ያለውን ለመመልከት /balance ይጫኑ።"
+            )
+        except Exception:
+            pass
+        fd.delete()
+        return JsonResponse({'success': True, 'message': 'Deposit approved and credited'})
+    except FailedDepositRequest.DoesNotExist:
+        return JsonResponse({'error': 'Failed deposit record not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -813,7 +889,11 @@ def approve_withdraw_request_api(request, withdraw_id):
             amount=withdraw_request.amount,
             description=f'Withdrawal approved - {withdraw_request.platform} - Request ID: {withdraw_request.id}'
         )
-        
+        try:
+            from .stats_utils import record_withdrawal
+            record_withdrawal(withdraw_request.amount, withdraw_request.user)
+        except Exception:
+            pass
         # Send notification
         try:
             from telegram_bot.notifications import send_notification_sync
@@ -1429,62 +1509,81 @@ def admin_dashboard_api(request):
     last_month_start = periods['last_month_start']
     last_month_end = periods['last_month_end']
     
-    # Games played statistics
-    games_today = Game.objects.filter(created_at__gte=today_start, created_at__lte=today_end).count()
-    games_yesterday = Game.objects.filter(created_at__gte=yesterday_start, created_at__lt=yesterday_end).count()
-    games_week = Game.objects.filter(created_at__gte=week_start, created_at__lte=week_end).count()
-    games_last_week = Game.objects.filter(created_at__gte=last_week_start, created_at__lte=last_week_end).count()
-    games_month = Game.objects.filter(created_at__gte=month_start, created_at__lte=month_end).count()
-    games_last_month = Game.objects.filter(created_at__gte=last_month_start, created_at__lte=last_month_end).count()
-    games_total = Game.objects.count()
-    
-    # Revenue statistics - OPTIMIZED
-    settings = GameSettings.get_settings()
-    percentage_cut = settings.percentage_cut
-    from .models import GameCard
-    
-    def calculate_revenue(games_queryset):
-        """
-        Calculate revenue from games, excluding fake users.
-        Revenue = (real_users_count * bet_amount) * percentage_cut / 100
-        Only counts real users who paid - fake users don't generate revenue
-        OPTIMIZED: Uses aggregation instead of per-game queries
-        """
-        games_with_counts = games_queryset.annotate(
-            real_users_count=Count('gamecards', distinct=True)
-        ).filter(real_users_count__gt=0)
-        
-        # Calculate total revenue using aggregation
-        # Note: Cannot use .only() with annotations, so we iterate normally
-        total = Decimal('0')
-        for game in games_with_counts:
-            total_collected = Decimal(str(game.real_users_count)) * game.bet_amount
-            cut = (total_collected * percentage_cut) / Decimal('100')
-            total += cut
-        return total
-    
-    completed_games = Game.objects.filter(status='completed')
-    
-    # OPTIMIZED: Cache revenue calculations for 5 minutes
-    from django.core.cache import cache as revenue_cache
-    revenue_cache_key_prefix = 'admin_revenue_'
-    
-    def get_cached_revenue(key_suffix, queryset):
-        cache_key = f'{revenue_cache_key_prefix}{key_suffix}'
-        cached = revenue_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        result = calculate_revenue(queryset)
-        revenue_cache.set(cache_key, result, 300)  # Cache for 5 minutes
-        return result
-    
-    revenue_today = get_cached_revenue('today', completed_games.filter(completed_at__gte=today_start, completed_at__lte=today_end))
-    revenue_yesterday = get_cached_revenue('yesterday', completed_games.filter(completed_at__gte=yesterday_start, completed_at__lt=yesterday_end))
-    revenue_week = get_cached_revenue('week', completed_games.filter(completed_at__gte=week_start, completed_at__lte=week_end))
-    revenue_last_week = get_cached_revenue('last_week', completed_games.filter(completed_at__gte=last_week_start, completed_at__lte=last_week_end))
-    revenue_month = get_cached_revenue('month', completed_games.filter(completed_at__gte=month_start, completed_at__lte=month_end))
-    revenue_last_month = get_cached_revenue('last_month', completed_games.filter(completed_at__gte=last_month_start, completed_at__lte=last_month_end))
-    revenue_total = get_cached_revenue('total', completed_games)
+    # Prefer aggregate tables (survives prune); fallback to live queries
+    ag = None
+    try:
+        from .stats_utils import get_dashboard_aggregates
+        ag = get_dashboard_aggregates(periods)
+    except Exception:
+        pass
+    if ag is not None:
+        games_today = ag['games_today']
+        games_yesterday = ag['games_yesterday']
+        games_week = ag['games_week']
+        games_last_week = ag['games_last_week']
+        games_month = ag['games_month']
+        games_last_month = ag['games_last_month']
+        games_total = ag['games_total']
+        revenue_today = ag['revenue_today']
+        revenue_yesterday = ag['revenue_yesterday']
+        revenue_week = ag['revenue_week']
+        revenue_last_week = ag['revenue_last_week']
+        revenue_month = ag['revenue_month']
+        revenue_last_month = ag['revenue_last_month']
+        revenue_total = ag['revenue_total']
+        total_deposits = ag['total_deposits']
+        total_withdrawals = ag['total_withdrawals']
+        total_balance = ag['total_balance']
+    else:
+        # Games played statistics (from current records)
+        games_today = Game.objects.filter(created_at__gte=today_start, created_at__lte=today_end).count()
+        games_yesterday = Game.objects.filter(created_at__gte=yesterday_start, created_at__lt=yesterday_end).count()
+        games_week = Game.objects.filter(created_at__gte=week_start, created_at__lte=week_end).count()
+        games_last_week = Game.objects.filter(created_at__gte=last_week_start, created_at__lte=last_week_end).count()
+        games_month = Game.objects.filter(created_at__gte=month_start, created_at__lte=month_end).count()
+        games_last_month = Game.objects.filter(created_at__gte=last_month_start, created_at__lte=last_month_end).count()
+        games_total = Game.objects.count()
+        settings = GameSettings.get_settings()
+        percentage_cut = settings.percentage_cut
+        from .models import GameCard
+        def calculate_revenue(games_queryset):
+            games_with_counts = games_queryset.annotate(
+                real_users_count=Count('gamecards', distinct=True)
+            ).filter(real_users_count__gt=0)
+            total = Decimal('0')
+            for game in games_with_counts:
+                total_collected = Decimal(str(game.real_users_count)) * game.bet_amount
+                cut = (total_collected * percentage_cut) / Decimal('100')
+                total += cut
+            return total
+        completed_games = Game.objects.filter(status='completed')
+        from django.core.cache import cache as revenue_cache
+        revenue_cache_key_prefix = 'admin_revenue_'
+        def get_cached_revenue(key_suffix, queryset):
+            cache_key = f'{revenue_cache_key_prefix}{key_suffix}'
+            cached = revenue_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            result = calculate_revenue(queryset)
+            revenue_cache.set(cache_key, result, 300)
+            return result
+        revenue_today = get_cached_revenue('today', completed_games.filter(completed_at__gte=today_start, completed_at__lte=today_end))
+        revenue_yesterday = get_cached_revenue('yesterday', completed_games.filter(completed_at__gte=yesterday_start, completed_at__lt=yesterday_end))
+        revenue_week = get_cached_revenue('week', completed_games.filter(completed_at__gte=week_start, completed_at__lte=week_end))
+        revenue_last_week = get_cached_revenue('last_week', completed_games.filter(completed_at__gte=last_week_start, completed_at__lte=last_week_end))
+        revenue_month = get_cached_revenue('month', completed_games.filter(completed_at__gte=month_start, completed_at__lte=month_end))
+        revenue_last_month = get_cached_revenue('last_month', completed_games.filter(completed_at__gte=last_month_start, completed_at__lte=last_month_end))
+        revenue_total = get_cached_revenue('total', completed_games)
+        all_registered_users = User.objects.filter(telegram_id__isnull=False)
+        total_deposits = Transaction.objects.filter(
+            transaction_type='deposit',
+            user__in=all_registered_users
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        total_withdrawals = Transaction.objects.filter(
+            transaction_type='withdraw',
+            user__in=all_registered_users
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        total_balance = User.objects.aggregate(total=Sum('balance'))['total'] or Decimal('0')
     
     # Date range strings for display (using calendar periods)
     
@@ -1562,17 +1661,9 @@ def admin_dashboard_api(request):
     except (ValueError, TypeError):
         users_limit = 10
     registered_users_count = User.objects.filter(telegram_id__isnull=False).count()
-    registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:users_limit].annotate(
-        games_played=Count('gamecards__game', distinct=True),
-        user_total_deposits=Sum('transactions__amount', filter=Q(transactions__transaction_type='deposit')),
-        user_total_withdrawals=Sum('transactions__amount', filter=Q(transactions__transaction_type='withdraw'))
-    )
+    registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:users_limit]
     registered_users = []
     for user in registered_users_raw:
-        games_played = user.games_played or 0
-        wins = Game.objects.filter(Q(winner=user) | Q(winners=user)).distinct().count()
-        user_total_deposits = user.user_total_deposits or Decimal('0')
-        user_total_withdrawals = user.user_total_withdrawals or Decimal('0')
         registered_users.append({
             'id': user.id,
             'username': user.username,
@@ -1580,28 +1671,15 @@ def admin_dashboard_api(request):
             'phone_number': user.phone_number or '-',
             'name': f"{user.first_name or ''} {user.last_name or ''}".strip() or '-',
             'balance': float(user.balance),
-            'games_played': games_played,
-            'wins': wins,
-            'total_deposits': float(user_total_deposits),
-            'total_withdrawals': float(user_total_withdrawals),
+            'games_played': user.total_games_played or 0,
+            'wins': user.total_wins or 0,
+            'total_deposits': float(user.total_deposits_amount or 0),
+            'total_withdrawals': float(user.total_withdrawals_amount or 0),
             'withdrawal_approved': user.withdrawal_approved,
             'created_at': user.created_at.strftime('%Y-%m-%d %H:%M'),
         })
     
-    # Financial statistics - Calculate from ALL registered users (not just the limited display list)
-    # Sum deposits and withdrawals from all registered users' transactions
-    all_registered_users = User.objects.filter(telegram_id__isnull=False)
-    total_deposits = Transaction.objects.filter(
-        transaction_type='deposit',
-        user__in=all_registered_users
-    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-    total_withdrawals = Transaction.objects.filter(
-        transaction_type='withdraw',
-        user__in=all_registered_users
-    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-    total_balance = User.objects.aggregate(
-        total=Sum('balance')
-    )['total'] or Decimal('0')
+    # (total_deposits, total_withdrawals, total_balance set above from aggregates or fallback)
     
     # Game mode statistics - OPTIMIZED with caching
     from .models import GameCard

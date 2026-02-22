@@ -186,7 +186,7 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>ID</th><th>User</th><th>Amount</th><th>Platform</th><th>Reason</th><th>Ref</th><th>Suffix</th><th>Created</th>
+                <th>ID</th><th>User</th><th>Amount</th><th>Platform</th><th>Reason</th><th>Ref</th><th>Suffix</th><th>Created</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -199,9 +199,13 @@
                 <td>{{ fd.reference || '—' }}</td>
                 <td>{{ fd.account_suffix || '—' }}</td>
                 <td>{{ fd.created_at }}</td>
+                <td>
+                  <button class="btn btn-approve" @click="approveFailedDeposit(fd.id)">Approve</button>
+                  <button class="btn btn-reject" @click="deleteFailedDeposit(fd.id)">Delete</button>
+                </td>
               </tr>
               <tr v-if="!(data.failed_deposits && data.failed_deposits.length)">
-                <td colspan="8">No failed deposit requests</td>
+                <td colspan="9">No failed deposit requests</td>
               </tr>
             </tbody>
           </table>
@@ -676,6 +680,8 @@ import {
   searchTransaction as apiSearchTransaction,
   approveDeposit as apiApproveDeposit,
   rejectDeposit as apiRejectDeposit,
+  deleteFailedDeposit as apiDeleteFailedDeposit,
+  approveFailedDeposit as apiApproveFailedDeposit,
   approveWithdraw as apiApproveWithdraw,
   rejectWithdraw as apiRejectWithdraw,
   getGameSettings,
@@ -871,6 +877,26 @@ export default {
       } catch (err) {
         console.error('Reject deposit failed:', err)
         alert(err.response?.data?.error || 'Failed to reject')
+      }
+    },
+    async deleteFailedDeposit(id) {
+      if (!confirm('Delete this failed deposit record?')) return
+      try {
+        await apiDeleteFailedDeposit(id)
+        await this.loadData()
+      } catch (err) {
+        console.error('Delete failed deposit failed:', err)
+        alert(err.response?.data?.error || 'Failed to delete')
+      }
+    },
+    async approveFailedDeposit(id) {
+      if (!confirm('Credit the user and remove this failed record?')) return
+      try {
+        await apiApproveFailedDeposit(id)
+        await this.loadData()
+      } catch (err) {
+        console.error('Approve failed deposit failed:', err)
+        alert(err.response?.data?.error || 'Failed to approve')
       }
     },
     async approveWithdraw(id) {

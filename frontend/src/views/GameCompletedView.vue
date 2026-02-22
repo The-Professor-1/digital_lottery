@@ -62,19 +62,26 @@ export default {
           }
         }
         
-        // Redirect immediately if new game is available (no timer needed)
+        // Redirect: if game is completed, go to card selection for next round; if waiting/active, go to select or game
         if (game && (game.status === 'waiting' || game.status === 'active')) {
           this.redirecting = true
           if (this.interval) {
             clearInterval(this.interval)
             this.interval = null
           }
-          
           if (game.status === 'waiting') {
             this.$router.push('/select-card').catch(() => {})
           } else if (game.status === 'active') {
             this.$router.push('/game').catch(() => {})
           }
+        } else if (game && game.status === 'completed') {
+          // Game just finished - go to card selection to join next game
+          this.redirecting = true
+          if (this.interval) {
+            clearInterval(this.interval)
+            this.interval = null
+          }
+          this.$router.push('/select-card').catch(() => {})
         }
       } catch (error) {
         // No game found - backend should create one soon, keep polling

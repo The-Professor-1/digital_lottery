@@ -327,6 +327,16 @@ export async function rejectDeposit(depositId) {
   return response.data
 }
 
+export async function deleteFailedDeposit(failedId) {
+  const response = await adminApi.post(`/admin-dashboard/failed-deposits/${failedId}/delete/`)
+  return response.data
+}
+
+export async function approveFailedDeposit(failedId) {
+  const response = await adminApi.post(`/admin-dashboard/failed-deposits/${failedId}/approve/`)
+  return response.data
+}
+
 export async function getDepositPhoto(depositId) {
   const response = await adminApi.get(`/admin-dashboard/deposits/${depositId}/photo/`)
   return response.data
