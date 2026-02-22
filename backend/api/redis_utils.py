@@ -202,41 +202,25 @@ def release_number_calling_lock(game_id):
 def try_acquire_bingo_window(game_id, first_claim_is_fake=False):
     """
     Try to acquire bingo window for multiple-winner tie.
-    - First winner (real): 0.5 second window — fast co-winners (same number) can share; promotes competition.
+    - First winner (real): 1 second window for co-winners.
     - First winner (fake): 2 second window so real players can claim and share.
     Returns (success, is_first_winner).
     """
-    import time
     r = get_redis_client()
     if not r:
         return (False, False)
     
     try:
         window_key = get_bingo_window_key(game_id)
-        now = time.time()
-        
-        # Try to set the window (SETNX - only sets if not exists)
         is_first = r.setnx(window_key, "1")
-        
         if is_first:
-            # Real first: 0.5s; fake first: 2s. Store end timestamp (Redis EXPIRE is integer-only).
-            window_seconds = 2.0 if first_claim_is_fake else 0.5
-            window_end = now + window_seconds
-            r.set(window_key, str(window_end))
-            r.expire(window_key, 10)  # cleanup; actual window is determined by stored timestamp
+            window_seconds = 2 if first_claim_is_fake else 1
+            r.expire(window_key, window_seconds)
             return (True, True)
-        else:
-            # Not first: allow only if still within window (now < window_end)
-            val = r.get(window_key)
-            if not val:
-                return (False, False)
-            try:
-                window_end = float(val.decode() if isinstance(val, bytes) else val)
-            except (ValueError, TypeError):
-                return (False, False)
-            if now < window_end:
-                return (True, False)
-            return (False, False)
+        ttl = r.ttl(window_key)
+        if ttl > 0:
+            return (True, False)
+        return (False, False)
     except Exception as e:
         print(f"Error acquiring bingo window: {e}")
         return (False, False)
