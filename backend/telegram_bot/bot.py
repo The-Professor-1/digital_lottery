@@ -203,6 +203,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.callback_query.edit_message_text(welcome_msg, reply_markup=reply_markup)
                     await update.callback_query.answer()
         except User.DoesNotExist:
+            # Daily cap: max 100 new /starts per day (new users only)
+            from api.redis_utils import try_acquire_daily_start_slot
+            if not try_acquire_daily_start_slot():
+                msg = "የመመዝገቢያ ቦታዎች ለዛሬ ተሞልተዋል። እባክዎ ነገ ይሞክሩ።"
+                if update.message:
+                    await update.message.reply_text(msg)
+                elif update.callback_query:
+                    await update.callback_query.answer(msg, show_alert=True)
+                return
             # New user - create user record but don't register yet
             # Check if referrer exists before creating user
             referrer_user = None

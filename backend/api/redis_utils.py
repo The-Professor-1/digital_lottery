@@ -366,6 +366,57 @@ def cleanup_game_redis_keys(game_id):
         print(f"Error cleaning up Redis keys for game {game_id}: {e}")
 
 
+# --- Bot daily /start (new registration) limit ---
+BOT_DAILY_START_KEY_PREFIX = "bot:new_starts:"
+BOT_DAILY_START_TTL_SECONDS = 24 * 3600  # 24h (1 day) so key expires after day is done
+DEFAULT_DAILY_NEW_START_LIMIT = 100
+
+
+def get_bot_daily_new_start_key():
+    """Redis key for today's new /start count (server timezone, typically UTC). Resets each calendar day."""
+    today = timezone.now().date()
+    return f"{BOT_DAILY_START_KEY_PREFIX}{today.isoformat()}"
+
+
+def _get_daily_new_start_limit():
+    """Read limit from GameSettings; 0 or None means no limit (allow all)."""
+    try:
+        from .models import GameSettings
+        settings = GameSettings.get_settings()
+        limit = getattr(settings, 'daily_new_start_limit', None)
+        if limit is None:
+            return DEFAULT_DAILY_NEW_START_LIMIT
+        limit = int(limit)
+        return limit if limit > 0 else None  # 0 = no limit
+    except Exception:
+        return DEFAULT_DAILY_NEW_START_LIMIT
+
+
+def try_acquire_daily_start_slot():
+    """
+    Atomically increment today's new /start count. Returns True if under limit (slot acquired), False if limit reached.
+    Limit is read from GameSettings.daily_new_start_limit (0 = no limit). Existing users are not affected.
+    """
+    limit = _get_daily_new_start_limit()
+    if limit is None:
+        return True  # 0 = no limit
+    r = get_redis_client()
+    if not r:
+        return True  # No Redis: allow (fail open)
+    try:
+        key = get_bot_daily_new_start_key()
+        n = r.incr(key)
+        if n == 1:
+            r.expire(key, BOT_DAILY_START_TTL_SECONDS)
+        if n <= limit:
+            return True
+        r.decr(key)
+        return False
+    except Exception as e:
+        print(f"Error in try_acquire_daily_start_slot: {e}")
+        return True  # Fail open
+
+
 # PHASE 2 OPTIMIZATION: Redis-based called numbers caching
 def get_called_numbers_key(game_id):
     """Get Redis key for called numbers list"""

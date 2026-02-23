@@ -365,6 +365,11 @@ class GameSettings(models.Model):
         default='0952838412',
         help_text="Support phone number displayed in bot support command"
     )
+    # Bot: max new /start (new user) registrations per calendar day; 0 = no limit
+    daily_new_start_limit = models.PositiveIntegerField(
+        default=100,
+        help_text="Max new /start (new user) registrations per day. Set to 0 for no limit. Set to 1 to test (only one new user per day)."
+    )
     
     updated_at = models.DateTimeField(auto_now=True)
     

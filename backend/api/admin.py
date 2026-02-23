@@ -127,6 +127,10 @@ class GameSettingsAdmin(admin.ModelAdmin):
             'fields': ('support_phone',),
             'description': 'Support phone number for customer support'
         }),
+        ('Bot registration limit', {
+            'fields': ('daily_new_start_limit',),
+            'description': 'Max new /start (new user) registrations per calendar day. Set to 0 for no limit. Set to 1 to test (only one new user per day).'
+        }),
     )
 
 

@@ -431,15 +431,24 @@ export default {
             }, 1000)
           }
           
-          // Load called numbers - only update if WebSocket hasn't already processed them
-          // This prevents race conditions between polling and WebSocket
+          // Load called numbers - MERGE with client state so we never drop numbers from WebSocket
+          // (e.g. number_called arrived before poll; server response can be stale and missing last number)
           if (game.called_numbers) {
             const newCalledNumbers = game.called_numbers.map(cn => cn.number)
-            // Only update if there are new numbers we haven't seen
             const hasNewNumbers = newCalledNumbers.some(num => !this.calledNumbers.includes(num))
-            
+            const clientHasMore = this.calledNumbers.length > newCalledNumbers.length
+
+            // Merge: server list as base, then append any numbers client has that server doesn't (preserve WebSocket updates)
+            const mergeCalledNumbers = () => {
+              const merged = [...newCalledNumbers]
+              for (const n of this.calledNumbers) {
+                if (!merged.includes(n)) merged.push(n)
+              }
+              this.calledNumbers = merged
+              if (this.game) this.game.current_call_count = this.calledNumbers.length
+            }
+
             // FIX: Only hide countdown if it has finished (3 seconds passed)
-            // This ensures called numbers are only shown after countdown completes
             if (game.called_numbers.length > 0 && this.showStartCountdown && this.startCountdownSeconds <= 0) {
               this.showStartCountdown = false
               if (this.countdownInterval) {
@@ -455,28 +464,22 @@ export default {
               }
             } else if (game.called_numbers.length > 0 && this.showStartCountdown && this.startCountdownSeconds > 0) {
               // Countdown still running - don't process called numbers yet
-              // Numbers will be processed after countdown finishes
               console.log('Countdown still running, ignoring called numbers until countdown finishes')
             }
-            
-            // FIX: Only process called numbers if countdown has finished
-            if (hasNewNumbers && (!this.showStartCountdown || this.startCountdownSeconds <= 0)) {
-              this.calledNumbers = newCalledNumbers
-              
-              // ATOMIC FIX: Update current_call_count to match actual called numbers length
-              // This ensures the count displayed matches the actual numbers on the bingo board
-              // CRITICAL: Always update immediately to prevent showing 0
-              if (this.game) {
-                this.game.current_call_count = this.calledNumbers.length
-                console.log(`✅ [SYNC] Updated call count to ${this.calledNumbers.length} from calledNumbers array`)
+
+            // Only process called numbers if countdown has finished
+            if (!this.showStartCountdown || this.startCountdownSeconds <= 0) {
+              if (hasNewNumbers) {
+                mergeCalledNumbers()
+                console.log(`✅ [SYNC] Merged called numbers, count: ${this.calledNumbers.length}`)
+              } else if (clientHasMore || this.calledNumbers.length !== game.called_numbers.length) {
+                // Client has more (e.g. from WebSocket) or count mismatch: merge instead of overwrite so we never drop the last number
+                mergeCalledNumbers()
+                if (clientHasMore) console.log(`✅ [SYNC] Preserved client numbers (merge), count: ${this.calledNumbers.length}`)
               }
-            } else if (!hasNewNumbers && game.called_numbers && game.called_numbers.length > 0) {
-              // Even if no new numbers, ensure count is synced (prevents showing 0)
-              if (this.game && this.calledNumbers.length !== game.called_numbers.length) {
-                this.calledNumbers = newCalledNumbers
-                this.game.current_call_count = this.calledNumbers.length
-                console.log(`✅ [SYNC] Synced call count to ${this.calledNumbers.length} (no new numbers but count was wrong)`)
-              }
+            }
+
+            if (!hasNewNumbers && game.called_numbers && game.called_numbers.length > 0) {
               
               if (game.called_numbers.length > 0) {
                 const lastCall = game.called_numbers[game.called_numbers.length - 1]
