@@ -55,20 +55,33 @@
           :recent-calls="recentCalls"
           class="compact-call-display"
         />
-        <UserCard
-          v-if="userCard"
-          :card-layout="userCard.card_layout"
-          :card-number="userCard.card_number"
-          :can-claim-bingo="canClaimBingo"
-          @mark-number="handleMarkNumber"
-          @claim-bingo="handleClaimBingo"
-        />
+        <div v-if="userCard" class="user-card-wrapper">
+          <UserCard
+            :card-layout="userCard.card_layout"
+            :card-number="userCard.card_number"
+            :can-claim-bingo="canClaimBingo"
+            @mark-number="handleMarkNumber"
+            @claim-bingo="handleClaimBingo"
+          />
+          <!-- False bingo claim: block card for this game -->
+          <div v-if="blockedFromThisGame" class="wait-message-box card-blocked-overlay">
+            <h3>በስህተት በመንካትዎ ከዚህ ጨዋታ ታግደዋል!</h3>
+            <p>ይህ ጨዋታ እስኪጠናቀቅ ይጠብቁ</p>
+          </div>
+          <!-- Spinner while checking bingo claim -->
+          <div v-if="claimBingoChecking" class="claim-checking-overlay">
+            <div class="spinner"></div>
+            <span>ቢንጎ በማረጋገጥ ላይ...</span>
+          </div>
+        </div>
         <!-- Show "wait" when no card and banner not yet shown: active game, or completed but winner not yet received, or winner declared but banner delayed (e.g. 3s for fake user) -->
         <div v-else-if="(!userCard && !showWinnerBanner) && ( (game && (game.status === 'active' || (game.status === 'completed' && !winner && (!winners || !winners.length)))) || _winnerBannerActive )" class="no-card-message">
           <div class="wait-message-box">
             <h3>⏳ ይህ ጨዋታ እስኪጠናቀቅ ይጠብቁ</h3>
           </div>
         </div>
+        <!-- Bingo rule: block after 2 false clicks -->
+        <p v-if="userCard && game?.status === 'active' && !blockedFromThisGame" class="bingo-rule-hint">መስመር ሳይሰሩ ቢንጎ! 2ጊዜ ከነኩ ከጨዋታው ይታገዳሉ!</p>
       </div>
     </div>
     
@@ -123,7 +136,6 @@ export default {
       calledNumbers: [],
       currentCall: null,
       recentCalls: [],
-      canClaimBingo: false,
       winner: null,
       winners: null, // Array of all winners (for split prizes)
       winnerPrize: 0,
@@ -154,7 +166,21 @@ export default {
       lastMarkedTime: 0, // Track when number was last marked
       winnerBannerShownAt: null, // Timestamp when winner banner was shown (to enforce 8-second display)
       _winnerBannerActive: false, // Flag to prevent loadGame from interfering with winner banner
-      _completedRedirectTimeoutId: null // Clear this when winner_declared is received so we show banner instead of redirecting
+      _completedRedirectTimeoutId: null, // Clear this when winner_declared is received so we show banner instead of redirecting
+      blockedFromThisGame: false, // True after false bingo claim: show overlay, user cannot play this game
+      claimBingoChecking: false, // True while checking claim (spinner)
+      falseBingoClickCount: 0 // Count of Bingo clicks without a line this game; 2nd = block
+    }
+  },
+  computed: {
+    // Bingo button is clickable when game is active, we have a card, and not blocked. Pattern is checked only on click.
+    canClaimBingo() {
+      if (this.blockedFromThisGame || this.claimBingoChecking) return false
+      if (!this.userCard || !this.game || this.game.status !== 'active') return false
+      if (this.winner || (this.winners && this.winners.length > 0) || this.userCard.is_winner) return false
+      const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : Infinity
+      if (timeSinceBannerShown < 5000) return false
+      return true
     }
   },
   async mounted() {
@@ -349,6 +375,7 @@ export default {
           try {
             const card = await getMyCard(game.id)
             this.userCard = card
+            this.falseBingoClickCount = 0
             
             // Initialize gameMode from card's mode_history
             if (card.mode_history && card.mode_history.length > 0) {
@@ -359,11 +386,6 @@ export default {
               this.gameMode = 'manual'
             }
             
-            // Don't check bingo pattern if winner banner is showing
-            // Only check pattern (to update canClaimBingo), but don't auto-claim unless in automatic mode
-            if (!isBannerShowing || timeSinceBannerShown >= 8000) {
-              this.checkBingoPattern()
-            }
           } catch (error) {
             console.error('Error loading card:', error)
             // User doesn't have a card
@@ -384,6 +406,7 @@ export default {
               if (!winnerDeclared && !hadCard && !gameAlreadyCompleted) {
                 // Spectator in active game: no card to show
                 this.userCard = null
+                this.falseBingoClickCount = 0
               }
             }
           }
@@ -705,10 +728,6 @@ export default {
           this.autoMarkNumber(data.number)
         }
         
-        // Always check bingo pattern to update button state (canClaimBingo)
-        // tryAutoClaimBingo() will only auto-claim in automatic mode
-        this.checkBingoPattern()
-        
         // Check if all 75 numbers have been called
         if (this.calledNumbers.length >= 75 && this.game && this.game.status === 'active' && !this.game.winner) {
           // Wait 3 seconds to see if someone claims BINGO
@@ -827,7 +846,6 @@ export default {
         }
         
         // Stop ALL automatic mode behavior immediately when winner is declared
-        this.canClaimBingo = false
         this.automaticallyMarkedNumbers.clear()
         this.gameMode = 'manual' // Force switch to manual mode to prevent any automatic actions
         this.isMarkingNumber = false // Stop any pending marking operations
@@ -1059,11 +1077,7 @@ export default {
           for (let cell of row) {
             if (cell.number === number && !cell.marked && cell.letter !== 'FREE') {
               cell.marked = true
-              // Force Vue reactivity
               this.$forceUpdate()
-              // Always check bingo pattern to update button state (canClaimBingo)
-              // tryAutoClaimBingo() will only auto-claim in automatic mode
-              this.checkBingoPattern()
               break
             }
           }
@@ -1076,9 +1090,6 @@ export default {
           // Update with server response to ensure consistency
           if (updatedCard.card_layout) {
             this.userCard.card_layout = updatedCard.card_layout
-            // Always check bingo pattern to update button state (canClaimBingo)
-            // tryAutoClaimBingo() will only auto-claim in automatic mode
-            this.checkBingoPattern()
           }
           this.isMarkingNumber = false
         })
@@ -1109,259 +1120,87 @@ export default {
         })
     },
     async handleClaimBingo() {
-      if (!this.userCard) return
-      
-      // Stop automatic mode behavior immediately when claiming
-      this.canClaimBingo = false
+      if (!this.userCard || this.blockedFromThisGame) return
+      this.claimBingoChecking = true
       this.automaticallyMarkedNumbers.clear()
-      
-      // OPTIMISTIC UPDATE: Show winner banner immediately
-      // Record when winner banner is shown - enforce 8-second minimum display
-      this.winnerBannerShownAt = Date.now()
-      
-      // CRITICAL: Set banner visibility flag IMMEDIATELY - independent of winner data
-      // This prevents banner from disappearing due to state updates/re-renders
-      this.showWinnerBanner = true
-      this._winnerBannerActive = true
-      
-      const prize = this.game?.total_derash || 0
-      this.winner = {
-        username: 'You',
-        id: this.userCard.user
-      }
-      this.winnerPrize = prize
-      this.isCurrentUserWinner = true
-      
-      // Stop the interval to prevent immediate redirect
-      if (this.interval) {
-        clearInterval(this.interval)
-        this.interval = null
-      }
-      
-      // Get winning pattern from card layout immediately
-      if (this.userCard && this.userCard.card_layout) {
-        const layout = this.userCard.card_layout
-        let winningPattern = null
-        
-        // Check which pattern won
-        const isCellMarked = (cell) => {
-          if (cell.letter === 'FREE') return true
-          return cell.marked || false
+      try {
+        // Check pattern only once, on click (no check on every tick)
+        if (!this.clientHasBingoPattern()) {
+          const msg = 'ቢንጎ አልሰሩም! ከደገሙ ከጨዋታው ይታገዳሉ!'
+          this.showNotification(msg, 'error')
+          this.falseBingoClickCount += 1
+          if (this.falseBingoClickCount >= 2) this.blockedFromThisGame = true
+          return
         }
-        
-        // Check horizontal
-        for (let rowIdx = 0; rowIdx < layout.length; rowIdx++) {
-          if (layout[rowIdx].every(cell => isCellMarked(cell))) {
-            winningPattern = `row_${rowIdx}`
-            break
+        const result = await claimBingo(this.userCard.id)
+        if (result.success) {
+          this.winnerBannerShownAt = Date.now()
+          this.showWinnerBanner = true
+          this._winnerBannerActive = true
+          const prize = this.game?.total_derash || 0
+          this.winner = { username: 'You', id: this.userCard.user }
+          this.winnerPrize = result.prize ?? prize
+          this.totalPrize = result.total_prize ?? this.game?.total_derash ?? 0
+          this.isCurrentUserWinner = true
+          if (result.winners && result.winners.length > 0) {
+            this.winners = result.winners
+            const myId = this.userCard?.user?.id
+            this.isCurrentUserWinner = result.winners.some(w => w.winner && (w.winner.id === myId || w.winner.id === Number(myId)))
           }
-        }
-        
-        // Check vertical
-        if (!winningPattern) {
-          for (let colIdx = 0; colIdx < 5; colIdx++) {
-            if (layout.every(row => isCellMarked(row[colIdx]))) {
-              winningPattern = `col_${colIdx}`
-              break
-            }
+          if (result.winner) this.winner = result.winner
+          this.winnerCard = {
+            ...this.userCard,
+            winning_pattern: result.winners?.[0]?.winning_pattern || null,
+            selected_numbers: this.userCard.selected_numbers || [],
+            called_numbers: this.calledNumbers || [],
+            last_called_number: this.currentCall?.number || null
           }
-        }
-        
-        // Check diagonals
-        if (!winningPattern) {
-          if (layout.every((row, idx) => isCellMarked(row[idx]))) {
-            winningPattern = 'diagonal_1'
-          } else if (layout.every((row, idx) => isCellMarked(row[4 - idx]))) {
-            winningPattern = 'diagonal_2'
-          } else if (layout.every(row => row.every(cell => isCellMarked(cell)))) {
-            winningPattern = 'full_card'
-          }
-        }
-        
-        this.winnerCard = {
-          ...this.userCard,
-          winning_pattern: winningPattern,
-          selected_numbers: this.userCard.selected_numbers || [],
-          called_numbers: this.calledNumbers || [],
-          last_called_number: this.currentCall?.number || null
-        }
-      }
-      
-      // Force immediate UI update
-      this.$forceUpdate()
-      
-      // Then sync with backend (fire and forget for faster response)
-      claimBingo(this.userCard.id)
-        .then(result => {
-          if (result.success) {
-            const serverPrize = result.prize ?? prize
-            this.winnerPrize = serverPrize
-            if (result.total_prize != null) this.totalPrize = result.total_prize
-            if (result.winners && result.winners.length > 0) {
-              this.winners = result.winners
-              const myId = this.userCard?.user?.id
-              this.isCurrentUserWinner = result.winners.some(w => w.winner && (w.winner.id === myId || w.winner.id === Number(myId)))
-              if (!this.winner && result.winner) this.winner = result.winner
-            }
-            this.winnerBannerShownAt = this.winnerBannerShownAt || Date.now()
-            console.log('BINGO claim confirmed by server:', result)
-          }
-        })
-        .catch(error => {
-          const errorMsg = error.response?.data?.error || 'Invalid BINGO claim'
-          
-          // If error is "already won", "Game is already completed", or "another claimed first", check if we're actually a winner
-          if (errorMsg.includes('already won') || errorMsg.includes('ተቀድመዋል') || 
-              errorMsg.includes('not active') || errorMsg.includes('Game is already completed')) {
-            // Check if the card actually won (might be a race condition)
-            if (this.userCard && this.userCard.is_winner) {
-              // Card actually won, keep the winner banner - don't revert
-              console.log('Card won but got error (likely race condition), keeping winner banner')
-              return
-            }
-            // Another player won first, revert optimistic update
-            // BUT: Don't clear banner if it's already showing (user might be a legitimate winner in race condition)
-            // Only clear if banner wasn't shown via WebSocket
-            if (!this.showWinnerBanner) {
-              this.winner = null
-              this.winnerPrize = 0
-              this.isCurrentUserWinner = false
-              this.winnerCard = null
-              this.winnerBannerShownAt = null
-              const translatedMsg = (errorMsg.includes('ተቀድመዋል') || errorMsg.includes('Game is already completed')) ? 'በሌላ ተጫዋች ተቀድመዋል!' : errorMsg
-              this.showNotification(translatedMsg, 'error')
-            }
-          } else {
-            // Other errors - revert optimistic update
-            // BUT: Don't clear banner if it's already showing (user might be a legitimate winner)
-            // Only clear if banner wasn't shown via WebSocket
-            if (!this.showWinnerBanner) {
-              this.winner = null
-              this.winnerPrize = 0
-              this.isCurrentUserWinner = false
-              this.winnerCard = null
-              this.winnerBannerShownAt = null
-            }
-            
-            let translatedMsg = errorMsg
-            // Backend may already return Amharic; otherwise translate English
-            if (errorMsg.includes('ቢንጎ አልሰሩም') || errorMsg.includes('Invalid BINGO claim') || errorMsg.includes('BINGO pattern not complete')) {
-              translatedMsg = 'ቢንጎ አልሰሩም'
-            } else if (errorMsg.includes('ይህ ቁጥር አልተጠራም') || errorMsg.includes('አልተጠራትም') || errorMsg.includes('not called')) {
-              translatedMsg = 'ይህ ቁጥር አልተጠራም'
-            } else if (errorMsg.includes('claimed bingo first') || errorMsg.includes('Another player') || errorMsg.includes('Game is already completed')) {
-              translatedMsg = 'በሌላ ተጫዋች ተቀድመዋል!'
-            }
-            this.showNotification(translatedMsg, 'error')
+          if (this.interval) {
+            clearInterval(this.interval)
+            this.interval = null
           }
           this.$forceUpdate()
-        })
+          return
+        }
+      } catch (error) {
+        const data = error.response?.data || {}
+        const errorMsg = data.error || 'Invalid BINGO claim'
+        const isFalseClaim = data.false_claim === true || errorMsg.includes('Invalid BINGO claim') || errorMsg.includes('Pattern not complete')
+        if (isFalseClaim) {
+          this.showNotification('ቢንጎ አልሰሩም! ከደገሙ ከጨዋታው ይታገዳሉ!', 'error')
+          this.falseBingoClickCount += 1
+          if (this.falseBingoClickCount >= 2) this.blockedFromThisGame = true
+        } else if (errorMsg.includes('ተቀድመዋል') || errorMsg.includes('Game is already completed')) {
+          this.showNotification('በሌላ ተጫዋች ተቀድመዋል!', 'error')
+        } else {
+          this.showNotification(errorMsg.includes('ቢንጎ') ? 'ቢንጎ አልሰሩም' : errorMsg, 'error')
+        }
+      } finally {
+        this.claimBingoChecking = false
+        this.$forceUpdate()
+      }
     },
-    checkBingoPattern() {
-      if (!this.userCard || !this.userCard.card_layout) {
-        this.canClaimBingo = false
-        return
-      }
-      
-      // Stop checking if there's already a winner (game is over) or banner is showing
-      const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : Infinity
-      if (this.winner || (this.winners && this.winners.length > 0) || 
-          (this.game && this.game.status === 'completed') ||
-          (this.userCard && this.userCard.is_winner) ||
-          timeSinceBannerShown < 5000) {
-        this.canClaimBingo = false
-        return
-      }
-      
+    clientHasBingoPattern() {
+      if (!this.userCard || !this.userCard.card_layout) return false
       const layout = this.userCard.card_layout
       const calledSet = new Set(this.calledNumbers || [])
-
-      // Only count a cell as marked for BINGO if it's FREE or (has been called AND marked).
-      // This prevents the button becoming clickable from optimistic tick before backend confirms.
       const isCellMarked = (cell) => {
-        if (cell.letter === 'FREE') {
-          return true
-        }
+        if (cell.letter === 'FREE') return true
         if (cell.number == null) return false
         return (cell.marked || false) && calledSet.has(cell.number)
       }
-      
-      // Check horizontal lines (any row)
       for (let row of layout) {
-        if (row.every(cell => isCellMarked(cell))) {
-          this.canClaimBingo = true
-          // ONLY auto-claim in automatic mode - in manual mode, user must click button
-          this.tryAutoClaimBingo()
-          return
-        }
+        if (row.every(cell => isCellMarked(cell))) return true
       }
-      
-      // Check vertical lines (any column)
       for (let col = 0; col < 5; col++) {
-        if (layout.every(row => isCellMarked(row[col]))) {
-          this.canClaimBingo = true
-          // ONLY auto-claim in automatic mode - in manual mode, user must click button
-          this.tryAutoClaimBingo()
-          return
-        }
+        if (layout.every(row => isCellMarked(row[col]))) return true
       }
-      
-      // Check diagonal (top-left to bottom-right)
-      if (layout.every((row, idx) => isCellMarked(row[idx]))) {
-        this.canClaimBingo = true
-        // ONLY auto-claim in automatic mode - in manual mode, user must click button
-        this.tryAutoClaimBingo()
-        return
-      }
-      
-      // Check diagonal (top-right to bottom-left)
-      if (layout.every((row, idx) => isCellMarked(row[4 - idx]))) {
-        this.canClaimBingo = true
-        // ONLY auto-claim in automatic mode - in manual mode, user must click button
-        this.tryAutoClaimBingo()
-        return
-      }
-      
-      // Check corner bingo (4 corners + FREE cell: top-left, top-right, bottom-left, bottom-right, center)
-      const corners = [
-        layout[0][0],  // Top-left
-        layout[0][4],  // Top-right
-        layout[4][0],  // Bottom-left
-        layout[4][4],  // Bottom-right
-        layout[2][2]   // FREE cell (center) - included for visual appeal
-      ]
-      if (corners.every(cell => isCellMarked(cell))) {
-        this.canClaimBingo = true
-        // ONLY auto-claim in automatic mode - in manual mode, user must click button
-        this.tryAutoClaimBingo()
-        return
-      }
-      
-      // Check full card (all cells marked)
-      const allCellsMarked = layout.every(row => row.every(cell => isCellMarked(cell)))
-      if (allCellsMarked) {
-        this.canClaimBingo = true
-        // ONLY auto-claim in automatic mode - in manual mode, user must click button
-        this.tryAutoClaimBingo()
-        return
-      }
-      
-      this.canClaimBingo = false
-    },
-    tryAutoClaimBingo() {
-      // CRITICAL: Only auto-claim in automatic mode
-      // In manual mode, user must manually click the bingo button
-      if (this.gameMode !== 'automatic') {
-        // Manual mode - just set canClaimBingo and wait for user to click
-        return
-      }
-      
-      // Automatic mode - check conditions and auto-claim
-      const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : Infinity
-      if (!this.winner && !this.userCard.is_winner && 
-          !(this.winners && this.winners.length > 0) && timeSinceBannerShown >= 5000) {
-        this.autoClaimBingo()
-      }
+      if (layout.every((row, idx) => isCellMarked(row[idx]))) return true
+      if (layout.every((row, idx) => isCellMarked(row[4 - idx]))) return true
+      const corners = [layout[0][0], layout[0][4], layout[4][0], layout[4][4], layout[2][2]]
+      if (corners.every(cell => isCellMarked(cell))) return true
+      if (layout.every(row => row.every(cell => isCellMarked(cell)))) return true
+      return false
     },
     async handleModeChange() {
       // Update mode on backend
@@ -1417,16 +1256,11 @@ export default {
           if (this.game) {
             const card = await getMyCard(this.game.id)
             this.userCard = card
+            this.falseBingoClickCount = 0
             // Check again if winner was declared during the API call
             if (card.is_winner || (this.game && this.game.status === 'completed')) {
               return // Game is over, stop processing
             }
-          }
-          // Always check bingo pattern to update button state (canClaimBingo)
-          // tryAutoClaimBingo() will only auto-claim in automatic mode
-          if (!this.winner && !(this.winners && this.winners.length > 0) &&
-              this.game && this.game.status === 'active' && !this.userCard.is_winner) {
-            this.checkBingoPattern()
           }
         } catch (error) {
           console.error('Error auto-marking number:', error)
@@ -1694,6 +1528,14 @@ export default {
   color: var(--gray-medium);
 }
 
+.bingo-rule-hint {
+  text-align: center;
+  font-size: 14px;
+  color: #856404;
+  margin: 12px 0 0;
+  padding: 0 8px;
+}
+
 .wait-message-box {
   background: #fff3cd;
   border: 2px solid #ffc107;
@@ -1872,5 +1714,54 @@ export default {
   font-size: 18px;
   color: var(--primary-dark);
   font-weight: bold;
+}
+
+.user-card-wrapper {
+  position: relative;
+}
+
+.card-blocked-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 243, 205, 0.95);
+  border-radius: 12px;
+  z-index: 10;
+  flex-direction: column;
+  text-align: center;
+}
+
+.claim-checking-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  z-index: 11;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.claim-checking-overlay .spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e0e0e0;
+  border-top-color: var(--primary, #3498db);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

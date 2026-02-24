@@ -755,38 +755,45 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.answer()
 
 
+DEFAULT_INSTRUCTIONS = (
+    "📋 ጉድ ቢንጎ የጨዋታ መመሪያ:\n\n"
+    "1. **ለመመዝገብ**: /register(ለመመዝገብ) የሚለውን ይጫኑ፡፡\n\n"
+    "2. **ለመጫወት**:\n"
+    "   - ጨዋታ ለመቀላቀል /play(ጨዋታ ለመጀመር) ይጫኑ፡፡\n"
+    "   - በመቀጠለ ካሉት ካርቴላ ቁጥር ይምረጡ\n"
+    "   - ቀይ ሆነው የሚታዩት ካርቴላዎች በሌላ ተጫዋች የተያዙ ናቸው\n"
+    "   - የሚጠሩ ቁጥሮችን ይመልከቱ\n"
+    "   - ቁጥሮች ሲጠሩ በካርድዎ ላይ ይጫኑ\n"
+    "   - መስመር ሲሰሩ ቢንጎ የሚለውን ይጫኑ\n\n"
+    "3. **ጨዋታ ሞድ (Game Modes)**:\n"
+    "   - **Manual Mode**: እርስዎ የሚጠሩ ቁጥሮችን እራስዎ ይጫኑ\n"
+    "   - **Automatic Mode**: ቁጥሮች በራሳቸው ይነካሉ (ካርድ ላይ ካሉ) ከዛም በራሱ ቢንጎ ይነካልዎታል \n"
+    "   - የጨዋታ ሞድ በጨዋታ ወቅት መቀየር ይችላሉ\n\n"
+    "4. **ማሸነፊያ መንገዶች**:\n"
+    "   - አግድም መስመር (ማንኛውም ረድፍ)\n"
+    "   - ቋሚ መስመር (ማንኛውም አምድ)\n"
+    "   - ሰያፍ መስመር\n"
+    "   - ኮርነር ቢንጎ\n"
+    "   - ሙሉ ካርድ\n\n"
+    "5. **ብዙ አሸናፊዎች**:\n"
+    "   - በአንድ ጊዜ ወይም በ1 ሰከንድ ውስጥ ብዙ አሸናፊዎች ከተገኙ ደራሹን በእኩል ይከፋፈላሉ\n\n"
+    "6. **ገንዘብ ለማስገባት**: /deposit(ለማስገባት) ይጫኑ፡፡\n\n"
+    "7. **ገንዘብ ለማውጣት**: /withdraw(ለማውጣት) ይጫኑ፡፡\n\n"
+    "8. **ገንዘብ ለማስተላለፍ**: /transfer(ገንዘብ ማስተላለፍ) ለሌላ ተጠቃሚ ማስተላለፍ፡፡\n\n"
+    "መልካም ዕድል! 🍀"
+)
+
+
 async def instruction_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /instruction command"""
-    instructions = (
-        "📋 ጉድ ቢንጎ የጨዋታ መመሪያ:\n\n"
-        "1. **ለመመዝገብ**: /register(ለመመዝገብ) የሚለውን ይጫኑ፡፡\n\n"
-        "2. **ለመጫወት**:\n"
-        "   - ጨዋታ ለመቀላቀል /play(ጨዋታ ለመጀመር) ይጫኑ፡፡\n"
-        "   - በመቀጠለ ካሉት ካርቴላ ቁጥር ይምረጡ\n"
-        "   - ቀይ ሆነው የሚታዩት ካርቴላዎች በሌላ ተጫዋች የተያዙ ናቸው\n"
-        "   - የሚጠሩ ቁጥሮችን ይመልከቱ\n"
-        "   - ቁጥሮች ሲጠሩ በካርድዎ ላይ ይጫኑ\n"
-        "   - መስመር ሲሰሩ ቢንጎ የሚለውን ይጫኑ\n\n"
-        "3. **ጨዋታ ሞድ (Game Modes)**:\n"
-        "   - **Manual Mode**: እርስዎ የሚጠሩ ቁጥሮችን እራስዎ ይጫኑ\n"
-        "   - **Automatic Mode**: ቁጥሮች በራሳቸው ይነካሉ (ካርድ ላይ ካሉ) ከዛም በራሱ ቢንጎ ይነካልዎታል \n"
-        "   - የጨዋታ ሞድ በጨዋታ ወቅት መቀየር ይችላሉ\n\n"
-        "4. **ማሸነፊያ መንገዶች**:\n"
-        "   - አግድም መስመር (ማንኛውም ረድፍ)\n"
-        "   - ቋሚ መስመር (ማንኛውም አምድ)\n"
-        "   - ሰያፍ መስመር\n"
-        "   - ኮርነር ቢንጎ\n"
-        "   - ሙሉ ካርድ\n\n"
-        "5. **ብዙ አሸናፊዎች**:\n"
-        "   - በአንድ ጊዜ ወይም በ1 ሰከንድ ውስጥ ብዙ አሸናፊዎች ከተገኙ ደራሹን በእኩል ይከፋፈላሉ\n\n"
-        "6. **ገንዘብ ለማስገባት**: /deposit(ለማስገባት) ይጫኑ፡፡\n\n"
-        "7. **ገንዘብ ለማውጣት**: /withdraw(ለማውጣት) ይጫኑ፡፡\n\n"
-        "8. **ገንዘብ ለማስተላለፍ**: /transfer(ገንዘብ ማስተላለፍ) ለሌላ ተጠቃሚ ማስተላለፍ፡፡\n\n"
-        "መልካም ዕድል! 🍀"
-    )
-    
+    """Handle /instruction command. Uses instruction_text from GameSettings if set, else default."""
+    async def get_settings():
+        return await sync_to_async(GameSettings.get_settings)()
+    game_settings = await db_operation_with_retry(get_settings)
+    custom = (getattr(game_settings, 'instruction_text', None) or '').strip()
+    instructions = custom if custom else DEFAULT_INSTRUCTIONS
+
     reply_markup = None
-    
+
     if update.message:
         await update.message.reply_text(instructions, reply_markup=reply_markup)
     elif update.callback_query:

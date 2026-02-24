@@ -365,6 +365,12 @@ class GameSettings(models.Model):
         default='0952838412',
         help_text="Support phone number displayed in bot support command"
     )
+    # Instruction text for /instruction command (if set, shown in Telegram bot; else bot uses default)
+    instruction_text = models.TextField(
+        blank=True,
+        default='',
+        help_text="Text shown when user sends /instruction in the bot. Leave empty to use default text from bot."
+    )
     # Bot: max new /start (new user) registrations per calendar day; 0 = no limit
     daily_new_start_limit = models.PositiveIntegerField(
         default=100,

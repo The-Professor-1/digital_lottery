@@ -466,6 +466,29 @@ def try_acquire_daily_start_slot():
         return True  # Fail open
 
 
+def get_new_starts_window_count():
+    """
+    Return current registration count in the 24h window (for admin display).
+    Returns dict: { 'count': int, 'window_end_ts': int or None }.
+    If window expired or no Redis, count is 0.
+    """
+    r = get_redis_client()
+    if not r:
+        return {'count': 0, 'window_end_ts': None}
+    try:
+        import time
+        now = int(time.time())
+        we = r.get(BOT_NEW_STARTS_WINDOW_END_KEY)
+        count = int(r.get(BOT_NEW_STARTS_COUNT_KEY) or 0)
+        window_end_ts = int(we) if we else None
+        if window_end_ts is None or now > window_end_ts:
+            return {'count': 0, 'window_end_ts': None}
+        return {'count': count, 'window_end_ts': window_end_ts}
+    except Exception as e:
+        print(f"Error in get_new_starts_window_count: {e}")
+        return {'count': 0, 'window_end_ts': None}
+
+
 # PHASE 2 OPTIMIZATION: Redis-based called numbers caching
 def get_called_numbers_key(game_id):
     """Get Redis key for called numbers list"""

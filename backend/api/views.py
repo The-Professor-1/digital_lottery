@@ -1201,7 +1201,10 @@ class GameCardViewSet(viewsets.ReadOnlyModelViewSet):
             })
         else:
             return Response(
-                {'error': 'Invalid BINGO claim. Pattern not complete. Make sure you have marked all numbers in a line.'},
+                {
+                    'error': 'Invalid BINGO claim. Pattern not complete. Make sure you have marked all numbers in a line.',
+                    'false_claim': True,
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
 

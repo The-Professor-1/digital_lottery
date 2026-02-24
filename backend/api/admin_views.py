@@ -20,6 +20,15 @@ import calendar
 channel_layer = get_channel_layer()
 
 
+def _get_new_starts_count_for_context():
+    """Return current 24h-window register count for dashboard (0 on error)."""
+    try:
+        from .redis_utils import get_new_starts_window_count
+        return get_new_starts_window_count().get('count', 0)
+    except Exception:
+        return 0
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def admin_dashboard_login(request):
@@ -460,6 +469,7 @@ def admin_dashboard(request):
         'approved_withdraws_count': approved_withdraws_count,
         'active_games': active_games,
         'game_settings': game_settings,
+        'new_starts_count_in_window': _get_new_starts_count_for_context(),
         'registered_users': registered_users,
         'today_games_data': today_games_data,
         'games_detail_data': games_detail_data,
@@ -973,6 +983,7 @@ def game_settings_api(request):
             'automatic_mode_enabled': settings.automatic_mode_enabled,
             'deposit_accounts': settings.deposit_accounts,
             'support_phone': settings.support_phone,
+            'instruction_text': getattr(settings, 'instruction_text', '') or '',
             'allow_system_account': settings.allow_system_account,
             'free_play': settings.free_play,
             'system_accounts_min': getattr(settings, 'system_accounts_min', 15),
@@ -982,6 +993,12 @@ def game_settings_api(request):
             'cbe_use_fallback_proxy': getattr(settings, 'cbe_use_fallback_proxy', False),
             'daily_new_start_limit': getattr(settings, 'daily_new_start_limit', 100),
         }
+        try:
+            from .redis_utils import get_new_starts_window_count
+            window_data = get_new_starts_window_count()
+            response_data['new_starts_count_in_window'] = window_data.get('count', 0)
+        except Exception:
+            response_data['new_starts_count_in_window'] = 0
         return JsonResponse(response_data)
     
     elif request.method == 'POST':
@@ -1013,6 +1030,8 @@ def game_settings_api(request):
                 settings_obj.deposit_accounts = data['deposit_accounts']
             if 'support_phone' in data:
                 settings_obj.support_phone = data['support_phone'].strip()
+            if 'instruction_text' in data:
+                settings_obj.instruction_text = (data['instruction_text'] or '').strip()
             # Allow both main admin and second admin to update system account settings
             if 'allow_system_account' in data:
                 settings_obj.allow_system_account = bool(data['allow_system_account'])
@@ -1464,6 +1483,7 @@ def second_admin_dashboard(request):
         'approved_withdraws_count': approved_withdraws_count,
         'active_games': active_games,
         'game_settings': game_settings,
+        'new_starts_count_in_window': _get_new_starts_count_for_context(),
         'registered_users': registered_users,
         'today_games_data': today_games_data,
         'today_games_count': today_games_count,  # Total count for "show more" functionality

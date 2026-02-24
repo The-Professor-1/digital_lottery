@@ -409,9 +409,9 @@
         <div v-else class="settings-form">
           <div class="form-grid max-register-limit-row">
             <div class="form-group full-width">
-              <label>📋 Max register limit (new users per day)</label>
+              <label>📋 Max register limit (new users per 24h window)</label>
               <input v-model.number="settings.daily_new_start_limit" type="number" min="0" placeholder="0 = no limit" />
-              <small class="form-hint">Max new users who can /start the bot per calendar day. 0 = no limit. Set to 1 to test.</small>
+              <small class="form-hint">Registers in current window: <strong>{{ (settings.new_starts_count_in_window ?? 0) }} / {{ settings.daily_new_start_limit }}</strong>. Max new users who can register per 24h window. 0 = no limit.</small>
             </div>
           </div>
           <div class="form-grid">
@@ -471,6 +471,11 @@
               <label>Support Phone</label>
               <input v-model="settings.support_phone" type="text" placeholder="0952838412" />
               <small class="form-hint">Displayed in bot's /support command</small>
+            </div>
+            <div class="form-group full-width">
+              <label>Instruction text (/instruction command)</label>
+              <textarea v-model="settings.instruction_text" rows="12" placeholder="Leave empty to use bot default text"></textarea>
+              <small class="form-hint">Shown when users send /instruction in the Telegram bot. Empty = use default from bot.</small>
             </div>
           </div>
           <h3 class="settings-subsection">🏦 Deposit Account Information</h3>
@@ -741,6 +746,9 @@ export default {
         system_accounts_min: 15,
         system_accounts_max: 100,
         daily_new_start_limit: 100,
+        new_starts_count_in_window: 0,
+        support_phone: '',
+        instruction_text: '',
         telebirr_verify_api_key: '',
         cbe_use_fallback_proxy: false
       },

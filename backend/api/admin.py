@@ -124,8 +124,8 @@ class GameSettingsAdmin(admin.ModelAdmin):
             'description': 'If your server is outside Ethiopia (e.g. AWS): enable to ask the verify API to use fallback proxy for CBE (skipPrimaryVerification). Leave off if hosting in Ethiopia.'
         }),
         ('Support Settings', {
-            'fields': ('support_phone',),
-            'description': 'Support phone number for customer support'
+            'fields': ('support_phone', 'instruction_text'),
+            'description': 'Support phone for /support; instruction text for /instruction (leave empty for bot default).'
         }),
         ('Bot registration limit', {
             'fields': ('daily_new_start_limit',),
