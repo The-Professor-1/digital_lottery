@@ -33,16 +33,17 @@
     </div>
     
     <div class="game-content">
-      <!-- Bingo grid at top -->
-      <div class="bingo-screen">
-        <BingoGrid
-          :called-numbers="calledNumbers"
-          :current-number="currentCall"
-        />
-      </div>
-      
-      <!-- User card section with called number display on top -->
-      <div class="user-card-section">
+      <div class="game-content-row">
+        <!-- Bingo grid at top -->
+        <div class="bingo-screen">
+          <BingoGrid
+            :called-numbers="calledNumbers"
+            :current-number="currentCall"
+          />
+        </div>
+        
+        <!-- User card section with called number display on top -->
+        <div class="user-card-section">
         <div class="game-started-text">ጨዋታው ጀምሯል</div>
         <!-- Countdown before first number -->
         <div v-if="showStartCountdown" class="start-countdown">
@@ -80,8 +81,11 @@
             <h3>⏳ ይህ ጨዋታ እስኪጠናቀቅ ይጠብቁ</h3>
           </div>
         </div>
-        <!-- Bingo rule: block after 2 false clicks -->
-        <p v-if="userCard && game?.status === 'active' && !blockedFromThisGame" class="bingo-rule-hint">መስመር ሳይሰሩ ቢንጎ! 2ጊዜ ከነኩ ከጨዋታው ይታገዳሉ!</p>
+        </div>
+      </div>
+      <!-- Bingo rule hint: full width below both bingo grid and user card -->
+      <div v-if="userCard && game?.status === 'active' && !blockedFromThisGame" class="bingo-rule-hint-row">
+        <p class="bingo-rule-hint bingo-rule-hint-full">መስመር ሳይሰሩ ቢንጎ! 2ጊዜ ከነኩ ከጨዋታው ይታገዳሉ!</p>
       </div>
     </div>
     
@@ -1464,10 +1468,18 @@ export default {
 
 .game-content {
   display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 2px 5px 5px 5px;
+}
+
+.game-content-row {
+  display: flex;
   flex-direction: row;
   gap: 8px;
-  padding: 2px 5px 5px 5px; /* Reduced top padding to move bingo grid up */
   align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 .bingo-screen {
@@ -1534,6 +1546,23 @@ export default {
   color: #856404;
   margin: 12px 0 0;
   padding: 0 8px;
+}
+
+/* Full-width row below both bingo grid and user card */
+.bingo-rule-hint-row {
+  width: 100%;
+  flex: 0 0 auto;
+  margin-top: 10px;
+  padding: 0 8px 8px;
+  box-sizing: border-box;
+}
+.bingo-rule-hint-full {
+  width: 100%;
+  max-width: 100%;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px;
+  box-sizing: border-box;
 }
 
 .wait-message-box {
@@ -1620,9 +1649,13 @@ export default {
 /* Mobile view */
 @media (max-width: 767px) {
   .game-content {
-    flex-direction: row;
+    flex-direction: column;
     gap: 5px;
     padding: 3px;
+  }
+  
+  .game-content-row {
+    flex-direction: row;
   }
   
   .bingo-screen {

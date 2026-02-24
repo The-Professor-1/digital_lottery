@@ -411,7 +411,7 @@
             <div class="form-group full-width">
               <label>📋 Max register limit (new users per 24h window)</label>
               <input v-model.number="settings.daily_new_start_limit" type="number" min="0" placeholder="0 = no limit" />
-              <small class="form-hint">Registers in current window: <strong>{{ (settings.new_starts_count_in_window ?? 0) }} / {{ settings.daily_new_start_limit }}</strong>. Max new users who can register per 24h window. 0 = no limit.</small>
+              <small class="form-hint">Registers (24h window): <strong>{{ (settings.new_starts_count_in_window ?? 0) }} / {{ settings.daily_new_start_limit }}</strong> — count updates when a new user shares contact. Users created today: <strong>{{ settings.users_created_today ?? 0 }}</strong>. 0 = no limit.</small>
             </div>
           </div>
           <div class="form-grid">
@@ -747,6 +747,7 @@ export default {
         system_accounts_max: 100,
         daily_new_start_limit: 100,
         new_starts_count_in_window: 0,
+        users_created_today: 0,
         support_phone: '',
         instruction_text: '',
         telebirr_verify_api_key: '',

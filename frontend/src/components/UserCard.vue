@@ -378,7 +378,7 @@ export default {
 }
 
 .bingo-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--accent-coral-dark) 0%, var(--accent-coral) 100%);
+  background: linear-gradient(135deg, var(--accent-coral-dark) 0%, var(--accent-coral) 70%);
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(255, 107, 107, 0.4);
 }

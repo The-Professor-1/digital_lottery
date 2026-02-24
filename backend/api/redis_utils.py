@@ -470,7 +470,8 @@ def get_new_starts_window_count():
     """
     Return current registration count in the 24h window (for admin display).
     Returns dict: { 'count': int, 'window_end_ts': int or None }.
-    If window expired or no Redis, count is 0.
+    Returns the stored Redis count even when the window has expired, so the dashboard
+    shows the last known value (bot increments on first-time contact share).
     """
     r = get_redis_client()
     if not r:
@@ -481,9 +482,10 @@ def get_new_starts_window_count():
         we = r.get(BOT_NEW_STARTS_WINDOW_END_KEY)
         count = int(r.get(BOT_NEW_STARTS_COUNT_KEY) or 0)
         window_end_ts = int(we) if we else None
-        if window_end_ts is None or now > window_end_ts:
-            return {'count': 0, 'window_end_ts': None}
-        return {'count': count, 'window_end_ts': window_end_ts}
+        # When window expired or never set, still return stored count so admin sees last value
+        if window_end_ts is not None and now <= window_end_ts:
+            return {'count': count, 'window_end_ts': window_end_ts}
+        return {'count': count, 'window_end_ts': None}
     except Exception as e:
         print(f"Error in get_new_starts_window_count: {e}")
         return {'count': 0, 'window_end_ts': None}

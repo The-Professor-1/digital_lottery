@@ -21,10 +21,25 @@ channel_layer = get_channel_layer()
 
 
 def _get_new_starts_count_for_context():
-    """Return current 24h-window register count for dashboard (0 on error)."""
+    """Return current 24h-window register count for dashboard. When Redis has no window or count 0, fall back to users created today (DB) so the admin sees a sensible number."""
     try:
         from .redis_utils import get_new_starts_window_count
-        return get_new_starts_window_count().get('count', 0)
+        data = get_new_starts_window_count()
+        count = data.get('count', 0)
+        window_end_ts = data.get('window_end_ts')
+        # When Redis window was never set or expired, and count is 0, show DB "users created today" so admin sees activity
+        if count == 0 and window_end_ts is None:
+            return _get_users_created_today_count()
+        return count
+    except Exception:
+        return _get_users_created_today_count()
+
+
+def _get_users_created_today_count():
+    """Return number of users (with telegram_id) created today (calendar day, server timezone)."""
+    try:
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return User.objects.filter(telegram_id__isnull=False, created_at__gte=today_start).count()
     except Exception:
         return 0
 
@@ -470,6 +485,7 @@ def admin_dashboard(request):
         'active_games': active_games,
         'game_settings': game_settings,
         'new_starts_count_in_window': _get_new_starts_count_for_context(),
+        'users_created_today': _get_users_created_today_count(),
         'registered_users': registered_users,
         'today_games_data': today_games_data,
         'games_detail_data': games_detail_data,
@@ -994,11 +1010,20 @@ def game_settings_api(request):
             'daily_new_start_limit': getattr(settings, 'daily_new_start_limit', 100),
         }
         try:
+            response_data['users_created_today'] = _get_users_created_today_count()
+        except Exception:
+            response_data['users_created_today'] = 0
+        try:
             from .redis_utils import get_new_starts_window_count
             window_data = get_new_starts_window_count()
-            response_data['new_starts_count_in_window'] = window_data.get('count', 0)
+            count = window_data.get('count', 0)
+            window_end_ts = window_data.get('window_end_ts')
+            if count == 0 and window_end_ts is None:
+                response_data['new_starts_count_in_window'] = response_data.get('users_created_today', 0)
+            else:
+                response_data['new_starts_count_in_window'] = count
         except Exception:
-            response_data['new_starts_count_in_window'] = 0
+            response_data['new_starts_count_in_window'] = response_data.get('users_created_today', 0)
         return JsonResponse(response_data)
     
     elif request.method == 'POST':
@@ -1484,6 +1509,7 @@ def second_admin_dashboard(request):
         'active_games': active_games,
         'game_settings': game_settings,
         'new_starts_count_in_window': _get_new_starts_count_for_context(),
+        'users_created_today': _get_users_created_today_count(),
         'registered_users': registered_users,
         'today_games_data': today_games_data,
         'today_games_count': today_games_count,  # Total count for "show more" functionality
