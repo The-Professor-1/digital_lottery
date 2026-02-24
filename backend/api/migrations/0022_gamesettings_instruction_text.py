@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0020_gamesettings_daily_new_start_limit'),
+        ('api', '0021_alter_gamesettings_daily_new_start_limit'),
     ]
 
     operations = [
