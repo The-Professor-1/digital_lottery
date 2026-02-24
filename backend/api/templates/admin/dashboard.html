@@ -472,6 +472,12 @@
             <h2>⚙️ Game Settings</h2>
             <div style="background: #f5f5f5; padding: 20px; border-radius: 8px;">
                 <form id="settingsForm" onsubmit="saveSettings(event)">
+                    <div style="margin-bottom: 25px; padding: 15px; background: #e8f4fc; border-radius: 8px; border-left: 4px solid #2196f3;">
+                        <h3 style="margin-top: 0; margin-bottom: 10px;">📋 Max register limit</h3>
+                        <label><strong>Max new registrations per day (bot /start):</strong></label>
+                        <input type="number" id="daily_new_start_limit" min="0" value="{{ game_settings.daily_new_start_limit|default:100 }}" style="width: 120px; padding: 8px; border: 1px solid #ddd; border-radius: 5px; margin-top: 5px;">
+                        <p style="font-size: 12px; color: #666; margin-top: 8px;">Limit how many new users can start the bot per calendar day. 0 = no limit. Set to 1 to test.</p>
+                    </div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px;">
                         <div>
                             <label><strong>Bid Amount (ETB):</strong></label>
@@ -608,13 +614,6 @@
                         <label><strong>Support Phone Number:</strong></label>
                         <input type="text" id="support_phone" value="{{ game_settings.support_phone|default:'0952838412' }}" style="width: 100%; max-width: 300px; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
                         <p style="font-size: 12px; color: #666; margin-top: 5px;">This phone number will be displayed in the bot's /support command</p>
-                    </div>
-                    
-                    <h3 style="margin-top: 30px; margin-bottom: 15px;">🤖 Bot /start limit</h3>
-                    <div style="margin-bottom: 20px;">
-                        <label><strong>Daily new /start limit (new users per day):</strong></label>
-                        <input type="number" id="daily_new_start_limit" min="0" value="{{ game_settings.daily_new_start_limit|default:100 }}" style="width: 120px; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
-                        <p style="font-size: 12px; color: #666; margin-top: 5px;">Max new users who can /start the bot per calendar day. 0 = no limit. Set to 1 to test.</p>
                     </div>
                     
                     <button type="submit" style="background: #3498db; padding: 10px 20px; font-size: 16px;">💾 Save Settings</button>
