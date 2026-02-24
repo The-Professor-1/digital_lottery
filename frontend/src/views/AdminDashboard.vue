@@ -407,6 +407,13 @@
         <h2>⚙️ Game Settings</h2>
         <div v-if="settingsLoading" class="muted">Loading settings...</div>
         <div v-else class="settings-form">
+          <div class="form-grid max-register-limit-row">
+            <div class="form-group full-width">
+              <label>📋 Max register limit (new users per day)</label>
+              <input v-model.number="settings.daily_new_start_limit" type="number" min="0" placeholder="0 = no limit" />
+              <small class="form-hint">Max new users who can /start the bot per calendar day. 0 = no limit. Set to 1 to test.</small>
+            </div>
+          </div>
           <div class="form-grid">
             <div class="form-group">
               <label>Bid Amount (ETB)</label>
@@ -733,6 +740,7 @@ export default {
         free_play: false,
         system_accounts_min: 15,
         system_accounts_max: 100,
+        daily_new_start_limit: 100,
         telebirr_verify_api_key: '',
         cbe_use_fallback_proxy: false
       },
