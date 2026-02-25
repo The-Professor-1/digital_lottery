@@ -412,17 +412,36 @@ def _get_daily_new_start_limit():
     Read limit from GameSettings directly from DB (no Django cache).
     This ensures the bot process always sees the current limit when admin changes it,
     since cache is per-process and bot runs in a separate process from the web server.
-    0 or None means no limit (allow all).
+    0 or None means no limit (allow all). Never returns 0 - returns None for "no limit".
     """
+    import logging
+    logger = logging.getLogger(__name__)
     try:
         from .models import GameSettings
+        from django.core.exceptions import ObjectDoesNotExist
         row = GameSettings.objects.only('daily_new_start_limit').get(pk=1)
         limit = getattr(row, 'daily_new_start_limit', None)
         if limit is None:
+            logger.warning(
+                "daily_new_start_limit: GameSettings row has no daily_new_start_limit; "
+                "using default %s. Fix in admin.",
+                DEFAULT_DAILY_NEW_START_LIMIT
+            )
             return DEFAULT_DAILY_NEW_START_LIMIT
         limit = int(limit)
         return limit if limit > 0 else None  # 0 = no limit
-    except Exception:
+    except ObjectDoesNotExist:
+        logger.warning(
+            "daily_new_start_limit: GameSettings (pk=1) not found; using default %s.",
+            DEFAULT_DAILY_NEW_START_LIMIT
+        )
+        return DEFAULT_DAILY_NEW_START_LIMIT
+    except Exception as e:
+        logger.warning(
+            "daily_new_start_limit: failed to read from DB (%s); using default %s. "
+            "New registrations may exceed the limit you set until this is fixed.",
+            e, DEFAULT_DAILY_NEW_START_LIMIT
+        )
         return DEFAULT_DAILY_NEW_START_LIMIT
 
 
