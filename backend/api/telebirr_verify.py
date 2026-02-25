@@ -105,17 +105,21 @@ def verify_telebirr_receipt(reference: str, api_key: str) -> dict:
         return {'success': False, 'data': None, 'error': 'Invalid response'}
 
     if not resp.ok:
+        err = body.get('error') or body.get('message') or resp.reason or f'HTTP {resp.status_code}'
+        logger.warning("Telebirr verify API HTTP %s for ref %s: %s", resp.status_code, reference, err)
         return {
             'success': False,
             'data': body.get('data'),
-            'error': body.get('error') or body.get('message') or resp.reason or f'HTTP {resp.status_code}',
+            'error': err,
         }
 
     if not body.get('success'):
+        err = body.get('error') or body.get('message') or 'Verification failed'
+        logger.warning("Telebirr verify API success=false for ref %s: %s", reference, err)
         return {
             'success': False,
             'data': body.get('data'),
-            'error': body.get('error') or body.get('message') or 'Verification failed',
+            'error': err,
         }
 
     return {

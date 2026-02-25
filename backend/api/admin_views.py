@@ -1715,8 +1715,29 @@ def admin_dashboard_api(request):
         users_limit = 10
     registered_users_count = User.objects.filter(telegram_id__isnull=False).count()
     registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:users_limit]
+    user_ids = [u.id for u in registered_users_raw]
+    # Compute wins from Game table (winner FK + winners M2M) so count is correct even if User.total_wins cache is stale
+    win_count_by_user = {}
+    if user_ids:
+        # Games where user is single winner (Game.winner)
+        for winner_id, game_id in Game.objects.filter(winner_id__in=user_ids).values_list('winner_id', 'id'):
+            if winner_id not in win_count_by_user:
+                win_count_by_user[winner_id] = set()
+            win_count_by_user[winner_id].add(game_id)
+        # Games where user is in winners M2M (co-winner)
+        through = Game.winners.through
+        for uid, gid in through.objects.filter(user_id__in=user_ids).values_list('user_id', 'game_id'):
+            if uid not in win_count_by_user:
+                win_count_by_user[uid] = set()
+            win_count_by_user[uid].add(gid)
+        # Convert sets to counts
+        win_count_by_user = {uid: len(s) for uid, s in win_count_by_user.items()}
     registered_users = []
     for user in registered_users_raw:
+        # Prefer computed count from Game table; fallback to cached total_wins for users with 0 wins (not in dict)
+        wins = win_count_by_user.get(user.id)
+        if wins is None:
+            wins = user.total_wins or 0
         registered_users.append({
             'id': user.id,
             'username': user.username,
@@ -1725,7 +1746,7 @@ def admin_dashboard_api(request):
             'name': f"{user.first_name or ''} {user.last_name or ''}".strip() or '-',
             'balance': float(user.balance),
             'games_played': user.total_games_played or 0,
-            'wins': user.total_wins or 0,
+            'wins': wins,
             'total_deposits': float(user.total_deposits_amount or 0),
             'total_withdrawals': float(user.total_withdrawals_amount or 0),
             'withdrawal_approved': user.withdrawal_approved,
@@ -2083,18 +2104,31 @@ def second_admin_dashboard_api(request):
             'created_at': game.created_at.strftime('%H:%M'),
         })
     
-    # Registered users - OPTIMIZED: Limited to 100 most recent
+    # Registered users - OPTIMIZED: Limited to 20 most recent; wins computed from Game (winner + winners M2M)
     registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:20].annotate(
         games_played=Count('gamecards__game', distinct=True),
-        wins=Count('won_games', distinct=True),
         user_total_deposits=Sum('transactions__amount', filter=Q(transactions__transaction_type='deposit')),
         user_total_withdrawals=Sum('transactions__amount', filter=Q(transactions__transaction_type='withdraw'))
     )
-    
+    sec_user_ids = [u.id for u in registered_users_raw]
+    win_count_by_user_sec = {}
+    if sec_user_ids:
+        for winner_id, game_id in Game.objects.filter(winner_id__in=sec_user_ids).values_list('winner_id', 'id'):
+            if winner_id not in win_count_by_user_sec:
+                win_count_by_user_sec[winner_id] = set()
+            win_count_by_user_sec[winner_id].add(game_id)
+        through = Game.winners.through
+        for uid, gid in through.objects.filter(user_id__in=sec_user_ids).values_list('user_id', 'game_id'):
+            if uid not in win_count_by_user_sec:
+                win_count_by_user_sec[uid] = set()
+            win_count_by_user_sec[uid].add(gid)
+        win_count_by_user_sec = {uid: len(s) for uid, s in win_count_by_user_sec.items()}
     registered_users = []
     for user in registered_users_raw:
         games_played = user.games_played or 0
-        wins = user.wins or 0
+        wins = win_count_by_user_sec.get(user.id)
+        if wins is None:
+            wins = user.total_wins or 0
         user_total_deposits = user.user_total_deposits or Decimal('0')
         user_total_withdrawals = user.user_total_withdrawals or Decimal('0')
         
