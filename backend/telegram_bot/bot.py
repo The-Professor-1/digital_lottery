@@ -180,7 +180,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await show_main_menu(update, context, welcome_msg)
             else:
                 # User exists but not registered (no phone), store referral if provided
-                if referrer_telegram_id and not telegram_user.referred_by:
+                if referrer_telegram_id and not telegram_user.referred_by_id:
                     try:
                         async def get_referrer():
                             return await sync_to_async(User.objects.get)(telegram_id=referrer_telegram_id)
@@ -915,9 +915,7 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         # When "Disable /register" is enabled in game settings, do not process contact share
-        def _get_settings():
-            return GameSettings.get_settings()
-        gs = await sync_to_async(_get_settings)()
+        gs = await sync_to_async(GameSettings.get_settings)()
         if getattr(gs, 'disable_bot_register', False):
             return  # No reply when registration is disabled
         
