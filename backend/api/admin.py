@@ -10,13 +10,13 @@ from decimal import Decimal
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ['username', 'telegram_id', 'phone_number', 'balance', 'total_games_played', 'total_wins', 'total_deposits_amount', 'total_withdrawals_amount', 'is_superuser', 'is_staff', 'created_at']
+    list_display = ['username', 'telegram_id', 'phone_number', 'unwithdrawable_balance', 'withdrawable_balance', 'total_games_played', 'total_wins', 'total_deposits_amount', 'total_withdrawals_amount', 'is_superuser', 'is_staff', 'created_at']
     list_filter = ['created_at', 'is_active', 'is_superuser', 'is_staff']
     search_fields = ['username', 'telegram_id', 'phone_number']
     readonly_fields = ['created_at', 'updated_at']
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Telegram Info', {'fields': ('telegram_id', 'phone_number')}),
-        ('Balance', {'fields': ('balance',)}),
+        ('Balance', {'fields': ('unwithdrawable_balance', 'withdrawable_balance')}),
         ('Cached totals (survive prune)', {'fields': ('total_games_played', 'total_wins', 'total_deposits_amount', 'total_withdrawals_amount')}),
         ('Timestamps', {'fields': ('created_at', 'updated_at')}),
     )
@@ -61,10 +61,11 @@ class DepositAdmin(admin.ModelAdmin):
                 deposit.status = 'approved'
                 deposit.matched_at = timezone.now()
                 deposit.save()
-                # Credit user balance
+                # Credit user: deposits go to withdrawable_balance
                 from decimal import Decimal
-                deposit.user.balance = Decimal(str(deposit.user.balance)) + Decimal(str(deposit.amount))
-                deposit.user.save()
+                from django.db.models import F
+                User.objects.filter(id=deposit.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit.amount)))
+                deposit.user.refresh_from_db()
                 # Create transaction
                 Transaction.objects.create(
                     user=deposit.user,
@@ -150,9 +151,10 @@ class DepositRequestAdmin(admin.ModelAdmin):
             deposit_request.processed_by = request.user
             deposit_request.save()
             
-            # Credit user balance
-            deposit_request.user.balance = Decimal(str(deposit_request.user.balance)) + Decimal(str(deposit_request.amount))
-            deposit_request.user.save()
+            # Credit user: deposits go to withdrawable_balance
+            from django.db.models import F
+            User.objects.filter(id=deposit_request.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit_request.amount)))
+            deposit_request.user.refresh_from_db()
             
             # Create transaction
             Transaction.objects.create(
@@ -233,18 +235,15 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
     def approve_requests(self, request, queryset):
         count = 0
         for withdraw_request in queryset.filter(status='pending'):
-            # Check if user has sufficient balance
-            if withdraw_request.user.balance < withdraw_request.amount:
+            if withdraw_request.user.withdrawable_balance < withdraw_request.amount:
                 continue
-            
             withdraw_request.status = 'approved'
             withdraw_request.processed_at = timezone.now()
             withdraw_request.processed_by = request.user
             withdraw_request.save()
-            
-            # Deduct from user balance
-            withdraw_request.user.balance = Decimal(str(withdraw_request.user.balance)) - Decimal(str(withdraw_request.amount))
-            withdraw_request.user.save()
+            from django.db.models import F
+            User.objects.filter(id=withdraw_request.user.id).update(withdrawable_balance=F('withdrawable_balance') - Decimal(str(withdraw_request.amount)))
+            withdraw_request.user.refresh_from_db()
             
             # Create transaction
             Transaction.objects.create(

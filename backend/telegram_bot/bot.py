@@ -142,6 +142,13 @@ async def db_operation_with_retry(operation, max_retries=3, retry_delay=1):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
     try:
+        # When "Disable /start" is enabled in game settings, do not respond
+        def _get_settings():
+            return GameSettings.get_settings()
+        gs = await sync_to_async(_get_settings)()
+        if getattr(gs, 'disable_bot_start', False):
+            return  # No reply when /start is disabled
+        
         user = update.effective_user
         
         if not user:
@@ -277,8 +284,14 @@ async def is_user_registered(user_id: int) -> bool:
 
 async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /register command or register button click"""
-    # TEMPORARILY DISABLED: Prevent new user registration
     try:
+        # When "Disable /register" is enabled in game settings, do not respond
+        def _get_settings():
+            return GameSettings.get_settings()
+        gs = await sync_to_async(_get_settings)()
+        if getattr(gs, 'disable_bot_register', False):
+            return  # No reply when /register is disabled
+        
         user = update.effective_user
         
         if not user:
@@ -614,9 +627,10 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
+    w_bal = float(telegram_user.withdrawable_balance or 0)
     withdraw_msg = (
         f"💸 ገንዘብ ለማውጣት\n\n"
-        f"💰 ያለዎት ሂሳብ: {telegram_user.balance} ብር\n"
+        f"💰 ወጭ የሚቻል ሂሳብ: {w_bal} ብር\n"
         f"📊 ዝቅተኛ የሚቻለው መጠን: {min_withdraw} ብር\n\n"
         "እባክዎ ለመውጣት የሚፈልጉትን መጠን ያስገቡ:"
     )
@@ -743,9 +757,13 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = None
     
+    u_bal = float(telegram_user.unwithdrawable_balance or 0)
+    w_bal = float(telegram_user.withdrawable_balance or 0)
     balance_msg = (
         f"💰 የእርስዎ ሂሳብ\n\n"
-        f"ያለዎት ሂሳብ: {telegram_user.balance} ብር"
+        f"ወጭ የማይደረግ(ለጨዋታ ብቻ): {u_bal} ብር\n"
+        f"ወጭ የሚቻል: {w_bal} ብር\n\n"
+        f"ጠቅላላ: {u_bal + w_bal} ብር"
     )
     
     if update.message:
@@ -882,6 +900,13 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not user or not contact:
             return
+        
+        # When "Disable /register" is enabled in game settings, do not process contact share
+        def _get_settings():
+            return GameSettings.get_settings()
+        gs = await sync_to_async(_get_settings)()
+        if getattr(gs, 'disable_bot_register', False):
+            return  # No reply when registration is disabled
         
         # When registration limit is reached (24h window), do not respond at all to reduce server load
         if is_new_start_blocked():
@@ -1432,8 +1457,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await sync_to_async(TelebirrReceipt.objects.create)(
                 user=telegram_user, reference=reference, amount=amount_to_credit
             )
-            telegram_user.balance = Decimal(str(telegram_user.balance)) + amount_to_credit
-            await sync_to_async(telegram_user.save)()
+            from django.db.models import F
+            def _credit_telebirr():
+                User.objects.filter(id=telegram_user.id).update(withdrawable_balance=F('withdrawable_balance') + amount_to_credit)
+            await sync_to_async(_credit_telebirr)()
+            await sync_to_async(telegram_user.refresh_from_db)()
             await sync_to_async(Transaction.objects.create)(
                 user=telegram_user,
                 transaction_type='deposit',
@@ -1565,8 +1593,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await sync_to_async(CbeReceipt.objects.create)(
                 user=telegram_user, reference=reference, account_suffix=account_suffix, amount=amount_to_credit
             )
-            telegram_user.balance = Decimal(str(telegram_user.balance)) + amount_to_credit
-            await sync_to_async(telegram_user.save)()
+            from django.db.models import F
+            def _credit_cbe():
+                User.objects.filter(id=telegram_user.id).update(withdrawable_balance=F('withdrawable_balance') + amount_to_credit)
+            await sync_to_async(_credit_cbe)()
+            await sync_to_async(telegram_user.refresh_from_db)()
             await sync_to_async(Transaction.objects.create)(
                 user=telegram_user,
                 transaction_type='deposit',
@@ -1621,13 +1652,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             
-            if telegram_user.balance < Decimal(str(amount)):
+            if telegram_user.withdrawable_balance < Decimal(str(amount)):
                 keyboard = [
                     [InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.message.reply_text(
-                    f"በቂ ሂሳብ የሎትም። ያለዎት ሂሳብ: {telegram_user.balance} ብር",
+                    f"በቂ ሂሳብ የሎትም። ያለዎት ወጭ የሚቻል ሂሳብ: {telegram_user.withdrawable_balance} ብር",
                     reply_markup=reply_markup
                 )
                 return
@@ -2120,19 +2151,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await sync_to_async(to_user.refresh_from_db)()
             await db_operation_with_retry(refresh_to_user)
             
-            # Deduct from sender
-            from_user.balance = Decimal(str(from_user.balance)) - transfer_amount
-            async def save_from_user():
-                await sync_to_async(from_user.save)()
-            await db_operation_with_retry(save_from_user)
+            # Deduct from sender (unwithdrawable first, then withdrawable)
+            async def deduct_sender():
+                await sync_to_async(from_user.deduct_bid)(transfer_amount)
+            await db_operation_with_retry(deduct_sender)
+            await sync_to_async(from_user.refresh_from_db)()
             
-            # Add to recipient
-            to_user.balance = Decimal(str(to_user.balance)) + transfer_amount
-            async def save_to_user():
-                await sync_to_async(to_user.save)()
-            await db_operation_with_retry(save_to_user)
-            
-            # Refresh to_user from DB to ensure we have the latest balance
+            # Add to recipient withdrawable_balance
+            from django.db.models import F
+            def _add_recipient():
+                User.objects.filter(id=to_user.id).update(withdrawable_balance=F('withdrawable_balance') + transfer_amount)
+            async def add_recipient():
+                await sync_to_async(_add_recipient)()
+            await db_operation_with_retry(add_recipient)
             async def refresh_to_user_after_save():
                 await sync_to_async(to_user.refresh_from_db)()
             await db_operation_with_retry(refresh_to_user_after_save)

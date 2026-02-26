@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
-from django.db.models import Sum, Count, Q, Prefetch
+from django.db.models import Sum, Count, Q, Prefetch, F
 from django.db.models.functions import Coalesce
 from datetime import datetime, timedelta
 from .models import Deposit, Game, CalledNumber, Transaction, User, DepositRequest, WithdrawRequest, GameSettings, Transfer, AdminMessage, SecondAdmin, BroadcastMessage, FailedDepositRequest
@@ -409,9 +409,9 @@ def admin_dashboard(request):
         user__in=all_registered_users
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
     
-    # Total balance - sum all users' balances (same pattern, no filtering)
+    # Total balance - sum unwithdrawable + withdrawable
     total_balance = User.objects.aggregate(
-        total=Sum('balance')
+        total=Sum(F('unwithdrawable_balance') + F('withdrawable_balance'))
     )['total'] or Decimal('0')
     
     # Format revenue values for display
@@ -750,10 +750,11 @@ def verify_deposit_api(request, deposit_id):
             deposit.matched_at = timezone.now()
             deposit.save()
             
-            # Credit user balance
+            # Credit user: deposits go to withdrawable_balance
             from decimal import Decimal
-            deposit.user.balance = Decimal(str(deposit.user.balance)) + Decimal(str(deposit.amount))
-            deposit.user.save()
+            from django.db.models import F
+            User.objects.filter(id=deposit.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit.amount)))
+            deposit.user.refresh_from_db()
             
             # Create transaction
             from .models import Transaction
@@ -878,8 +879,9 @@ def approve_deposit_request_api(request, deposit_id):
         deposit_request.processed_at = timezone.now()
         deposit_request.processed_by = request.user if request.user.is_staff else None
         deposit_request.save()
-        deposit_request.user.balance = Decimal(str(deposit_request.user.balance)) + Decimal(str(deposit_request.amount))
-        deposit_request.user.save()
+        from django.db.models import F
+        User.objects.filter(id=deposit_request.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit_request.amount)))
+        deposit_request.user.refresh_from_db()
         Transaction.objects.create(
             user=deposit_request.user,
             transaction_type='deposit',
@@ -973,8 +975,9 @@ def approve_failed_deposit_api(request, failed_id):
                 if TelebirrReceipt.objects.filter(reference=tref).exists():
                     return JsonResponse({'error': 'This Telebirr reference was already used'}, status=400)
                 TelebirrReceipt.objects.create(user=user, reference=tref, amount=amount)
-        user.balance = Decimal(str(user.balance)) + amount
-        user.save()
+        from django.db.models import F
+        User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + amount)
+        user.refresh_from_db()
         Transaction.objects.create(
             user=user,
             transaction_type='deposit',
@@ -1013,19 +1016,18 @@ def approve_withdraw_request_api(request, withdraw_id):
     try:
         withdraw_request = WithdrawRequest.objects.get(id=withdraw_id, status='pending')
         
-        # Check balance
-        if withdraw_request.user.balance < withdraw_request.amount:
+        # Check withdrawable_balance (only withdrawable can be withdrawn)
+        if withdraw_request.user.withdrawable_balance < withdraw_request.amount:
             return JsonResponse({'error': 'Insufficient balance'}, status=400)
         
         withdraw_request.status = 'approved'
         withdraw_request.processed_at = timezone.now()
-        # Only set processed_by if user is staff (second admin doesn't have a User object)
         withdraw_request.processed_by = request.user if request.user.is_staff else None
         withdraw_request.save()
         
-        # Deduct from user balance
-        withdraw_request.user.balance = Decimal(str(withdraw_request.user.balance)) - Decimal(str(withdraw_request.amount))
-        withdraw_request.user.save()
+        from django.db.models import F
+        User.objects.filter(id=withdraw_request.user.id).update(withdrawable_balance=F('withdrawable_balance') - Decimal(str(withdraw_request.amount)))
+        withdraw_request.user.refresh_from_db()
         
         # Create transaction
         Transaction.objects.create(
@@ -1143,6 +1145,8 @@ def game_settings_api(request):
             'telebirr_verify_api_key': getattr(settings, 'telebirr_verify_api_key', '') or '',
             'cbe_use_fallback_proxy': getattr(settings, 'cbe_use_fallback_proxy', False),
             'daily_new_start_limit': getattr(settings, 'daily_new_start_limit', 100),
+            'disable_bot_start': getattr(settings, 'disable_bot_start', False),
+            'disable_bot_register': getattr(settings, 'disable_bot_register', False),
         }
         try:
             response_data['users_created_today'] = _get_users_created_today_count()
@@ -1227,6 +1231,10 @@ def game_settings_api(request):
             if 'daily_new_start_limit' in data:
                 val = int(data['daily_new_start_limit'])
                 settings_obj.daily_new_start_limit = max(0, val)
+            if 'disable_bot_start' in data:
+                settings_obj.disable_bot_start = bool(data['disable_bot_start'])
+            if 'disable_bot_register' in data:
+                settings_obj.disable_bot_register = bool(data['disable_bot_register'])
             
             settings_obj.save()
             
@@ -1581,7 +1589,7 @@ def second_admin_dashboard(request):
         user__in=all_registered_users
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
     total_balance = User.objects.aggregate(
-        total=Sum('balance')
+        total=Sum(F('unwithdrawable_balance') + F('withdrawable_balance'))
     )['total'] or Decimal('0')
     
     # Format revenue
@@ -1771,7 +1779,7 @@ def admin_dashboard_api(request):
             transaction_type='withdraw',
             user__in=all_registered_users
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-        total_balance = User.objects.aggregate(total=Sum('balance'))['total'] or Decimal('0')
+        total_balance = User.objects.aggregate(total=Sum(F('unwithdrawable_balance') + F('withdrawable_balance')))['total'] or Decimal('0')
     
     # Date range strings for display (using calendar periods)
     
@@ -1861,7 +1869,8 @@ def admin_dashboard_api(request):
             base_qs = base_qs.annotate(transfer_in_sum=Coalesce(Sum('transfers_received__amount'), Decimal('0')))
             registered_users_raw = list(base_qs.order_by('-transfer_in_sum')[:users_limit])
         elif sort_param == 'balance':
-            registered_users_raw = list(base_qs.order_by('-balance')[:users_limit])
+            base_qs = base_qs.annotate(total_bal=F('unwithdrawable_balance') + F('withdrawable_balance'))
+            registered_users_raw = list(base_qs.order_by('-total_bal')[:users_limit])
         elif sort_param == 'games_played':
             registered_users_raw = list(base_qs.order_by('-total_games_played')[:users_limit])
         elif sort_param == 'total_deposits':
@@ -1903,7 +1912,8 @@ def admin_dashboard_api(request):
             'telegram_id': user.telegram_id,
             'phone_number': user.phone_number or '-',
             'name': f"{user.first_name or ''} {user.last_name or ''}".strip() or '-',
-            'balance': float(user.balance),
+            'unwithdrawable_balance': float(user.unwithdrawable_balance or 0),
+            'withdrawable_balance': float(user.withdrawable_balance or 0),
             'games_played': user.total_games_played or 0,
             'wins': wins,
             'total_deposits': float(user.total_deposits_amount or 0),
@@ -2298,7 +2308,8 @@ def second_admin_dashboard_api(request):
             'telegram_id': user.telegram_id,
             'phone_number': user.phone_number or '-',
             'name': f"{user.first_name or ''} {user.last_name or ''}".strip() or '-',
-            'balance': float(user.balance),
+            'unwithdrawable_balance': float(user.unwithdrawable_balance or 0),
+            'withdrawable_balance': float(user.withdrawable_balance or 0),
             'games_played': games_played,
             'wins': wins,
             'total_deposits': float(user_total_deposits),
@@ -2370,7 +2381,7 @@ def second_admin_dashboard_api(request):
         user__in=all_registered_users
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
     total_balance = User.objects.aggregate(
-        total=Sum('balance')
+        total=Sum(F('unwithdrawable_balance') + F('withdrawable_balance'))
     )['total'] or Decimal('0')
     
     # Calculate total automatic and manual games - OPTIMIZED with caching

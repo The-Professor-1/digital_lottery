@@ -387,7 +387,7 @@
             <thead>
               <tr>
                 <th v-if="deleteMode" class="col-check"><input type="checkbox" :checked="allUsersSelected" @change="toggleSelectAll" title="Select all" /></th>
-                <th>ID</th><th>Username</th><th>Telegram ID</th><th>Phone</th><th>Name</th><th>Balance</th><th>Games</th><th>Wins</th><th>Deposits</th><th>Withdrawals</th><th>Transfers in</th><th>Approved</th><th>Joined</th>
+                <th>ID</th><th>Username</th><th>Telegram ID</th><th>Phone</th><th>Name</th><th>ወጭ የማይደረግ (ጨዋታ)</th><th>ወጭ የሚቻል</th><th>Games</th><th>Wins</th><th>Deposits</th><th>Withdrawals</th><th>Transfers in</th><th>Approved</th><th>Joined</th>
                 <th v-if="!deleteMode">Actions</th>
               </tr>
             </thead>
@@ -399,7 +399,8 @@
                 <td>{{ u.telegram_id || '-' }}</td>
                 <td>{{ u.phone_number }}</td>
                 <td>{{ u.name || '-' }}</td>
-                <td>{{ formatCurrency(u.balance) }}</td>
+                <td>{{ formatCurrency(u.unwithdrawable_balance != null ? u.unwithdrawable_balance : 0) }}</td>
+                <td>{{ formatCurrency(u.withdrawable_balance != null ? u.withdrawable_balance : 0) }}</td>
                 <td>{{ u.games_played }}</td>
                 <td>{{ u.wins }}</td>
                 <td>{{ formatCurrency(u.total_deposits) }}</td>
@@ -413,7 +414,7 @@
                 </td>
               </tr>
               <tr v-if="!(data.registered_users && data.registered_users.length)">
-                <td :colspan="deleteMode ? 15 : 14">No registered users yet</td>
+                <td :colspan="deleteMode ? 16 : 15">No registered users yet</td>
               </tr>
             </tbody>
           </table>
@@ -425,11 +426,22 @@
         <h2>⚙️ Game Settings</h2>
         <div v-if="settingsLoading" class="muted">Loading settings...</div>
         <div v-else class="settings-form">
-          <div class="form-grid max-register-limit-row">
+            <div class="form-grid max-register-limit-row">
             <div class="form-group full-width">
               <label>📋 Max register limit (new users per 24h window)</label>
               <input v-model.number="settings.daily_new_start_limit" type="number" min="0" placeholder="0 = no limit" />
               <small class="form-hint">Registers (24h window): <strong>{{ (settings.new_starts_count_in_window ?? 0) }} / {{ settings.daily_new_start_limit }}</strong> — count updates when a new user shares contact. Users created today: <strong>{{ settings.users_created_today ?? 0 }}</strong>. 0 = no limit.</small>
+            </div>
+          </div>
+          <h3 class="settings-subsection">🚫 Disable bot menus</h3>
+          <div class="form-grid">
+            <div class="form-group checkbox">
+              <label><input v-model="settings.disable_bot_start" type="checkbox" /> Disable /start</label>
+              <small class="form-hint">When ticked, the bot will not respond to /start (no welcome, no menu) until you untick and save.</small>
+            </div>
+            <div class="form-group checkbox">
+              <label><input v-model="settings.disable_bot_register" type="checkbox" /> Disable /register</label>
+              <small class="form-hint">When ticked, the bot will not respond to /register or contact share (no new registrations) until you untick and save.</small>
             </div>
           </div>
           <div class="form-grid">
@@ -772,6 +784,8 @@ export default {
         daily_new_start_limit: 100,
         new_starts_count_in_window: 0,
         users_created_today: 0,
+        disable_bot_start: false,
+        disable_bot_register: false,
         support_phone: '',
         instruction_text: '',
         telebirr_verify_api_key: '',
@@ -1027,9 +1041,10 @@ export default {
       try {
         await apiDeleteWithdraw(id)
         await this.loadData()
+        alert('Withdrawal request deleted.')
       } catch (err) {
         console.error('Delete withdraw failed:', err)
-        alert(err.response?.data?.error || 'Failed to delete')
+        alert(err.response?.data?.error || err.response?.data?.message || 'Failed to delete')
       }
     },
     async loadSettings() {
@@ -1243,7 +1258,8 @@ export default {
         const res = await getAdminUserDetail(userId)
         const u = res.user
         const stats = res.statistics || {}
-        const balance = prompt('New balance (ETB):', u.balance)
+        const totalBal = (u.unwithdrawable_balance != null ? u.unwithdrawable_balance : 0) + (u.withdrawable_balance != null ? u.withdrawable_balance : 0)
+        const balance = prompt('New balance (ETB) - will set as unwithdrawable:', totalBal)
         if (balance === null) return
         const phone = prompt('Phone number:', u.phone_number || '')
         if (phone === null) return
@@ -1254,7 +1270,7 @@ export default {
         const lastName = prompt('Last name:', u.last_name || '')
         if (lastName === null) return
         await editAdminUser(userId, {
-          balance: parseFloat(balance) || 0,
+          balance: parseFloat(balance) || 0, // backend treats as unwithdrawable total when only balance sent
           phone_number: phone,
           username: username,
           first_name: firstName,
@@ -1277,7 +1293,8 @@ export default {
           `Telegram ID: ${u.telegram_id || '-'}`,
           `Phone: ${u.phone_number || '-'}`,
           `Name: ${u.first_name || ''} ${u.last_name || ''}`.trim() || '-',
-          `Balance: ${u.balance} ETB`,
+          `unwithdrawable: ${u.unwithdrawable_balance ?? 0} ETB`,
+          `withdrawable: ${u.withdrawable_balance ?? 0} ETB`,
           '',
           'Statistics:',
           `Games: ${stats.games_played ?? '-'}, Wins: ${stats.wins ?? '-'}`,

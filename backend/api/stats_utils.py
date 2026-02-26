@@ -81,10 +81,10 @@ def record_withdrawal(amount, user, at_date=None):
 
 
 def sync_total_balance_from_users():
-    """Recalc total_balance from User.balance (e.g. after backfill)."""
+    """Recalc total_balance from User unwithdrawable_balance + withdrawable_balance."""
     from .models import User
-    from django.db.models import Sum
-    total = User.objects.aggregate(s=Sum('balance'))['s'] or Decimal('0')
+    from django.db.models import Sum, F
+    total = User.objects.aggregate(s=Sum(F('unwithdrawable_balance') + F('withdrawable_balance')))['s'] or Decimal('0')
     t = _total_stats()
     t.total_balance = total
     t.save(update_fields=['total_balance', 'updated_at'])

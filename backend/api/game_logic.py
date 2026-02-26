@@ -109,14 +109,13 @@ def create_game_card(game: Game, user: User, card_number: int) -> GameCard:
         from decimal import Decimal
         bet_amount = Decimal(str(game.bet_amount))
         
-        # Check if user has sufficient balance (using fresh data from DB)
+        # Check if user has sufficient balance (unwithdrawable + withdrawable)
         current_balance = Decimal(str(user.balance))
         if current_balance < bet_amount:
             raise ValueError(f"በቂ ሂሳብ የሎትም።\nያለዎት ሂሳብ: {current_balance} ብር\nየሚያስፈልገው: {bet_amount} ብር\n\nእባክዎ ገንዘብ ያስገቡ።")
         
-        # Deduct bet amount from user balance
-        user.balance = Decimal(str(user.balance)) - bet_amount
-        user.save()
+        # Deduct from unwithdrawable_balance first, then withdrawable_balance
+        user.deduct_bid(bet_amount)
         
         # Add to game derash (this is the total collected, not per player)
         # Note: derash_amount stores the total collected amount

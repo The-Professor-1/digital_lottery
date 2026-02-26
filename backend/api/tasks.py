@@ -348,17 +348,14 @@ def task_process_bingo_winners(self, game_id: int):
             if not existing_transaction:
                 try:
                     with transaction.atomic():
-                        # Use F() expression for atomic balance update (prevents race conditions)
                         user = User.objects.select_for_update().get(id=winner_card.user.id)
                         old_balance = user.balance
-                        
-                        # Atomic balance update using F() expression
-                        User.objects.filter(id=user.id).update(balance=F('balance') + prize_per_winner)
-                        
-                        # Refresh to get updated balance
+                        # Prize: add to withdrawable_balance if user has deposited >= min_withdraw, else unwithdrawable_balance
+                        if user.has_withdrawable_active():
+                            User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + prize_per_winner)
+                        else:
+                            User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + prize_per_winner)
                         user.refresh_from_db()
-                        
-                        # Create transaction record
                         Transaction.objects.create(
                             user=user,
                             transaction_type='win',
@@ -366,7 +363,6 @@ def task_process_bingo_winners(self, game_id: int):
                             game=game,
                             description=f'Won game {game.id} (split among {all_winner_count} winners) with card {winner_card.card_number}'
                         )
-                        
                         print(f"✅ Awarded prize {prize_per_winner} to user {user.id} (card {winner_card.card_number}), balance: {old_balance} -> {user.balance}")
                 except Exception as e:
                     print(f"❌ ERROR awarding prize to user {winner_card.user.id}: {e}")
@@ -827,8 +823,10 @@ def task_auto_call_numbers(self, game_id: int):
                 # Use safe number selection to ensure fake users can win
                 number = get_safe_number_to_call(game, called_numbers_set, free_play=False)
                 if number is None:
-                    # Fallback to random if no safe number available
-                    number = random.choice(remaining)
+                    # No safe number (every remaining number would let a real user win) - skip this round
+                    release_number_calling_lock(game_id)
+                    task_auto_call_numbers.apply_async(args=[game_id], countdown=time_between_calls)
+                    return {'success': True, 'skipped': True, 'reason': 'No safe number (skip real-user-winning numbers)'}
             else:
                 # Free play or no fake users - use random selection
                 number = random.choice(remaining)
@@ -1314,8 +1312,11 @@ def task_refund_and_cancel_game(self, game_id: int, bet_amount: Decimal):
         for user_id, refund_data in users_to_refund.items():
             user = refund_data['user']
             user.refresh_from_db()
-            user.balance = Decimal(str(user.balance)) + refund_data['amount']
-            user.save()
+            amt = refund_data['amount']
+            if user.has_withdrawable_active():
+                User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + amt)
+            else:
+                User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + amt)
             Transaction.objects.create(
                 user=user,
                 transaction_type='bet',
@@ -2811,28 +2812,21 @@ def task_finalize_game(self, game_id: int):
                     print(f"🏁 [FINALIZE] Game {game_id}: Awarding {prize_per_winner} to {len(real_winners)} real winners")
                     
                     for winner_card in real_winners:
-                        # CRITICAL: Reload winner_card to get fresh user object
                         winner_card.refresh_from_db()
                         winner_card.user.refresh_from_db()
                         old_balance = winner_card.user.balance
-                        
-                        # Atomic balance update using F() expression
-                        User.objects.filter(id=winner_card.user.id).update(
-                            balance=F('balance') + prize_per_winner
-                        )
-                        
-                        # Reload user to verify balance update
+                        # Prize: add to withdrawable_balance if user has deposited >= min_withdraw, else unwithdrawable_balance
+                        if winner_card.user.has_withdrawable_active():
+                            User.objects.filter(id=winner_card.user.id).update(withdrawable_balance=F('withdrawable_balance') + prize_per_winner)
+                        else:
+                            User.objects.filter(id=winner_card.user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + prize_per_winner)
                         winner_card.user.refresh_from_db()
                         new_balance = winner_card.user.balance
                         logger.info(f"🏁 [FINALIZE] Game {game_id}: Awarded {prize_per_winner} to user {winner_card.user.id} ({winner_card.user.username}), balance: {old_balance} -> {new_balance}")
                         print(f"🏁 [FINALIZE] Game {game_id}: User {winner_card.user.username} balance updated: {old_balance} -> {new_balance}")
-                        
-                        # Verify balance was actually updated
                         if new_balance != old_balance + prize_per_winner:
                             logger.error(f"❌ [FINALIZE] Game {game_id}: Balance update mismatch! Expected: {old_balance + prize_per_winner}, Got: {new_balance}")
                             print(f"❌ [FINALIZE] Game {game_id}: Balance update mismatch! Expected: {old_balance + prize_per_winner}, Got: {new_balance}")
-                        
-                        # Create transaction
                         Transaction.objects.create(
                             user=winner_card.user,
                             transaction_type='win',
@@ -3316,25 +3310,18 @@ def task_process_registration_rewards(self, user_id: int, is_first_registration:
                 game_settings = GameSettings.get_settings()
                 bid_amount = Decimal(str(game_settings.bid_amount))
                 
-                # STEP 1: Grant registration gift (if first registration) - bid_amount as reward
+                # STEP 1: Grant registration gift (if first registration) - bid_amount as reward → unwithdrawable_balance
                 if is_first_registration:
                     registration_reward = bid_amount
-                    
-                    # Update user balance atomically
                     from django.db.models import F
-                    User.objects.filter(id=user.id).update(balance=F('balance') + registration_reward)
-                    
-                    # Refresh user to get updated balance
+                    User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + registration_reward)
                     user.refresh_from_db()
-                    
-                    # Create transaction record
                     Transaction.objects.create(
                         user=user,
                         transaction_type='deposit',
                         amount=registration_reward,
                         description='Registration gift'
                     )
-                    
                     logger.info(f"✅ Registration gift {registration_reward} given to user {user.telegram_id} (id={user.id})")
                 
                 # STEP 2: Process referral reward (if applicable)

@@ -34,7 +34,8 @@ class Command(BaseCommand):
         total_withdrawals = Transaction.objects.filter(
             transaction_type='withdraw', user__in=all_reg
         ).aggregate(s=Sum('amount'))['s'] or Decimal('0')
-        total_balance = User.objects.aggregate(s=Sum('balance'))['s'] or Decimal('0')
+        from django.db.models import F
+        total_balance = User.objects.aggregate(s=Sum(F('unwithdrawable_balance') + F('withdrawable_balance')))['s'] or Decimal('0')
 
         t, _ = TotalStats.objects.get_or_create(pk=1, defaults={
             'total_games': 0, 'total_revenue': 0, 'total_deposits': 0,

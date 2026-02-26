@@ -88,7 +88,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f'   ✓ Deleted {user_count} users'))
         else:
             # Reset user balances to 0
-            User.objects.all().update(balance=0)
+            User.objects.all().update(unwithdrawable_balance=0, withdrawable_balance=0)
             self.stdout.write(self.style.SUCCESS(f'   ✓ Reset all user balances to 0'))
 
         self.stdout.write(self.style.SUCCESS('\n✅ Cleanup complete!'))

@@ -8,7 +8,9 @@ class User(AbstractUser):
     """Custom User model for Telegram users"""
     telegram_id = models.BigIntegerField(unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=20, null=True, blank=True)
-    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
+    # Two-balance system: unwithdrawable (bonus/play-only), withdrawable (after deposit >= min_withdraw)
+    unwithdrawable_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)], help_text='Balance for gameplay only (bonus, registration reward, wins before deposit)')
+    withdrawable_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)], help_text='Balance that can be withdrawn (deposits + wins after deposit >= min)')
     referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals', help_text='User who referred this user')
     referral_reward_given = models.BooleanField(default=False, help_text='Whether referral reward was already given for THIS user\'s registration (prevents duplicate rewards if user re-registers)')
     withdrawal_approved = models.BooleanField(default=False, help_text='True when user has deposited at least 50 BR and played at least 5 games (allows withdrawal)')
@@ -27,6 +29,40 @@ class User(AbstractUser):
             models.Index(fields=['referred_by'], name='user_referred_by_idx'),
             models.Index(fields=['created_at'], name='user_created_at_idx'),
         ]
+
+    @property
+    def balance(self):
+        """Total effective balance (unwithdrawable + withdrawable) for display/checks."""
+        from decimal import Decimal
+        u = getattr(self, 'unwithdrawable_balance', None) or Decimal('0')
+        w = getattr(self, 'withdrawable_balance', None) or Decimal('0')
+        return Decimal(str(u)) + Decimal(str(w))
+
+    def has_withdrawable_active(self):
+        """True if user has deposited at least min_withdraw (e.g. 50 ETB) so new wins go to withdrawable."""
+        from decimal import Decimal
+        try:
+            min_deposit = Decimal(str(getattr(GameSettings.get_settings(), 'min_withdraw', 50)))
+        except Exception:
+            min_deposit = Decimal('50')
+        total = getattr(self, 'total_deposits_amount', None) or Decimal('0')
+        return (total or Decimal('0')) >= min_deposit
+
+    def deduct_bid(self, amount):
+        """Deduct from unwithdrawable_balance first, then withdrawable_balance. Caller must ensure total balance >= amount."""
+        from decimal import Decimal
+        amt = Decimal(str(amount))
+        self.refresh_from_db()
+        u = Decimal(str(self.unwithdrawable_balance or 0))
+        w = Decimal(str(self.withdrawable_balance or 0))
+        if u >= amt:
+            self.unwithdrawable_balance = u - amt
+            self.save(update_fields=['unwithdrawable_balance'])
+            return
+        rem = amt - u
+        self.unwithdrawable_balance = Decimal('0')
+        self.withdrawable_balance = w - rem
+        self.save(update_fields=['unwithdrawable_balance', 'withdrawable_balance'])
 
     def __str__(self):
         return f"{self.username} ({self.telegram_id})"
@@ -375,6 +411,15 @@ class GameSettings(models.Model):
     daily_new_start_limit = models.PositiveIntegerField(
         default=100,
         help_text="Max new /start (new user) registrations per day. Set to 0 for no limit. Set to 1 to test (only one new user per day)."
+    )
+    # Bot: disable menu commands (when enabled, bot does not respond to these commands)
+    disable_bot_start = models.BooleanField(
+        default=False,
+        help_text="When enabled, the Telegram bot will not respond to /start (no welcome, no menu)."
+    )
+    disable_bot_register = models.BooleanField(
+        default=False,
+        help_text="When enabled, the bot will not respond to /register or contact share (no new registrations)."
     )
     
     updated_at = models.DateTimeField(auto_now=True)

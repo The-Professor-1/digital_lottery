@@ -758,8 +758,6 @@ def get_safe_number_to_call(game: Game, called_numbers: set, free_play: bool) ->
         
         # Otherwise, return any safe number
         return random.choice(list(safe_numbers))
-    else:
-        # All numbers would let real users win - call a random one anyway
-        # (This shouldn't happen in normal gameplay)
-        return random.choice(list(available))
+    # No safe number: call randomly so the game continues (real user may win by luck)
+    return random.choice(list(available))
 

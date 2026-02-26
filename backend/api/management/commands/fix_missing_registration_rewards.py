@@ -81,8 +81,8 @@ class Command(BaseCommand):
 
             if not dry_run:
                 try:
-                    # Update balance atomically
-                    User.objects.filter(id=user.id).update(balance=F('balance') + bid_amount)
+                    # Registration gift → unwithdrawable_balance
+                    User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + bid_amount)
                     user.refresh_from_db()
 
                     # Create transaction record

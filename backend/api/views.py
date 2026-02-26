@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, F
 from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal
 from django.utils import timezone
@@ -38,13 +38,14 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def balance(self, request):
-        """Get current user balance"""
-        # Refresh user from database to get latest balance
+        """Get current user balance (unwithdrawable + withdrawable) and split for display"""
         request.user.refresh_from_db()
-        balance_value = float(request.user.balance)
-        # Return both formats for compatibility
+        u = float(request.user.unwithdrawable_balance or 0)
+        w = float(request.user.withdrawable_balance or 0)
         return Response({
-            'balance': balance_value,
+            'balance': u + w,
+            'unwithdrawable_balance': u,
+            'withdrawable_balance': w,
             'user_id': request.user.id,
             'username': request.user.username
         })
@@ -138,8 +139,8 @@ def telegram_register(request):
             game_settings = GameSettings.get_settings()
             bid_amount = Decimal(str(game_settings.bid_amount))
             
-            # Update user balance atomically
-            User.objects.filter(id=user.id).update(balance=F('balance') + bid_amount)
+            # Registration gift → unwithdrawable_balance
+            User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + bid_amount)
             
             # Refresh user to get updated balance
             user.refresh_from_db()
@@ -255,19 +256,10 @@ def transfer(request):
     request.user.refresh_from_db()
     recipient.refresh_from_db()
     
-    # Perform transfer: First deduct from sender, then add to recipient
     from decimal import Decimal
     amount_decimal = Decimal(str(amount))
-    
-    # Deduct from sender balance FIRST
-    request.user.balance = Decimal(str(request.user.balance)) - amount_decimal
-    request.user.save()
-    
-    # Then add to recipient balance
-    recipient.balance = Decimal(str(recipient.balance)) + amount_decimal
-    recipient.save()
-    
-    # Refresh recipient from DB to ensure we have the latest balance
+    request.user.deduct_bid(amount_decimal)
+    User.objects.filter(id=recipient.id).update(withdrawable_balance=F('withdrawable_balance') + amount_decimal)
     recipient.refresh_from_db()
     
     # Create Transfer record
@@ -734,11 +726,12 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
                     from decimal import Decimal
                     from .models import Transaction
                     
-                    # Refund the bet amount
                     bet_amount = Decimal(str(game.bet_amount))
-                    user.balance = Decimal(str(user.balance)) + bet_amount
-                    user.save()
-                    
+                    if user.has_withdrawable_active():
+                        User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + bet_amount)
+                    else:
+                        User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + bet_amount)
+                    user.refresh_from_db()
                     # Delete the card first
                     existing_card.delete()
                     
@@ -1265,25 +1258,22 @@ def withdraw(request):
             status=status.HTTP_400_BAD_REQUEST
         )
     
-    if request.user.balance < amount:
+    from decimal import Decimal
+    amount_decimal = Decimal(str(amount))
+    if request.user.withdrawable_balance < amount_decimal:
         return Response(
             {'error': 'በቂ ሂሳብ የሎትም'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
-    # For now, just create a transaction record
-    # In production, create a withdrawal request model
     transaction = Transaction.objects.create(
         user=request.user,
         transaction_type='withdraw',
-        amount=amount,
+        amount=amount_decimal,
         description=f'Withdrawal request: {amount}'
     )
-    
-    # Deduct balance (in production, hold it until admin approves)
-    from decimal import Decimal
-    request.user.balance = Decimal(str(request.user.balance)) - Decimal(str(amount))
-    request.user.save()
+    from django.db.models import F
+    User.objects.filter(id=request.user.id).update(withdrawable_balance=F('withdrawable_balance') - amount_decimal)
+    request.user.refresh_from_db()
     
     serializer = TransactionSerializer(transaction)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -1319,12 +1309,10 @@ def verify_deposit(request, deposit_id):
         deposit.matched_at = timezone.now()
         deposit.save()
         
-        # Credit user balance
         from decimal import Decimal
-        deposit.user.balance = Decimal(str(deposit.user.balance)) + Decimal(str(deposit.amount))
-        deposit.user.save()
-        
-        # Create transaction
+        from django.db.models import F
+        User.objects.filter(id=deposit.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit.amount)))
+        deposit.user.refresh_from_db()
         Transaction.objects.create(
             user=deposit.user,
             transaction_type='deposit',
@@ -1332,7 +1320,6 @@ def verify_deposit(request, deposit_id):
             deposit=deposit,
             description=f'Deposit approved - Match ID: {deposit.id}'
         )
-        
         serializer = DepositSerializer(deposit)
         return Response(serializer.data)
     else:
@@ -1647,8 +1634,11 @@ def restart_game(request):
             for user_id, refund_data in users_to_refund.items():
                 user = refund_data['user']
                 user.refresh_from_db()
-                user.balance = Decimal(str(user.balance)) + refund_data['amount']
-                user.save()
+                amt = refund_data['amount']
+                if user.has_withdrawable_active():
+                    User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + amt)
+                else:
+                    User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + amt)
                 Transaction.objects.create(
                     user=user,
                     transaction_type='bet',
@@ -1793,12 +1783,9 @@ def send_telegram_message(request):
                     # Message sent but no message_id (shouldn't happen, but handle gracefully)
                     sent_count += 1
                 
-                # Add balance if amount > 0
                 if amount > 0:
                     user.refresh_from_db()
-                    user.balance = Decimal(str(user.balance)) + amount
-                    user.save()
-                    
+                    User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(amount)))
                     Transaction.objects.create(
                         user=user,
                         transaction_type='deposit',
@@ -2144,9 +2131,15 @@ def admin_user_edit(request, user_id):
     
     user = get_object_or_404(User, id=user_id)
     
-    # Allow editing balance, phone_number, username, first_name, last_name
-    if 'balance' in request.data:
-        user.balance = Decimal(str(request.data['balance']))
+    # Allow editing balances (unwithdrawable_balance, withdrawable_balance) or legacy 'balance' as total
+    if 'unwithdrawable_balance' in request.data:
+        user.unwithdrawable_balance = Decimal(str(request.data['unwithdrawable_balance']))
+    if 'withdrawable_balance' in request.data:
+        user.withdrawable_balance = Decimal(str(request.data['withdrawable_balance']))
+    if 'balance' in request.data and 'unwithdrawable_balance' not in request.data and 'withdrawable_balance' not in request.data:
+        total = Decimal(str(request.data['balance']))
+        user.unwithdrawable_balance = total
+        user.withdrawable_balance = Decimal('0')
     if 'phone_number' in request.data:
         # Normalize phone number (remove 251 country code and add 0)
         normalized_phone = normalize_phone_number(request.data['phone_number'])

@@ -363,18 +363,22 @@ export async function getDepositPhoto(depositId) {
   return response.data
 }
 
+// Withdraw actions use api (baseURL /api) so they hit /api/admin-dashboard/withdraws/... (same as dashboard data when using /api)
 export async function approveWithdraw(withdrawId) {
-  const response = await adminApi.post(`/admin-dashboard/withdraws/${withdrawId}/approve/`)
+  const id = parseInt(withdrawId, 10)
+  const response = await api.post(`/admin-dashboard/withdraws/${id}/approve/`)
   return response.data
 }
 
 export async function rejectWithdraw(withdrawId) {
-  const response = await adminApi.post(`/admin-dashboard/withdraws/${withdrawId}/reject/`)
+  const id = parseInt(withdrawId, 10)
+  const response = await api.post(`/admin-dashboard/withdraws/${id}/reject/`)
   return response.data
 }
 
 export async function deleteWithdraw(withdrawId) {
-  const response = await adminApi.post(`/admin-dashboard/withdraws/${withdrawId}/delete/`)
+  const id = parseInt(withdrawId, 10)
+  const response = await api.post(`/admin-dashboard/withdraws/${id}/delete/`)
   return response.data
 }
 
