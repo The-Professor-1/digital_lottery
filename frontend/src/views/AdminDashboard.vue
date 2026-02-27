@@ -324,6 +324,7 @@
                     <input v-model.number="callNumberInput[g.id]" type="number" min="1" max="75" placeholder="#" class="call-number-input" />
                     <button class="btn btn-secondary" @click="callNumberAction(g.id)">Call</button>
                     <button class="btn btn-reject" @click="endGameAction(g.id)">End</button>
+                    <button class="btn btn-reject" @click="endGameAction(g.id, true)" title="End game even if not all 75 numbers called (for stuck games)">Force end</button>
                   </template>
                 </td>
               </tr>
@@ -1116,10 +1117,11 @@ export default {
         alert(err.response?.data?.error || err.message || 'Failed to call number')
       }
     },
-    async endGameAction(gameId) {
-      if (!confirm('End this game?')) return
+    async endGameAction(gameId, force = false) {
+      const msg = force ? 'Force end this game (even if not all numbers called)? Use this for stuck games.' : 'End this game?'
+      if (!confirm(msg)) return
       try {
-        await endGame(gameId)
+        await endGame(gameId, { force })
         alert('Game ended!')
         await this.refreshData()
       } catch (err) {

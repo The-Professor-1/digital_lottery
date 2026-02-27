@@ -74,6 +74,11 @@ class DepositAdmin(admin.ModelAdmin):
                     deposit=deposit,
                     description=f'Deposit approved - Match ID: {deposit.id}'
                 )
+                try:
+                    from .stats_utils import record_deposit
+                    record_deposit(deposit.amount, deposit.user)
+                except Exception:
+                    pass
         self.message_user(request, f"{queryset.count()} deposits processed.")
     approve_deposits.short_description = "Approve selected deposits (if texts match)"
 
@@ -163,6 +168,11 @@ class DepositRequestAdmin(admin.ModelAdmin):
                 amount=deposit_request.amount,
                 description=f'Deposit approved - {deposit_request.platform} - Request ID: {deposit_request.id}'
             )
+            try:
+                from .stats_utils import record_deposit
+                record_deposit(deposit_request.amount, deposit_request.user)
+            except Exception:
+                pass
             
             # Send notification to user via Telegram bot
             try:

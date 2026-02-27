@@ -47,7 +47,8 @@ def record_game_completed(game, revenue_amount):
 
 
 def record_deposit(amount, user, at_date=None):
-    """Call when a deposit is credited (Transaction created)."""
+    """Call when a deposit is credited (Transaction created). Updates User.total_deposits_amount
+    so has_withdrawable_active() is correct and future wins go to withdrawable_balance when appropriate."""
     if at_date is None:
         at_date = timezone.now().date()
     amount = Decimal(str(amount))

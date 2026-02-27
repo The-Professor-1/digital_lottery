@@ -39,14 +39,13 @@ class User(AbstractUser):
         return Decimal(str(u)) + Decimal(str(w))
 
     def has_withdrawable_active(self):
-        """True if user has deposited at least min_withdraw (e.g. 50 ETB) so new wins go to withdrawable."""
+        """True if user has deposited at least 10 (min to earn withdrawable wins). New wins/refunds go to withdrawable_balance.
+        Uses total_deposits_amount; every path that credits a deposit must call record_deposit() so this is correct.
+        Withdrawal itself uses min_withdraw from GameSettings (independent logic)."""
         from decimal import Decimal
-        try:
-            min_deposit = Decimal(str(getattr(GameSettings.get_settings(), 'min_withdraw', 50)))
-        except Exception:
-            min_deposit = Decimal('50')
+        min_deposit_for_wins = Decimal('10')  # User has right to win and claim by depositing at least bid amount (10)
         total = getattr(self, 'total_deposits_amount', None) or Decimal('0')
-        return (total or Decimal('0')) >= min_deposit
+        return (total or Decimal('0')) >= min_deposit_for_wins
 
     def deduct_bid(self, amount):
         """Deduct from unwithdrawable_balance first, then withdrawable_balance. Caller must ensure total balance >= amount."""

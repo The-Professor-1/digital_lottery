@@ -765,6 +765,11 @@ def verify_deposit_api(request, deposit_id):
                 deposit=deposit,
                 description=f'Deposit approved - Match ID: {deposit.id}'
             )
+            try:
+                from .stats_utils import record_deposit
+                record_deposit(deposit.amount, deposit.user)
+            except Exception:
+                pass
             
             # Send notification to user via Telegram bot
             if deposit.user.telegram_id:

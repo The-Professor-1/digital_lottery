@@ -247,8 +247,9 @@ export async function callNumber(gameId, number) {
   return response.data
 }
 
-export async function endGame(gameId) {
-  const response = await api.post(`/admin/games/${gameId}/end/`)
+export async function endGame(gameId, options = {}) {
+  const { force = false } = options
+  const response = await api.post(`/admin/games/${gameId}/end/`, { force })
   return response.data
 }
 

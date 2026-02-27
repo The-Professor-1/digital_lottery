@@ -1320,6 +1320,11 @@ def verify_deposit(request, deposit_id):
             deposit=deposit,
             description=f'Deposit approved - Match ID: {deposit.id}'
         )
+        try:
+            from .stats_utils import record_deposit
+            record_deposit(deposit.amount, deposit.user)
+        except Exception:
+            pass
         serializer = DepositSerializer(deposit)
         return Response(serializer.data)
     else:
@@ -1978,7 +1983,8 @@ def send_individual_message(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])  # Allow frontend to end game when no winner
 def end_game(request, game_id):
-    """End a game (can be called by admin or automatically when all numbers called)"""
+    """End a game (can be called by admin or automatically when all numbers called).
+    Admin can force-end a stuck game (fewer than 75 numbers called) by sending force=true."""
     game = get_object_or_404(Game, id=game_id)
     
     if game.status != 'active':
@@ -1987,11 +1993,13 @@ def end_game(request, game_id):
             status=status.HTTP_400_BAD_REQUEST
         )
     
-    # Check if all 75 numbers have been called
+    # Check if all 75 numbers have been called (admin can override with force=true)
     called_count = CalledNumber.objects.filter(game=game).count()
-    if called_count < 75:
+    force = request.data.get('force') is True or request.query_params.get('force') == 'true'
+    allow_force = request.user.is_authenticated and request.user.is_staff
+    if called_count < 75 and not (force and allow_force):
         return Response(
-            {'error': 'Cannot end game. Not all numbers have been called yet.'},
+            {'error': 'Cannot end game. Not all numbers have been called yet. Use "Force end" as admin to end anyway.'},
             status=status.HTTP_400_BAD_REQUEST
         )
     
