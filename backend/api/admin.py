@@ -252,7 +252,11 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
             withdraw_request.processed_by = request.user
             withdraw_request.save()
             from django.db.models import F
-            User.objects.filter(id=withdraw_request.user.id).update(withdrawable_balance=F('withdrawable_balance') - Decimal(str(withdraw_request.amount)))
+            from django.utils import timezone
+            User.objects.filter(id=withdraw_request.user.id).update(
+                withdrawable_balance=F('withdrawable_balance') - Decimal(str(withdraw_request.amount)),
+                last_withdrawal_approved_at=timezone.now()
+            )
             withdraw_request.user.refresh_from_db()
             
             # Create transaction

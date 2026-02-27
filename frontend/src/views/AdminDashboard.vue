@@ -471,6 +471,11 @@
               <input v-model.number="settings.min_withdraw" type="number" step="0.01" min="0" />
             </div>
             <div class="form-group">
+              <label>Max Withdrawal (ETB)</label>
+              <input v-model.number="settings.max_withdrawal" type="number" step="0.01" min="0" placeholder="0 or empty = no limit" />
+              <small class="form-hint">Per 24h from approval. 0 or empty = no limit. User can request again after 24h from last approval.</small>
+            </div>
+            <div class="form-group">
               <label>Percentage Cut (%)</label>
               <input v-model.number="settings.percentage_cut" type="number" step="0.01" min="0" max="100" />
             </div>
@@ -780,6 +785,7 @@ export default {
         time_between_calls: 3,
         total_cards: 100,
         min_withdraw: 10,
+        max_withdrawal: null,
         percentage_cut: 10,
         automatic_mode_enabled: true,
         allow_system_account: true,

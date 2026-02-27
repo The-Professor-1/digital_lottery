@@ -1654,6 +1654,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return await sync_to_async(GameSettings.get_settings)()
             settings = await db_operation_with_retry(get_settings)
             min_withdraw = settings.min_withdraw
+            max_withdrawal = getattr(settings, 'max_withdrawal', None)
+            
+            # Max withdrawal per 24h (from last approval)
+            if max_withdrawal is not None and float(max_withdrawal) > 0 and amount > float(max_withdrawal):
+                keyboard = [[InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    f"እለታዊ ከፍተኛ ማውጣት የሚቻለው {float(max_withdrawal)} ብር።",
+                    reply_markup=reply_markup
+                )
+                return
+            
+            # 24h cooldown starts when withdrawal is approved, not when requested
+            from datetime import timedelta
+            from django.utils import timezone
+            last_approved = getattr(telegram_user, 'last_withdrawal_approved_at', None)
+            if last_approved:
+                if timezone.now() - last_approved < timedelta(hours=24):
+                    keyboard = [[InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await update.message.reply_text(
+                        "እለታዊ ከፍተኛ ወጭ አድርገዋል። ሌላ ወጭ ለማድረግ አባክዎ እስከነገ ይጠብቁ።",
+                        reply_markup=reply_markup
+                    )
+                    return
             
             if amount < float(min_withdraw):
                 keyboard = [

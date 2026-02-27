@@ -1031,7 +1031,10 @@ def approve_withdraw_request_api(request, withdraw_id):
         withdraw_request.save()
         
         from django.db.models import F
-        User.objects.filter(id=withdraw_request.user.id).update(withdrawable_balance=F('withdrawable_balance') - Decimal(str(withdraw_request.amount)))
+        User.objects.filter(id=withdraw_request.user.id).update(
+            withdrawable_balance=F('withdrawable_balance') - Decimal(str(withdraw_request.amount)),
+            last_withdrawal_approved_at=timezone.now()
+        )
         withdraw_request.user.refresh_from_db()
         
         # Create transaction
@@ -1137,6 +1140,7 @@ def game_settings_api(request):
             'time_between_calls': settings.time_between_calls,
             'total_cards': settings.total_cards,
             'min_withdraw': float(settings.min_withdraw),
+            'max_withdrawal': float(settings.max_withdrawal) if settings.max_withdrawal else None,
             'percentage_cut': float(settings.percentage_cut),
             'automatic_mode_enabled': settings.automatic_mode_enabled,
             'deposit_accounts': settings.deposit_accounts,
@@ -1192,6 +1196,12 @@ def game_settings_api(request):
                 settings_obj.total_cards = int(data['total_cards'])
             if 'min_withdraw' in data:
                 settings_obj.min_withdraw = Decimal(str(data['min_withdraw']))
+            if 'max_withdrawal' in data:
+                val = data['max_withdrawal']
+                if val is None or val == '' or (isinstance(val, (int, float)) and float(val) <= 0):
+                    settings_obj.max_withdrawal = None
+                else:
+                    settings_obj.max_withdrawal = Decimal(str(val))
             if 'percentage_cut' in data:
                 settings_obj.percentage_cut = Decimal(str(data['percentage_cut']))
             if 'automatic_mode_enabled' in data:

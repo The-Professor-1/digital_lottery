@@ -19,6 +19,7 @@ class User(AbstractUser):
     total_wins = models.PositiveIntegerField(default=0, help_text='Total games user has won (survives prune)')
     total_deposits_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)], help_text='Sum of all deposits (survives prune)')
     total_withdrawals_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)], help_text='Sum of all withdrawals (survives prune)')
+    last_withdrawal_approved_at = models.DateTimeField(null=True, blank=True, help_text='When the user\'s last withdrawal was approved; 24h cooldown for next request starts here')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -357,6 +358,7 @@ class GameSettings(models.Model):
     bid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=10.00, help_text="Default bet amount per card")
     percentage_cut = models.DecimalField(max_digits=5, decimal_places=2, default=10.00, help_text="Percentage to cut from total derash (e.g., 10.00 for 10%)")
     min_withdraw = models.DecimalField(max_digits=10, decimal_places=2, default=50.00, help_text="Minimum withdrawal amount")
+    max_withdrawal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Max withdrawal per 24h (from approval time). Null/0 = no limit.")
     
     # Card settings
     total_cards = models.IntegerField(default=100, help_text="Total number of cards available")
