@@ -130,28 +130,24 @@ def telegram_register(request):
     # This ensures the user sees the correct balance in the response
     registration_gift_given = False
     if is_first_registration:
-        # Process registration reward synchronously (only for first registration, fast operation)
+        # Process registration reward synchronously (only for first registration, fast operation) if setting enabled
         from api.models import GameSettings, Transaction
         from django.db.models import F
         from decimal import Decimal
         
         try:
             game_settings = GameSettings.get_settings()
-            bid_amount = Decimal(str(game_settings.bid_amount))
-            
-            # Registration gift → unwithdrawable_balance
-            User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + bid_amount)
-            
-            # Refresh user to get updated balance
-            user.refresh_from_db()
-            
-            # Create transaction record
-            Transaction.objects.create(
-                user=user,
-                transaction_type='deposit',
-                amount=bid_amount,
-                description='Registration gift'
-            )
+            if getattr(game_settings, 'give_register_reward', True):
+                bid_amount = Decimal(str(game_settings.bid_amount))
+                # Registration gift → unwithdrawable_balance
+                User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + bid_amount)
+                user.refresh_from_db()
+                Transaction.objects.create(
+                    user=user,
+                    transaction_type='deposit',
+                    amount=bid_amount,
+                    description='Registration gift'
+                )
             registration_gift_given = True
         except Exception as e:
             # If synchronous processing fails, queue async task as fallback
@@ -1310,8 +1306,11 @@ def verify_deposit(request, deposit_id):
         deposit.save()
         
         from decimal import Decimal
-        from django.db.models import F
-        User.objects.filter(id=deposit.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit.amount)))
+        try:
+            from .stats_utils import credit_deposit
+            credit_deposit(deposit.amount, deposit.user)
+        except Exception:
+            pass
         deposit.user.refresh_from_db()
         Transaction.objects.create(
             user=deposit.user,
@@ -1320,11 +1319,6 @@ def verify_deposit(request, deposit_id):
             deposit=deposit,
             description=f'Deposit approved - Match ID: {deposit.id}'
         )
-        try:
-            from .stats_utils import record_deposit
-            record_deposit(deposit.amount, deposit.user)
-        except Exception:
-            pass
         serializer = DepositSerializer(deposit)
         return Response(serializer.data)
     else:
@@ -1789,8 +1783,12 @@ def send_telegram_message(request):
                     sent_count += 1
                 
                 if amount > 0:
+                    try:
+                        from .stats_utils import credit_deposit
+                        credit_deposit(amount, user)
+                    except Exception:
+                        pass
                     user.refresh_from_db()
-                    User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(amount)))
                     Transaction.objects.create(
                         user=user,
                         transaction_type='deposit',

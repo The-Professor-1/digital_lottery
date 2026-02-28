@@ -64,6 +64,22 @@ def record_deposit(amount, user, at_date=None):
         User.objects.filter(id=user_id).update(total_deposits_amount=F('total_deposits_amount') + amount)
 
 
+def credit_deposit(amount, user, at_date=None):
+    """Credit a deposit: add amount to withdrawable_balance, add deposit_bonus_percent of amount to unwithdrawable_balance, then record_deposit."""
+    from .models import User, GameSettings
+    amount = Decimal(str(amount))
+    user_id = getattr(user, 'id', None)
+    if not user_id:
+        return
+    settings = GameSettings.get_settings()
+    percent = getattr(settings, 'deposit_bonus_percent', 0) or 0
+    bonus = (amount * Decimal(percent)) / Decimal(100) if percent else Decimal('0')
+    User.objects.filter(id=user_id).update(withdrawable_balance=F('withdrawable_balance') + amount)
+    if bonus > 0:
+        User.objects.filter(id=user_id).update(unwithdrawable_balance=F('unwithdrawable_balance') + bonus)
+    record_deposit(amount, user, at_date)
+
+
 def record_withdrawal(amount, user, at_date=None):
     """Call when a withdrawal is processed (Transaction created)."""
     if at_date is None:

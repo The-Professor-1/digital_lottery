@@ -505,12 +505,23 @@ def clear_financial_command_states(context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('transfer_amount', None)
 
 
+SERVICE_UNAVAILABLE_MSG = "ይህ አገልግሎት ለጊዜው አይሰራም እባክዎ ለትንሽ ጊዜ ይጠብቁ፡፡"
+
+
 async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /deposit command - Show platform options"""
     # Clear any existing financial command states
     clear_financial_command_states(context)
     
     user = update.effective_user
+    gs = await sync_to_async(GameSettings.get_settings)()
+    if getattr(gs, 'disable_bot_deposit', False):
+        if update.message:
+            await update.message.reply_text(SERVICE_UNAVAILABLE_MSG)
+        elif update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text(SERVICE_UNAVAILABLE_MSG)
+        return
     
     # Check if user is registered
     if not await is_user_registered(user.id):
@@ -570,6 +581,14 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_financial_command_states(context)
     
     user = update.effective_user
+    gs = await sync_to_async(GameSettings.get_settings)()
+    if getattr(gs, 'disable_bot_withdraw', False):
+        if update.message:
+            await update.message.reply_text(SERVICE_UNAVAILABLE_MSG)
+        elif update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text(SERVICE_UNAVAILABLE_MSG)
+        return
     
     # Check if user is registered
     if not await is_user_registered(user.id):
@@ -1005,11 +1024,15 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     async def get_settings():
                         return await sync_to_async(GameSettings.get_settings)()
                     game_settings = await db_operation_with_retry(get_settings)
-                    bid_amount = getattr(game_settings, 'bid_amount', 10)
-                    message_text = (
-                        f"✅ ተመዝግበዋል! ስጦታ {bid_amount} ብር ተበርክቶሎታል፡፡\n\n"
-                        f"ያለዎት ሂሳብ: {bid_amount} ብር"
-                    )
+                    give_reward = getattr(game_settings, 'give_register_reward', True)
+                    bid_amount = getattr(game_settings, 'bid_amount', 10) if give_reward else 0
+                    if give_reward:
+                        message_text = (
+                            f"✅ ተመዝግበዋል! ስጦታ {bid_amount} ብር ተበርክቶሎታል፡፡\n\n"
+                            f"ያለዎት ሂሳብ: {bid_amount} ብር"
+                        )
+                    else:
+                        message_text = "✅ ተመዝግበዋል!\n\nያለዎት ሂሳብ: 0 ብር"
                 else:
                     async def refresh_user():
                         await sync_to_async(telegram_user.refresh_from_db)()
@@ -1472,10 +1495,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await sync_to_async(TelebirrReceipt.objects.create)(
                 user=telegram_user, reference=reference, amount=amount_to_credit
             )
-            from django.db.models import F
-            def _credit_telebirr():
-                User.objects.filter(id=telegram_user.id).update(withdrawable_balance=F('withdrawable_balance') + amount_to_credit)
-            await sync_to_async(_credit_telebirr)()
+            try:
+                from api.stats_utils import credit_deposit
+                await sync_to_async(credit_deposit)(amount_to_credit, telegram_user)
+            except Exception:
+                pass
             await sync_to_async(telegram_user.refresh_from_db)()
             await sync_to_async(Transaction.objects.create)(
                 user=telegram_user,
@@ -1483,11 +1507,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 amount=amount_to_credit,
                 description=f'Telebirr deposit verified - Ref: {reference}'
             )
-            try:
-                from api.stats_utils import record_deposit
-                await sync_to_async(record_deposit)(amount_to_credit, telegram_user)
-            except Exception:
-                pass
             await sync_to_async(DepositRequest.objects.create)(
                 user=telegram_user,
                 amount=amount_to_credit,
@@ -1608,10 +1627,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await sync_to_async(CbeReceipt.objects.create)(
                 user=telegram_user, reference=reference, account_suffix=account_suffix, amount=amount_to_credit
             )
-            from django.db.models import F
-            def _credit_cbe():
-                User.objects.filter(id=telegram_user.id).update(withdrawable_balance=F('withdrawable_balance') + amount_to_credit)
-            await sync_to_async(_credit_cbe)()
+            try:
+                from api.stats_utils import credit_deposit
+                await sync_to_async(credit_deposit)(amount_to_credit, telegram_user)
+            except Exception:
+                pass
             await sync_to_async(telegram_user.refresh_from_db)()
             await sync_to_async(Transaction.objects.create)(
                 user=telegram_user,
@@ -1619,11 +1639,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 amount=amount_to_credit,
                 description=f'CBE deposit verified - Ref: {reference}'
             )
-            try:
-                from api.stats_utils import record_deposit
-                await sync_to_async(record_deposit)(amount_to_credit, telegram_user)
-            except Exception:
-                pass
             await sync_to_async(DepositRequest.objects.create)(
                 user=telegram_user,
                 amount=amount_to_credit,
@@ -1656,26 +1671,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             min_withdraw = settings.min_withdraw
             max_withdrawal = getattr(settings, 'max_withdrawal', None)
             
-            # Max withdrawal per 24h (from last approval)
-            if max_withdrawal is not None and float(max_withdrawal) > 0 and amount > float(max_withdrawal):
-                keyboard = [[InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text(
-                    f"እለታዊ ከፍተኛ ማውጣት የሚቻለው {float(max_withdrawal)} ብር።",
-                    reply_markup=reply_markup
-                )
-                return
-            
-            # 24h cooldown starts when withdrawal is approved, not when requested
-            from datetime import timedelta
-            from django.utils import timezone
-            last_approved = getattr(telegram_user, 'last_withdrawal_approved_at', None)
-            if last_approved:
-                if timezone.now() - last_approved < timedelta(hours=24):
+            # Max withdrawal per 24h: sum approved withdrawals in last 24h (processed_at), use current max setting
+            if max_withdrawal is not None and float(max_withdrawal) > 0:
+                from datetime import timedelta
+                from django.utils import timezone
+                from django.db.models import Sum
+                def sum_withdrawn_last_24h():
+                    cutoff = timezone.now() - timedelta(hours=24)
+                    return WithdrawRequest.objects.filter(
+                        user_id=telegram_user.id, status='approved', processed_at__gte=cutoff
+                    ).aggregate(s=Sum('amount'))['s'] or Decimal('0')
+                withdrawn_24h = await sync_to_async(sum_withdrawn_last_24h)()
+                max_val = Decimal(str(max_withdrawal))
+                remaining = max_val - withdrawn_24h
+                if remaining <= 0:
                     keyboard = [[InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     await update.message.reply_text(
                         "እለታዊ ከፍተኛ ወጭ አድርገዋል። ሌላ ወጭ ለማድረግ አባክዎ እስከነገ ይጠብቁ።",
+                        reply_markup=reply_markup
+                    )
+                    return
+                if amount > remaining:
+                    keyboard = [[InlineKeyboardButton("❌ ሰርዝ", callback_data="main_menu")]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await update.message.reply_text(
+                        f"እለታዊ ከፍተኛ ማውጣት የሚቻለው {float(remaining)} ብር።",
                         reply_markup=reply_markup
                     )
                     return

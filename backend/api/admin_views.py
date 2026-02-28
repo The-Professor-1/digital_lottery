@@ -750,12 +750,13 @@ def verify_deposit_api(request, deposit_id):
             deposit.matched_at = timezone.now()
             deposit.save()
             
-            # Credit user: deposits go to withdrawable_balance
-            from decimal import Decimal
-            from django.db.models import F
-            User.objects.filter(id=deposit.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit.amount)))
+            # Credit user: withdrawable + optional deposit bonus (unwithdrawable)
+            try:
+                from .stats_utils import credit_deposit
+                credit_deposit(deposit.amount, deposit.user)
+            except Exception:
+                pass
             deposit.user.refresh_from_db()
-            
             # Create transaction
             from .models import Transaction
             Transaction.objects.create(
@@ -765,11 +766,6 @@ def verify_deposit_api(request, deposit_id):
                 deposit=deposit,
                 description=f'Deposit approved - Match ID: {deposit.id}'
             )
-            try:
-                from .stats_utils import record_deposit
-                record_deposit(deposit.amount, deposit.user)
-            except Exception:
-                pass
             
             # Send notification to user via Telegram bot
             if deposit.user.telegram_id:
@@ -885,7 +881,11 @@ def approve_deposit_request_api(request, deposit_id):
         deposit_request.processed_by = request.user if request.user.is_staff else None
         deposit_request.save()
         from django.db.models import F
-        User.objects.filter(id=deposit_request.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit_request.amount)))
+        try:
+            from .stats_utils import credit_deposit
+            credit_deposit(deposit_request.amount, deposit_request.user)
+        except Exception:
+            pass
         deposit_request.user.refresh_from_db()
         Transaction.objects.create(
             user=deposit_request.user,
@@ -893,11 +893,6 @@ def approve_deposit_request_api(request, deposit_id):
             amount=deposit_request.amount,
             description=f'Deposit approved - {deposit_request.platform} - Request ID: {deposit_request.id}'
         )
-        try:
-            from .stats_utils import record_deposit
-            record_deposit(deposit_request.amount, deposit_request.user)
-        except Exception:
-            pass
         try:
             from telegram_bot.notifications import send_notification_sync
             send_notification_sync(
@@ -980,8 +975,11 @@ def approve_failed_deposit_api(request, failed_id):
                 if TelebirrReceipt.objects.filter(reference=tref).exists():
                     return JsonResponse({'error': 'This Telebirr reference was already used'}, status=400)
                 TelebirrReceipt.objects.create(user=user, reference=tref, amount=amount)
-        from django.db.models import F
-        User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + amount)
+        try:
+            from .stats_utils import credit_deposit
+            credit_deposit(amount, user)
+        except Exception:
+            pass
         user.refresh_from_db()
         Transaction.objects.create(
             user=user,
@@ -989,11 +987,6 @@ def approve_failed_deposit_api(request, failed_id):
             amount=amount,
             description=f'Deposit approved from failed record - {fd.platform} - Failed ID: {fd.id}'
         )
-        try:
-            from .stats_utils import record_deposit
-            record_deposit(amount, user)
-        except Exception:
-            pass
         try:
             from telegram_bot.notifications import send_notification_sync
             send_notification_sync(
@@ -1141,6 +1134,8 @@ def game_settings_api(request):
             'total_cards': settings.total_cards,
             'min_withdraw': float(settings.min_withdraw),
             'max_withdrawal': float(settings.max_withdrawal) if settings.max_withdrawal else None,
+            'give_register_reward': getattr(settings, 'give_register_reward', True),
+            'deposit_bonus_percent': getattr(settings, 'deposit_bonus_percent', 0),
             'percentage_cut': float(settings.percentage_cut),
             'automatic_mode_enabled': settings.automatic_mode_enabled,
             'deposit_accounts': settings.deposit_accounts,
@@ -1157,6 +1152,8 @@ def game_settings_api(request):
             'disable_bot_start': getattr(settings, 'disable_bot_start', False),
             'disable_bot_register': getattr(settings, 'disable_bot_register', False),
             'disable_bot_transfer': getattr(settings, 'disable_bot_transfer', False),
+            'disable_bot_deposit': getattr(settings, 'disable_bot_deposit', False),
+            'disable_bot_withdraw': getattr(settings, 'disable_bot_withdraw', False),
         }
         try:
             response_data['users_created_today'] = _get_users_created_today_count()
@@ -1202,6 +1199,14 @@ def game_settings_api(request):
                     settings_obj.max_withdrawal = None
                 else:
                     settings_obj.max_withdrawal = Decimal(str(val))
+            if 'give_register_reward' in data:
+                settings_obj.give_register_reward = bool(data['give_register_reward'])
+            if 'deposit_bonus_percent' in data:
+                pct = data['deposit_bonus_percent']
+                if pct is None or pct == '':
+                    settings_obj.deposit_bonus_percent = 0
+                else:
+                    settings_obj.deposit_bonus_percent = max(0, min(100, int(pct)))
             if 'percentage_cut' in data:
                 settings_obj.percentage_cut = Decimal(str(data['percentage_cut']))
             if 'automatic_mode_enabled' in data:
@@ -1253,6 +1258,10 @@ def game_settings_api(request):
                 settings_obj.disable_bot_register = bool(data['disable_bot_register'])
             if 'disable_bot_transfer' in data:
                 settings_obj.disable_bot_transfer = bool(data['disable_bot_transfer'])
+            if 'disable_bot_deposit' in data:
+                settings_obj.disable_bot_deposit = bool(data['disable_bot_deposit'])
+            if 'disable_bot_withdraw' in data:
+                settings_obj.disable_bot_withdraw = bool(data['disable_bot_withdraw'])
             
             settings_obj.save()
             

@@ -3308,10 +3308,9 @@ def task_process_registration_rewards(self, user_id: int, is_first_registration:
                 
                 # Get GameSettings (should be cached, but get fresh if needed)
                 game_settings = GameSettings.get_settings()
-                bid_amount = Decimal(str(game_settings.bid_amount))
-                
-                # STEP 1: Grant registration gift (if first registration) - bid_amount as reward → unwithdrawable_balance
-                if is_first_registration:
+                # STEP 1: Grant registration gift (if first registration and setting enabled) - bid_amount as reward → unwithdrawable_balance
+                if is_first_registration and getattr(game_settings, 'give_register_reward', True):
+                    bid_amount = Decimal(str(game_settings.bid_amount))
                     registration_reward = bid_amount
                     from django.db.models import F
                     User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + registration_reward)

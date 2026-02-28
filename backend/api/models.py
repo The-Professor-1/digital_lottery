@@ -359,6 +359,8 @@ class GameSettings(models.Model):
     percentage_cut = models.DecimalField(max_digits=5, decimal_places=2, default=10.00, help_text="Percentage to cut from total derash (e.g., 10.00 for 10%)")
     min_withdraw = models.DecimalField(max_digits=10, decimal_places=2, default=50.00, help_text="Minimum withdrawal amount")
     max_withdrawal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Max withdrawal per 24h (from approval time). Null/0 = no limit.")
+    give_register_reward = models.BooleanField(default=True, help_text="If True, new users get bid_amount as registration bonus (unwithdrawable). If False, no bonus, balance stays 0.")
+    deposit_bonus_percent = models.PositiveSmallIntegerField(default=0, help_text="Percent of deposit to add to unwithdrawable (e.g. 10 = 10%% of deposit also added as bonus). 0 = no bonus.")
     
     # Card settings
     total_cards = models.IntegerField(default=100, help_text="Total number of cards available")
@@ -425,6 +427,14 @@ class GameSettings(models.Model):
     disable_bot_transfer = models.BooleanField(
         default=False,
         help_text="When enabled, the bot will not process transfer (button, /transfer, or cached menu)."
+    )
+    disable_bot_deposit = models.BooleanField(
+        default=False,
+        help_text="When enabled, the bot will not process deposit (button or /deposit)."
+    )
+    disable_bot_withdraw = models.BooleanField(
+        default=False,
+        help_text="When enabled, the bot will not process withdraw (button or /withdraw)."
     )
     
     updated_at = models.DateTimeField(auto_now=True)

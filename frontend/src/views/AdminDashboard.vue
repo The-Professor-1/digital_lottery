@@ -446,6 +446,8 @@
             </div>
             <div class="form-group checkbox">
               <label><input v-model="settings.disable_bot_transfer" type="checkbox" /> Disable /transfer</label>
+              <label><input v-model="settings.disable_bot_deposit" type="checkbox" /> Disable /deposit</label>
+              <label><input v-model="settings.disable_bot_withdraw" type="checkbox" /> Disable /withdraw</label>
               <small class="form-hint">When ticked, transfer is disabled (button, /transfer, or cached menu). Users with old keyboard will see a disabled message until you untick and save.</small>
             </div>
           </div>
@@ -474,6 +476,15 @@
               <label>Max Withdrawal (ETB)</label>
               <input v-model.number="settings.max_withdrawal" type="number" step="0.01" min="0" placeholder="0 or empty = no limit" />
               <small class="form-hint">Per 24h from approval. 0 or empty = no limit. User can request again after 24h from last approval.</small>
+            </div>
+            <div class="form-group checkbox">
+              <label><input v-model="settings.give_register_reward" type="checkbox" /> Give register reward (bid amount as bonus)</label>
+              <small class="form-hint">When checked, new users get bid amount to unwithdrawable balance. When unchecked, they get 0.</small>
+            </div>
+            <div class="form-group">
+              <label>Deposit bonus (%)</label>
+              <input v-model.number="settings.deposit_bonus_percent" type="number" min="0" max="100" />
+              <small class="form-hint">Percent of each deposit added to unwithdrawable (e.g. 10 = 100 ETB deposit → 100 withdrawable + 10 unwithdrawable). 0 = no bonus.</small>
             </div>
             <div class="form-group">
               <label>Percentage Cut (%)</label>
@@ -786,6 +797,8 @@ export default {
         total_cards: 100,
         min_withdraw: 10,
         max_withdrawal: null,
+        give_register_reward: true,
+        deposit_bonus_percent: 0,
         percentage_cut: 10,
         automatic_mode_enabled: true,
         allow_system_account: true,
@@ -798,6 +811,8 @@ export default {
         disable_bot_start: false,
         disable_bot_register: false,
         disable_bot_transfer: false,
+        disable_bot_deposit: false,
+        disable_bot_withdraw: false,
         support_phone: '',
         instruction_text: '',
         telebirr_verify_api_key: '',

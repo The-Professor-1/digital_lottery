@@ -61,10 +61,11 @@ class DepositAdmin(admin.ModelAdmin):
                 deposit.status = 'approved'
                 deposit.matched_at = timezone.now()
                 deposit.save()
-                # Credit user: deposits go to withdrawable_balance
-                from decimal import Decimal
-                from django.db.models import F
-                User.objects.filter(id=deposit.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit.amount)))
+                try:
+                    from .stats_utils import credit_deposit
+                    credit_deposit(deposit.amount, deposit.user)
+                except Exception:
+                    pass
                 deposit.user.refresh_from_db()
                 # Create transaction
                 Transaction.objects.create(
@@ -74,11 +75,6 @@ class DepositAdmin(admin.ModelAdmin):
                     deposit=deposit,
                     description=f'Deposit approved - Match ID: {deposit.id}'
                 )
-                try:
-                    from .stats_utils import record_deposit
-                    record_deposit(deposit.amount, deposit.user)
-                except Exception:
-                    pass
         self.message_user(request, f"{queryset.count()} deposits processed.")
     approve_deposits.short_description = "Approve selected deposits (if texts match)"
 
@@ -156,11 +152,12 @@ class DepositRequestAdmin(admin.ModelAdmin):
             deposit_request.processed_by = request.user
             deposit_request.save()
             
-            # Credit user: deposits go to withdrawable_balance
-            from django.db.models import F
-            User.objects.filter(id=deposit_request.user.id).update(withdrawable_balance=F('withdrawable_balance') + Decimal(str(deposit_request.amount)))
+            try:
+                from .stats_utils import credit_deposit
+                credit_deposit(deposit_request.amount, deposit_request.user)
+            except Exception:
+                pass
             deposit_request.user.refresh_from_db()
-            
             # Create transaction
             Transaction.objects.create(
                 user=deposit_request.user,
@@ -168,11 +165,6 @@ class DepositRequestAdmin(admin.ModelAdmin):
                 amount=deposit_request.amount,
                 description=f'Deposit approved - {deposit_request.platform} - Request ID: {deposit_request.id}'
             )
-            try:
-                from .stats_utils import record_deposit
-                record_deposit(deposit_request.amount, deposit_request.user)
-            except Exception:
-                pass
             
             # Send notification to user via Telegram bot
             try:
