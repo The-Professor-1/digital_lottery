@@ -575,8 +575,8 @@ export default {
         if (data && data.message) {
           this.showNotification(data.message, 'warning')
         }
-        this.isRedirecting = true
-        this.$router.push('/completed').catch(() => {})
+        // Refresh game (new game after cancel) and balance (refund) so UI updates
+        this.loadGame()
       })
     },
     startPolling() {

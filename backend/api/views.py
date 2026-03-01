@@ -1632,12 +1632,8 @@ def restart_game(request):
             refunded_count = 0
             for user_id, refund_data in users_to_refund.items():
                 user = refund_data['user']
-                user.refresh_from_db()
                 amt = refund_data['amount']
-                if user.has_withdrawable_active():
-                    User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + amt)
-                else:
-                    User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + amt)
+                User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + amt)
                 Transaction.objects.create(
                     user=user,
                     transaction_type='bet',

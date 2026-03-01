@@ -1292,31 +1292,29 @@ def task_generate_and_create_card(self, game_id: int, user_id: int, card_number:
 def task_refund_and_cancel_game(self, game_id: int, bet_amount: Decimal):
     """
     Background task to refund all players and cancel a game.
-    This is called after a delay when admin cancels game with refund.
+    Refunds go to unwithdrawable_balance. Broadcasts game_cancelled and creates new game so clients redirect to card selection.
     """
     try:
-        from .models import Game, GameCard, Transaction, AdminMessage
-        from decimal import Decimal
-        
+        from .models import Game, GameCard, Transaction, AdminMessage, GameSettings
+        from django.db.models import F
+        from .redis_utils import cleanup_game_live_state, acquire_game_creation_lock, release_game_creation_lock
+
         game = Game.objects.get(id=game_id)
-        
-        # Refund all players
+        old_game_id = int(game_id)
+
+        # Refund all players to unwithdrawable_balance (play-only balance)
         cards = GameCard.objects.filter(game_id=game_id).select_related('user')
         users_to_refund = {}
         for card in cards:
             user = card.user
             if user.id not in users_to_refund:
                 users_to_refund[user.id] = {'user': user, 'amount': bet_amount}
-        
+
         refunded_count = 0
         for user_id, refund_data in users_to_refund.items():
             user = refund_data['user']
-            user.refresh_from_db()
             amt = refund_data['amount']
-            if user.has_withdrawable_active():
-                User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + amt)
-            else:
-                User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + amt)
+            User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + amt)
             Transaction.objects.create(
                 user=user,
                 transaction_type='bet',
@@ -1324,23 +1322,66 @@ def task_refund_and_cancel_game(self, game_id: int, bet_amount: Decimal):
                 description=f'Refund for game {game_id} cancellation'
             )
             refunded_count += 1
-        
-        # Get admin message if it exists
+
+        # Get admin message before deleting game
         admin_message = AdminMessage.objects.filter(game=game).order_by('-created_at').first()
-        
-        # Cancel the game
+
+        # Cancel the game (cascade deletes cards, etc.)
         game.delete()
-        
+
         # Mark message as processed
         if admin_message:
             admin_message.refund_processed = True
             admin_message.cancel_processed = True
             admin_message.save()
-        
+
+        # Clean up Redis for the old game so no stale state
+        try:
+            cleanup_game_live_state(old_game_id)
+        except Exception as e:
+            print(f"cleanup_game_live_state in task_refund_and_cancel_game: {e}")
+
+        # Create new game (same flow as task_cancel_game) so players can select cards again
+        settings = GameSettings.get_settings()
+        if not acquire_game_creation_lock(timeout=15):
+            existing_game = Game.objects.filter(status__in=['waiting', 'active']).first()
+            if existing_game:
+                new_game = existing_game
+            else:
+                import time
+                time.sleep(0.5)
+                existing_game = Game.objects.filter(status__in=['waiting', 'active']).first()
+                new_game = existing_game if existing_game else Game.objects.create(
+                    status='waiting', bet_amount=settings.bid_amount, derash_amount=Decimal('0.00')
+                )
+        else:
+            try:
+                existing_game = Game.objects.filter(status__in=['waiting', 'active']).first()
+                if existing_game:
+                    new_game = existing_game
+                else:
+                    new_game = Game.objects.create(
+                        status='waiting',
+                        bet_amount=settings.bid_amount,
+                        derash_amount=Decimal('0.00')
+                    )
+            finally:
+                release_game_creation_lock()
+
+        # Broadcast so clients redirect to card selection and refresh balance
+        try:
+            broadcast_to_game_rooms(old_game_id, 'game_cancelled', {
+                'message': 'Game has been cancelled. Your balance has been refunded. Please select a new card.',
+                'new_game_id': new_game.id
+            })
+        except Exception as e:
+            print(f"WebSocket broadcast error in task_refund_and_cancel_game: {e}")
+
         return {
             'success': True,
             'refunded_count': refunded_count,
-            'game_cancelled': True
+            'game_cancelled': True,
+            'new_game_id': new_game.id
         }
     except Game.DoesNotExist:
         return {'error': 'Game not found'}

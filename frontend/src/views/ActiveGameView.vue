@@ -763,16 +763,15 @@ export default {
           }
           this.showNotification(messageText, 'warning')
           
-          // If both refund and cancel, wait 5 seconds then refresh
+          // If both refund and cancel, wait for game_cancelled WebSocket (task runs in 5s) then redirect to card selection
           if (data.refund && data.cancel) {
-            setTimeout(() => {
-              window.location.reload()
-            }, 5000)
+            // Don't reload here; game_cancelled event will redirect to /
           } else if (data.cancel) {
-            // If cancel only, redirect to home/card selection after a delay
+            // Cancel only: task will send game_cancelled and redirect
+            // Fallback redirect in case WS is slow
             setTimeout(() => {
-              window.location.href = '/'
-            }, 3000)
+              this.$router.push('/').catch(() => {})
+            }, 4000)
           }
         }
       })
@@ -781,9 +780,10 @@ export default {
         if (data && data.message) {
           this.showNotification(data.message, 'warning')
         }
+        // Redirect to card selection (home) so user can pick a new card; balance will refresh there
         setTimeout(() => {
-          this.$router.push('/completed').catch(() => {})
-        }, 2000)
+          this.$router.push('/').catch(() => {})
+        }, 1500)
       })
       
       this.ws.on('game_ended', (data) => {

@@ -11,58 +11,92 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Full format example:
+# Full format example (English):
 # "Dear Negus You have transferred ETB 1.00 to Selomon Yimer (2519****1212) on 20/02/2026 05:27:51.
 #  Your transaction number is DBK10S886V. The service fee is  ETB 0.87 ... Thank you for using telebirr Ethio telecom"
+# Full format example (Amharic):
+# "ውድ Mohammed ወደ Selomon Yimer(0988****12) 35.00 ብር በ 01/03/2026 05:30:19 ልከዋል። የሂሳብ እንቅስቃሴ ቁጥርዎ DC15AWEJY1 ነዉ። ... በቴሌብር ስለተገለገሉ"
 
-# Patterns to extract: amount (ETB X.XX), recipient "to Name (number)", transaction number "is XXXXX"
-_AMOUNT_RE = re.compile(r'\bETB\s+([0-9]+(?:\.[0-9]{1,2})?)\b', re.IGNORECASE)
+# Amount: ETB X.XX (English) or X.XX ብር (Amharic – first occurrence is transfer amount)
+_AMOUNT_ETB_RE = re.compile(r'\bETB\s+([0-9]+(?:\.[0-9]{1,2})?)\b', re.IGNORECASE)
+_AMOUNT_BIRR_RE = re.compile(r'([0-9]+(?:\.[0-9]{1,2})?)\s*ብር', re.UNICODE)
+# Transaction number: English "transaction number is X" / "receipt no. X" or Amharic "ቁጥርዎ X" / "ቁጥር X" or URL receipt/XXX
 _TRANSACTION_NUMBER_RE = re.compile(
     r'(?:transaction\s+number|receipt\s+no\.?)\s+is\s+([A-Z0-9]+)',
     re.IGNORECASE
 )
-# "to Name (2519****1212)" or "to Name (number)"
+_REF_AMHARIC_RE = re.compile(r'ቁጥር(?:ዎ)?\s+([A-Z0-9]{8,})', re.UNICODE)
+_REF_URL_RE = re.compile(r'receipt/([A-Z0-9]{8,})', re.IGNORECASE)
+# Recipient: "to Name (number)" (English) or "ወደ Name(number)" (Amharic)
 _TO_RECIPIENT_RE = re.compile(r'\bto\s+([^(]+?)\s*\([0-9*]+\s*\)', re.IGNORECASE)
+_TO_RECIPIENT_AMHARIC_RE = re.compile(r'ወደ\s+([^(]+?)\s*\([0-9*]+', re.UNICODE)
 
-# Must contain these to consider text "full"
-_REQUIRED_MARKERS = [
-    'transferred',
-    'ETB',
-    'transaction number',
-    'telebirr',
+# Must contain at least one from each group to consider text "full"
+_REQUIRED_MARKER_GROUPS = [
+    ['transferred', 'ልከዋል'],
+    ['etb', 'ብር'],
+    ['transaction number', 'receipt', 'ቁጥር', 'receipt/'],
+    ['telebirr', 'ቴሌብር'],
 ]
 
 
 def parse_telebirr_receipt_text(text: str) -> Optional[dict]:
     """
-    Parse full Telebirr receipt SMS text.
+    Parse full Telebirr receipt SMS text (English or Amharic).
     Returns dict with keys: amount (Decimal), reference (transaction number), recipient_name (str),
     or None if format is invalid/incomplete.
     """
     if not text or not isinstance(text, str):
         return None
     text = text.strip()
-    if len(text) < 100:
+    if len(text) < 80:
         return None
 
     text_lower = text.lower()
-    for marker in _REQUIRED_MARKERS:
-        if marker.lower() not in text_lower:
+    text_for_amharic = text  # keep original for Amharic regexes
+    for group in _REQUIRED_MARKER_GROUPS:
+        if not any(m in text_lower or m in text_for_amharic for m in group):
             return None
 
-    amount_match = _AMOUNT_RE.search(text)
-    # Prefer the first "ETB X.XX" which is usually the transfer amount (second can be service fee/balance)
-    amount_str = amount_match.group(1) if amount_match else None
+    # Amount: try ETB X.XX first (English), then first X.XX ብር (Amharic)
+    amount_str = None
+    amount_match = _AMOUNT_ETB_RE.search(text)
+    if amount_match:
+        amount_str = amount_match.group(1)
+    if not amount_str:
+        amount_match = _AMOUNT_BIRR_RE.search(text)
+        if amount_match:
+            amount_str = amount_match.group(1)
+
     if not amount_str:
         return None
 
+    # Reference: English "transaction number is X", then Amharic "ቁጥርዎ X", then URL receipt/XXX
+    reference = None
     ref_match = _TRANSACTION_NUMBER_RE.search(text)
-    reference = ref_match.group(1).strip() if ref_match else None
+    if ref_match:
+        reference = ref_match.group(1).strip()
+    if not reference:
+        ref_match = _REF_AMHARIC_RE.search(text)
+        if ref_match:
+            reference = ref_match.group(1).strip()
+    if not reference:
+        ref_match = _REF_URL_RE.search(text)
+        if ref_match:
+            reference = ref_match.group(1).strip()
+
     if not reference:
         return None
 
+    # Recipient: "to Name (number)" or "ወደ Name(number)"
+    recipient_name = ''
     recipient_match = _TO_RECIPIENT_RE.search(text)
-    recipient_name = (recipient_match.group(1).strip() if recipient_match else '').strip()
+    if recipient_match:
+        recipient_name = (recipient_match.group(1).strip() or '').strip()
+    if not recipient_name:
+        recipient_match = _TO_RECIPIENT_AMHARIC_RE.search(text)
+        if recipient_match:
+            recipient_name = (recipient_match.group(1).strip() or '').strip()
 
     try:
         amount = Decimal(amount_str)
