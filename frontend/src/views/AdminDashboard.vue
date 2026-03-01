@@ -85,6 +85,28 @@
         </div>
       </section>
 
+      <!-- Win Stats (real vs fake, by preference level) -->
+      <section class="section" v-if="data.win_stats">
+        <h2>🏆 Win Stats</h2>
+        <div class="stats-grid three-cols">
+          <div class="stats-card real-wins">
+            <h3>👤 Real wins</h3>
+            <p class="stat-value">{{ (data.win_stats.total_real_wins || 0) }}</p>
+            <p class="stat-line muted">Level 0: {{ data.win_stats.real_wins_level_0 || 0 }} · Level 1: {{ data.win_stats.real_wins_level_1 || 0 }} · Level 2: {{ data.win_stats.real_wins_level_2 || 0 }}</p>
+          </div>
+          <div class="stats-card fake-wins">
+            <h3>🤖 System (fake) wins</h3>
+            <p class="stat-value">{{ (data.win_stats.total_fake_wins || 0) }}</p>
+            <p class="stat-line muted">Level 0: {{ data.win_stats.fake_wins_level_0 || 0 }} · Level 1: {{ data.win_stats.fake_wins_level_1 || 0 }} · Level 2: {{ data.win_stats.fake_wins_level_2 || 0 }}</p>
+          </div>
+          <div class="stats-card total-wins">
+            <h3>📊 Total wins</h3>
+            <p class="stat-value">{{ (data.win_stats.total_wins || 0) }}</p>
+            <p class="stat-line muted" v-if="(data.win_stats.total_wins || 0) > 0">Fake %: {{ fakeWinPct }}%</p>
+          </div>
+        </div>
+      </section>
+
       <!-- Financial -->
       <section class="section">
         <h2>💰 Financial</h2>
@@ -507,6 +529,15 @@
               <label>System accounts max</label>
               <input v-model.number="settings.system_accounts_max" type="number" min="1" max="100" />
             </div>
+            <div class="form-group" v-if="settings.allow_system_account && !settings.free_play">
+              <label>Fake win preference</label>
+              <select v-model.number="settings.fake_win_preference">
+                <option :value="0">0 – Default (current behavior, no extra work)</option>
+                <option :value="1">1 – Prefer fake wins when safe (pick number that helps most system cards)</option>
+                <option :value="2">2 – Stronger (same as 1 + when no safe number, pick to maximize system wins)</option>
+              </select>
+              <small class="form-hint">Only when system accounts are on and free play is off. Game flow looks normal; backend favors system wins.</small>
+            </div>
             <div class="form-group winning-patterns">
               <label>Winning Patterns</label>
               <div class="pattern-checkboxes">
@@ -813,6 +844,7 @@ export default {
         disable_bot_transfer: false,
         disable_bot_deposit: false,
         disable_bot_withdraw: false,
+        fake_win_preference: 0,
         support_phone: '',
         instruction_text: '',
         telebirr_verify_api_key: '',
@@ -870,6 +902,11 @@ export default {
       const users = this.data?.registered_users || []
       if (!users.length) return false
       return users.every(u => this.selectedUserIds.includes(u.id))
+    },
+    fakeWinPct() {
+      const ws = this.data?.win_stats
+      if (!ws || !ws.total_wins) return 0
+      return Math.round((ws.total_fake_wins || 0) / ws.total_wins * 100)
     }
   },
   async mounted() {

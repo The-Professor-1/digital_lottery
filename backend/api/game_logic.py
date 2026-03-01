@@ -568,10 +568,12 @@ def start_game(game: Game) -> bool:
     # task_auto_call_numbers uses get_safe_number_to_call so real users don't win (fake users can).
     settings = GameSettings.get_settings()
     game_settings_cache_key = f'game:{game.id}:settings'
+    pref = getattr(settings, 'fake_win_preference', 0)
     cache.set(game_settings_cache_key, {
         'time_between_calls': settings.time_between_calls,
         'allow_system_account': settings.allow_system_account,
         'free_play': settings.free_play,
+        'fake_win_preference': pref,
         'bid_amount': float(settings.bid_amount),
         'percentage_cut': float(settings.percentage_cut),
         'card_selection_timer': settings.card_selection_timer,
@@ -580,6 +582,8 @@ def start_game(game: Game) -> bool:
         'system_accounts_max': getattr(settings, 'system_accounts_max', 30),
         'winning_patterns': getattr(settings, 'winning_patterns', ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']),
     }, 3600)  # Cache for 1 hour (game won't last that long)
+    game.fake_win_preference_snapshot = max(0, min(2, int(pref)))
+    game.save(update_fields=['fake_win_preference_snapshot'])
     
     # Check if system accounts are enabled (use cached settings)
     allow_system_account = settings.allow_system_account

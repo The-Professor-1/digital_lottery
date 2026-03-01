@@ -45,6 +45,31 @@ def _get_users_created_today_count():
         return 0
 
 
+def _get_win_stats():
+    """Return win stats from TotalStats (real/fake totals and per-level 0,1,2)."""
+    try:
+        from .models import TotalStats
+        t = TotalStats.get_singleton()
+        total_wins = (t.total_real_wins or 0) + (t.total_fake_wins or 0)
+        return {
+            'total_real_wins': t.total_real_wins or 0,
+            'total_fake_wins': t.total_fake_wins or 0,
+            'total_wins': total_wins,
+            'real_wins_level_0': t.real_wins_level_0 or 0,
+            'real_wins_level_1': t.real_wins_level_1 or 0,
+            'real_wins_level_2': t.real_wins_level_2 or 0,
+            'fake_wins_level_0': t.fake_wins_level_0 or 0,
+            'fake_wins_level_1': t.fake_wins_level_1 or 0,
+            'fake_wins_level_2': t.fake_wins_level_2 or 0,
+        }
+    except Exception:
+        return {
+            'total_real_wins': 0, 'total_fake_wins': 0, 'total_wins': 0,
+            'real_wins_level_0': 0, 'real_wins_level_1': 0, 'real_wins_level_2': 0,
+            'fake_wins_level_0': 0, 'fake_wins_level_1': 0, 'fake_wins_level_2': 0,
+        }
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def admin_dashboard_login(request):
@@ -373,10 +398,8 @@ def admin_dashboard(request):
         # Cache for 5 minutes (300 seconds)
         cache.set(cache_key, (total_automatic_games, total_manual_games), 300)
     
-    # Get registered users - OPTIMIZED: Limited to 20 most recent users
-    # Reduced from all users to improve performance
+    # Get registered users - OPTIMIZED: Limited to 20 most recent users; use cached total_games_played (survives prune)
     registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:20].annotate(
-        games_played=Count('gamecards__game', distinct=True),
         wins=Count('won_games', distinct=True),
         user_total_deposits=Sum('transactions__amount', filter=Q(transactions__transaction_type='deposit')),
         user_total_withdrawals=Sum('transactions__amount', filter=Q(transactions__transaction_type='withdraw'))
@@ -384,7 +407,7 @@ def admin_dashboard(request):
     
     registered_users = []
     for user in registered_users_raw:
-        games_played = user.games_played or 0
+        games_played = user.total_games_played or 0
         wins = user.wins or 0
         user_total_deposits = user.user_total_deposits or Decimal('0')
         user_total_withdrawals = user.user_total_withdrawals or Decimal('0')
@@ -536,15 +559,11 @@ def search_user(request):
             user = find_user_by_phone(query)
         if not user:
             return JsonResponse({'error': 'User not found'}, status=404)
-        games_played = getattr(user, 'total_games_played', None)
+        # Use cached totals (survive prune)
+        games_played = getattr(user, 'total_games_played', None) or 0
+        total_wins = getattr(user, 'total_wins', None) or 0
         total_deposits = getattr(user, 'total_deposits_amount', None)
         total_withdrawals = getattr(user, 'total_withdrawals_amount', None)
-        if games_played is None:
-            games_played = Game.objects.filter(gamecards__user=user).distinct().count()
-        # Compute wins from Game table (same as dashboard) so count is correct (distinct games)
-        won_game_ids = set(Game.objects.filter(winner=user).values_list('id', flat=True))
-        won_game_ids |= set(Game.winners.through.objects.filter(user=user).values_list('game_id', flat=True))
-        total_wins = len(won_game_ids)
         if total_deposits is None:
             total_deposits = Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(s=Sum('amount'))['s'] or Decimal('0')
         if total_withdrawals is None:
@@ -1154,6 +1173,7 @@ def game_settings_api(request):
             'disable_bot_transfer': getattr(settings, 'disable_bot_transfer', False),
             'disable_bot_deposit': getattr(settings, 'disable_bot_deposit', False),
             'disable_bot_withdraw': getattr(settings, 'disable_bot_withdraw', False),
+            'fake_win_preference': getattr(settings, 'fake_win_preference', 0),
         }
         try:
             response_data['users_created_today'] = _get_users_created_today_count()
@@ -1262,6 +1282,9 @@ def game_settings_api(request):
                 settings_obj.disable_bot_deposit = bool(data['disable_bot_deposit'])
             if 'disable_bot_withdraw' in data:
                 settings_obj.disable_bot_withdraw = bool(data['disable_bot_withdraw'])
+            if 'fake_win_preference' in data:
+                val = int(data['fake_win_preference'])
+                settings_obj.fake_win_preference = max(0, min(2, val))  # 0, 1, or 2
             
             settings_obj.save()
             
@@ -1581,9 +1604,8 @@ def second_admin_dashboard(request):
         # Cache for 5 minutes (300 seconds)
         cache.set(cache_key, (total_automatic_games, total_manual_games), 300)
     
-    # Get registered users (can edit but NOT delete) - OPTIMIZED: Limited to 100 most recent
+    # Get registered users (can edit but NOT delete) - use cached total_games_played (survives prune)
     registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:20].annotate(
-        games_played=Count('gamecards__game', distinct=True),
         wins=Count('won_games', distinct=True),
         user_total_deposits=Sum('transactions__amount', filter=Q(transactions__transaction_type='deposit')),
         user_total_withdrawals=Sum('transactions__amount', filter=Q(transactions__transaction_type='withdraw'))
@@ -1591,7 +1613,7 @@ def second_admin_dashboard(request):
     
     registered_users = []
     for user in registered_users_raw:
-        games_played = user.games_played or 0
+        games_played = user.total_games_played or 0
         wins = user.wins or 0
         user_total_deposits = user.user_total_deposits or Decimal('0')
         user_total_withdrawals = user.user_total_withdrawals or Decimal('0')
@@ -2104,6 +2126,7 @@ def admin_dashboard_api(request):
         'approved_deposits_count': approved_deposits_count,
         'approved_withdraws_count': approved_withdraws_count,
         'failed_deposits': failed_deposits_data,
+        'win_stats': _get_win_stats(),
         'recent_transfers': [
             {
                 'id': t.id,
@@ -2301,9 +2324,8 @@ def second_admin_dashboard_api(request):
             'created_at': game.created_at.strftime('%H:%M'),
         })
     
-    # Registered users - OPTIMIZED: Limited to 20 most recent; wins computed from Game (winner + winners M2M)
+    # Registered users - use cached total_games_played (survives prune); wins from Game (winner + winners M2M)
     registered_users_raw = User.objects.filter(telegram_id__isnull=False).order_by('-created_at')[:20].annotate(
-        games_played=Count('gamecards__game', distinct=True),
         user_total_deposits=Sum('transactions__amount', filter=Q(transactions__transaction_type='deposit')),
         user_total_withdrawals=Sum('transactions__amount', filter=Q(transactions__transaction_type='withdraw'))
     )
@@ -2322,7 +2344,7 @@ def second_admin_dashboard_api(request):
         win_count_by_user_sec = {uid: len(s) for uid, s in win_count_by_user_sec.items()}
     registered_users = []
     for user in registered_users_raw:
-        games_played = user.games_played or 0
+        games_played = user.total_games_played or 0
         wins = win_count_by_user_sec.get(user.id)
         if wins is None:
             wins = user.total_wins or 0
@@ -2482,6 +2504,7 @@ def second_admin_dashboard_api(request):
         'pending_withdraws_count': pending_withdraws_count,
         'approved_deposits_count': approved_deposits_count,
         'approved_withdraws_count': approved_withdraws_count,
+        'win_stats': _get_win_stats(),
     })
 
 

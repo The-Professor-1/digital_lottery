@@ -84,6 +84,7 @@ class Game(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     winner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='won_games')
     winners = models.ManyToManyField(User, blank=True, related_name='shared_wins', help_text="All winners (for split derash)")
+    fake_win_preference_snapshot = models.PositiveSmallIntegerField(default=0, null=True, blank=True, help_text='Fake win preference level at game start (0/1/2) for win stats.')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -436,6 +437,11 @@ class GameSettings(models.Model):
         default=False,
         help_text="When enabled, the bot will not process withdraw (button or /withdraw)."
     )
+    # Fake win preference (only when allow_system_account=True and free_play=False). 0=current behavior (no extra work). 1=prefer numbers that give fake bingo when safe. 2=stronger: prefer numbers that help multiple fakes; when no safe number, pick number that maximizes fake wins.
+    fake_win_preference = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="0=default (current). 1=prefer fake wins when safe. 2=stronger preference (multi-fake, fallback). Only applies when system accounts on and not free play."
+    )
     
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -484,6 +490,8 @@ class GameSettings(models.Model):
                             self.system_accounts_max = 30
                         if not hasattr(self, 'winning_patterns'):
                             self.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
+                        if not hasattr(self, 'fake_win_preference'):
+                            self.fake_win_preference = 0
                 
                 cached_obj = CachedSettings(cached_game_settings)
                 # Also fetch original for any methods that might be called
@@ -795,6 +803,14 @@ class TotalStats(models.Model):
     total_deposits = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     total_withdrawals = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     total_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0, null=True, blank=True)
+    total_real_wins = models.PositiveIntegerField(default=0, help_text='Games won by real users')
+    total_fake_wins = models.PositiveIntegerField(default=0, help_text='Games won by system/fake users')
+    real_wins_level_0 = models.PositiveIntegerField(default=0, help_text='Real wins when fake_win_preference=0')
+    real_wins_level_1 = models.PositiveIntegerField(default=0, help_text='Real wins when fake_win_preference=1')
+    real_wins_level_2 = models.PositiveIntegerField(default=0, help_text='Real wins when fake_win_preference=2')
+    fake_wins_level_0 = models.PositiveIntegerField(default=0, help_text='Fake wins when fake_win_preference=0')
+    fake_wins_level_1 = models.PositiveIntegerField(default=0, help_text='Fake wins when fake_win_preference=1')
+    fake_wins_level_2 = models.PositiveIntegerField(default=0, help_text='Fake wins when fake_win_preference=2')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -803,10 +819,14 @@ class TotalStats(models.Model):
 
     @classmethod
     def get_singleton(cls):
-        obj, _ = cls.objects.get_or_create(pk=1, defaults={
+        defaults = {
             'total_games': 0, 'total_revenue': 0, 'total_deposits': 0,
             'total_withdrawals': 0, 'total_balance': 0,
-        })
+            'total_real_wins': 0, 'total_fake_wins': 0,
+            'real_wins_level_0': 0, 'real_wins_level_1': 0, 'real_wins_level_2': 0,
+            'fake_wins_level_0': 0, 'fake_wins_level_1': 0, 'fake_wins_level_2': 0,
+        }
+        obj, _ = cls.objects.get_or_create(pk=1, defaults=defaults)
         return obj
 
 

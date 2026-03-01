@@ -3187,7 +3187,7 @@ def task_finalize_redis_system_winner(game_id: int, winner_dict: dict):
         game.status = 'completed'
         game.completed_at = timezone.now()
         game.save(update_fields=['status', 'completed_at', 'current_call_count'])
-        # Update aggregate stats (survives prune)
+        # Update aggregate stats (survives prune); Redis-only winner = fake
         try:
             from .models import GameCard, GameSettings
             from .stats_utils import record_game_completed
@@ -3196,7 +3196,7 @@ def task_finalize_redis_system_winner(game_id: int, winner_dict: dict):
             settings = GameSettings.get_settings()
             pct = getattr(settings, 'percentage_cut', Decimal('10')) or Decimal('10')
             revenue = (Decimal(str(real_count)) * game.bet_amount * pct) / Decimal('100')
-            record_game_completed(game, revenue)
+            record_game_completed(game, revenue, winner_type='fake')
         except Exception as e:
             logger.warning(f"Stats update failed for game {game_id}: {e}")
         cleanup_game_live_state(game_id)

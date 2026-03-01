@@ -299,8 +299,20 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
 
 @admin.register(TotalStats)
 class TotalStatsAdmin(admin.ModelAdmin):
-    list_display = ['id', 'total_games', 'total_revenue', 'total_deposits', 'total_withdrawals', 'total_balance', 'updated_at']
-    readonly_fields = ['total_games', 'total_revenue', 'total_deposits', 'total_withdrawals', 'total_balance', 'updated_at']
+    list_display = [
+        'id', 'total_games', 'total_revenue', 'total_deposits', 'total_withdrawals', 'total_balance',
+        'total_real_wins', 'total_fake_wins',
+        'real_wins_level_0', 'real_wins_level_1', 'real_wins_level_2',
+        'fake_wins_level_0', 'fake_wins_level_1', 'fake_wins_level_2',
+        'updated_at'
+    ]
+    readonly_fields = [
+        'total_games', 'total_revenue', 'total_deposits', 'total_withdrawals', 'total_balance',
+        'total_real_wins', 'total_fake_wins',
+        'real_wins_level_0', 'real_wins_level_1', 'real_wins_level_2',
+        'fake_wins_level_0', 'fake_wins_level_1', 'fake_wins_level_2',
+        'updated_at'
+    ]
 
     def has_add_permission(self, request):
         return False

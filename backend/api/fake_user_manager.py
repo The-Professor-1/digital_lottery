@@ -723,41 +723,58 @@ def get_real_user_winning_numbers(game: Game, called_numbers: set) -> List[int]:
 
 def get_safe_number_to_call(game: Game, called_numbers: set, free_play: bool) -> Optional[int]:
     """
-    Get a number that can be called safely
-    If free_play is False, ensure the number won't let real users win
-    Returns a number between 1-75 that hasn't been called yet
+    Get a number that can be called safely.
+    If free_play is False, ensure the number won't let real users win.
+    fake_win_preference (from cached game settings): 0=current; 1=prefer fake wins (multi-fake); 2=+ when no safe number, pick to maximize fake wins.
+    Returns a number between 1-75 that hasn't been called yet.
     """
     from .models import GameSettings
-    
+    from collections import Counter
+
     all_numbers = set(range(1, 76))
     available = all_numbers - called_numbers
-    
+
     if not available:
         return None
-    
+
     if free_play:
-        # Free play: any number is fine
         return random.choice(list(available))
-    
-    # Not free play: must ensure fake users can win
-    # Get numbers that would make real users win (block these)
+
+    # Use cached game settings (set at game start)
+    settings = GameSettings.get_settings(game_id=game.id)
+    preference = getattr(settings, 'fake_win_preference', 0)
+
     blocking_numbers = get_real_user_winning_numbers(game, called_numbers)
     safe_numbers = available - set(blocking_numbers)
-    
+
+    fake_cards = list(FakeUserGameCard.objects.filter(game=game, is_winner=False))
+    # number -> list of numbers that would make that card win
+    fake_winning_by_card = [get_fake_user_winning_numbers(card, called_numbers) for card in fake_cards]
+    all_fake_winning = []
+    for nums in fake_winning_by_card:
+        all_fake_winning.extend(nums)
+    fake_winning_counts = Counter(all_fake_winning)  # number -> how many fake cards it would make win
+
     if safe_numbers:
-        # Prefer numbers that would make fake users win
-        fake_cards = FakeUserGameCard.objects.filter(game=game, is_winner=False)
-        fake_winning_numbers = []
-        for card in fake_cards:
-            fake_winning_numbers.extend(get_fake_user_winning_numbers(card, called_numbers))
-        
-        # Prioritize numbers that help fake users win
-        preferred = set(fake_winning_numbers) & safe_numbers
+        preferred = set(all_fake_winning) & safe_numbers
         if preferred:
+            if preference >= 1:
+                # Level 1/2: among preferred, pick number that helps the most fake cards
+                best = max(preferred, key=lambda n: fake_winning_counts.get(n, 0))
+                tied = [n for n in preferred if fake_winning_counts.get(n, 0) == fake_winning_counts.get(best, 0)]
+                return random.choice(tied)
             return random.choice(list(preferred))
-        
-        # Otherwise, return any safe number
+        # No preferred: return any safe number (level 0 or 1/2 same here)
         return random.choice(list(safe_numbers))
-    # No safe number: call randomly so the game continues (real user may win by luck)
+
+    # No safe number: every remaining number would let some real user win
+    if preference >= 2:
+        # Level 2: pick number that minimizes real wins, then maximizes fake wins
+        def score(n):
+            real_wins = 1 if n in blocking_numbers else 0
+            fake_wins = fake_winning_counts.get(n, 0)
+            return (-real_wins, fake_wins)  # prefer 0 real wins, then higher fake wins
+        best = max(available, key=score)
+        return best
     return random.choice(list(available))
 

@@ -2059,16 +2059,21 @@ def admin_users_list(request):
     
     users_data = []
     for user in users:
-        # Get user statistics
-        games_played = Game.objects.filter(gamecards__user=user).distinct().count()
-        wins = Game.objects.filter(winner=user).count()
-        deposits = Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(
-            total=Sum('amount')
-        )['total'] or Decimal('0')
-        withdrawals = Transaction.objects.filter(user=user, transaction_type='withdraw').aggregate(
-            total=Sum('amount')
-        )['total'] or Decimal('0')
-        
+        # Use cached totals (survive prune); fallback to 0
+        games_played = getattr(user, 'total_games_played', None) or 0
+        wins = getattr(user, 'total_wins', None) or 0
+        deposits = getattr(user, 'total_deposits_amount', None)
+        withdrawals = getattr(user, 'total_withdrawals_amount', None)
+        if deposits is None:
+            deposits = Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(
+                total=Sum('amount')
+            )['total'] or Decimal('0')
+        if withdrawals is None:
+            withdrawals = Transaction.objects.filter(user=user, transaction_type='withdraw').aggregate(
+                total=Sum('amount')
+            )['total'] or Decimal('0')
+        deposits = deposits or Decimal('0')
+        withdrawals = withdrawals or Decimal('0')
         users_data.append({
             'id': user.id,
             'username': user.username,
@@ -2096,9 +2101,8 @@ def admin_user_detail(request, user_id):
     
     user = get_object_or_404(User, id=user_id)
     
-    # Get user statistics
-    games_played = Game.objects.filter(gamecards__user=user).distinct()
-    wins = Game.objects.filter(winner=user)
+    # Get user statistics: use cached totals (survive prune); game list from current data only
+    games_played_queryset = Game.objects.filter(gamecards__user=user).distinct()
     deposits = Transaction.objects.filter(user=user, transaction_type='deposit').order_by('-created_at')[:50]
     withdrawals = Transaction.objects.filter(user=user, transaction_type='withdraw').order_by('-created_at')[:50]
     bets = Transaction.objects.filter(user=user, transaction_type='bet').order_by('-created_at')[:50]
@@ -2109,8 +2113,8 @@ def admin_user_detail(request, user_id):
     return Response({
         'user': UserSerializer(user).data,
         'statistics': {
-            'games_played': games_played.count(),
-            'wins': wins.count(),
+            'games_played': user.total_games_played or 0,
+            'wins': user.total_wins or 0,
             'total_deposits': float(Transaction.objects.filter(user=user, transaction_type='deposit').aggregate(
                 total=Sum('amount')
             )['total'] or Decimal('0')),
@@ -2124,7 +2128,7 @@ def admin_user_detail(request, user_id):
             'bets': TransactionSerializer(bets, many=True).data,
             'prizes': TransactionSerializer(prizes, many=True).data,
         },
-        'games': [{'id': g.id, 'status': g.status, 'created_at': g.created_at.isoformat()} for g in games_played[:20]]
+        'games': [{'id': g.id, 'status': g.status, 'created_at': g.created_at.isoformat()} for g in games_played_queryset[:20]]
     })
 
 
