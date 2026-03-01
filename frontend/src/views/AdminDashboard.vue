@@ -179,6 +179,9 @@
             <label>Withdrawable balance</label>
             <input v-model="editBalanceWithdrawable" type="number" step="0.01" min="0" />
           </div>
+          <div class="form-group checkbox">
+            <label><input v-model="editBalanceWithdrawalApproved" type="checkbox" /> Withdrawal approved (can request withdraw)</label>
+          </div>
           <p v-if="editBalanceMessage" class="edit-balance-msg" :class="{ error: editBalanceSaving && editBalanceMessage }">{{ editBalanceMessage }}</p>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="closeEditBalanceModal">Cancel</button>
@@ -874,6 +877,7 @@ export default {
       editBalanceUser: null,
       editBalanceUnwithdrawable: '0',
       editBalanceWithdrawable: '0',
+      editBalanceWithdrawalApproved: false,
       editBalanceSaving: false,
       editBalanceMessage: '',
       searchTxQuery: '',
@@ -1036,6 +1040,7 @@ export default {
       this.editBalanceUser = this.searchResultData.user
       this.editBalanceUnwithdrawable = String(this.searchResultData.user.unwithdrawable_balance ?? 0)
       this.editBalanceWithdrawable = String(this.searchResultData.user.withdrawable_balance ?? 0)
+      this.editBalanceWithdrawalApproved = !!this.searchResultData.user.withdrawal_approved
       this.editBalanceMessage = ''
       this.showEditBalanceModal = true
     },
@@ -1055,11 +1060,12 @@ export default {
           this.editBalanceMessage = 'Enter valid non-negative numbers.'
           return
         }
-        const res = await apiUpdateUserBalance(this.editBalanceUser.id, u, w)
+        const res = await apiUpdateUserBalance(this.editBalanceUser.id, u, w, this.editBalanceWithdrawalApproved)
         if (this.searchResultData?.user?.id === this.editBalanceUser.id) {
           this.searchResultData.user.unwithdrawable_balance = res.user.unwithdrawable_balance
           this.searchResultData.user.withdrawable_balance = res.user.withdrawable_balance
           this.searchResultData.user.balance = res.user.balance
+          if (res.user.withdrawal_approved !== undefined) this.searchResultData.user.withdrawal_approved = res.user.withdrawal_approved
         }
         this.closeEditBalanceModal()
       } catch (err) {
@@ -1432,13 +1438,17 @@ export default {
         if (firstName === null) return
         const lastName = prompt('Last name:', u.last_name || '')
         if (lastName === null) return
+        const approvedStr = prompt('Withdrawal approved? (yes/no) - can request withdraw:', u.withdrawal_approved ? 'yes' : 'no')
+        if (approvedStr === null) return
+        const withdrawalApproved = /^y|1|true$/i.test(String(approvedStr).trim())
         await editAdminUser(userId, {
           unwithdrawable_balance: parseFloat(unwithdrawableStr) || 0,
           withdrawable_balance: parseFloat(withdrawableStr) || 0,
           phone_number: phone,
           username: username,
           first_name: firstName,
-          last_name: lastName
+          last_name: lastName,
+          withdrawal_approved: withdrawalApproved
         })
         alert('User updated')
         await this.loadData()

@@ -1888,34 +1888,99 @@
                 
                 const data = await response.json();
                 if (response.ok) {
-                    const detailsDiv = document.getElementById('user_details');
-                    detailsDiv.style.display = 'block';
-                    detailsDiv.innerHTML = `
-                        <h3>User Details</h3>
-                        <p><strong>Username:</strong> ${data.user.username}</p>
-                        <p><strong>Telegram ID:</strong> ${data.user.telegram_id || 'N/A'}</p>
-                        <p><strong>Phone:</strong> ${data.user.phone_number || 'N/A'}</p>
-                        <p><strong>Balance:</strong> ${data.user.balance} ETB</p>
-                        <p><strong>Games Played:</strong> ${data.games_played}</p>
-                        <p><strong>Created:</strong> ${new Date(data.user.created_at).toLocaleString()}</p>
-                        <h4>Recent Deposits:</h4>
-                        <ul>
-                            ${data.deposit_history.length > 0 ? data.deposit_history.map(d => 
-                                `<li>${d.amount} ETB (${d.platform}) - ${new Date(d.created_at).toLocaleString()}</li>`
-                            ).join('') : '<li>No deposits</li>'}
-                        </ul>
-                        <h4>Recent Withdrawals:</h4>
-                        <ul>
-                            ${data.withdraw_history.length > 0 ? data.withdraw_history.map(w => 
-                                `<li>${w.amount} ETB (${w.platform}) - ${new Date(w.created_at).toLocaleString()}</li>`
-                            ).join('') : '<li>No withdrawals</li>'}
-                        </ul>
-                    `;
+                    window.lastSearchUserData = data;
+                    renderUserDetails(data);
                 } else {
                     alert(data.error || 'User not found');
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
+            }
+        }
+        
+        function renderUserDetails(data) {
+            const detailsDiv = document.getElementById('user_details');
+            detailsDiv.style.display = 'block';
+            const u = data.user;
+            detailsDiv.innerHTML = `
+                <h3 style="margin-top: 0;">${u.username} (ID: ${u.id})</h3>
+                <button type="button" onclick="openEditBalanceModal()" style="background: #3498db; color: white; padding: 8px 14px; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 12px;">Edit balance</button>
+                <p><strong>Phone:</strong> ${u.phone_number || 'N/A'}</p>
+                <p><strong>Telegram ID:</strong> ${u.telegram_id || 'N/A'}</p>
+                <p><strong>Unwithdrawable balance:</strong> ${u.unwithdrawable_balance != null ? u.unwithdrawable_balance : 0} ETB</p>
+                <p><strong>Withdrawable balance:</strong> ${u.withdrawable_balance != null ? u.withdrawable_balance : 0} ETB</p>
+                <p><strong>Total balance:</strong> ${u.balance != null ? u.balance : 0} ETB</p>
+                <p><strong>Games Played:</strong> ${data.games_played}</p>
+                <p><strong>Total wins:</strong> ${data.total_wins}</p>
+                <p><strong>Total deposits:</strong> ${data.total_deposits != null ? data.total_deposits : 0} ETB</p>
+                <p><strong>Total withdrawals:</strong> ${data.total_withdrawals != null ? data.total_withdrawals : 0} ETB</p>
+                <p><strong>Withdrawal approved:</strong> ${u.withdrawal_approved ? 'Yes' : 'No'}</p>
+                <p><strong>Created:</strong> ${new Date(u.created_at).toLocaleString()}</p>
+                <h4>Recent Deposits:</h4>
+                <ul>
+                    ${data.deposit_history && data.deposit_history.length > 0 ? data.deposit_history.map(d =>
+                        `<li>${d.amount} ETB (${d.platform}) - ${new Date(d.created_at).toLocaleString()}</li>`
+                    ).join('') : '<li>No deposits</li>'}
+                </ul>
+                <h4>Recent Withdrawals:</h4>
+                <ul>
+                    ${data.withdraw_history && data.withdraw_history.length > 0 ? data.withdraw_history.map(w =>
+                        `<li>${w.amount} ETB (${w.platform}) - ${new Date(w.created_at).toLocaleString()}</li>`
+                    ).join('') : '<li>No withdrawals</li>'}
+                </ul>
+            `;
+        }
+        
+        function openEditBalanceModal() {
+            const data = window.lastSearchUserData;
+            if (!data || !data.user) return;
+            document.getElementById('edit_balance_modal_title').textContent = 'Edit balance — ' + data.user.username;
+            document.getElementById('edit_balance_unwithdrawable').value = data.user.unwithdrawable_balance != null ? data.user.unwithdrawable_balance : 0;
+            document.getElementById('edit_balance_withdrawable').value = data.user.withdrawable_balance != null ? data.user.withdrawable_balance : 0;
+            document.getElementById('edit_balance_message').textContent = '';
+            document.getElementById('edit_balance_modal').style.display = 'flex';
+        }
+        
+        function closeEditBalanceModal() {
+            document.getElementById('edit_balance_modal').style.display = 'none';
+        }
+        
+        async function saveEditBalance() {
+            const data = window.lastSearchUserData;
+            if (!data || !data.user) return;
+            const userId = data.user.id;
+            const unwithdrawable = parseFloat(document.getElementById('edit_balance_unwithdrawable').value);
+            const withdrawable = parseFloat(document.getElementById('edit_balance_withdrawable').value);
+            if (isNaN(unwithdrawable) || unwithdrawable < 0 || isNaN(withdrawable) || withdrawable < 0) {
+                document.getElementById('edit_balance_message').textContent = 'Enter valid non-negative numbers.';
+                return;
+            }
+            const btn = document.getElementById('edit_balance_save_btn');
+            const msgEl = document.getElementById('edit_balance_message');
+            btn.disabled = true;
+            msgEl.textContent = '';
+            try {
+                const csrftoken = getCSRFToken();
+                const response = await fetch(`/admin-dashboard/users/${userId}/balance/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ unwithdrawable_balance: unwithdrawable, withdrawable_balance: withdrawable })
+                });
+                const res = await response.json();
+                if (response.ok && res.success) {
+                    window.lastSearchUserData.user.unwithdrawable_balance = res.user.unwithdrawable_balance;
+                    window.lastSearchUserData.user.withdrawable_balance = res.user.withdrawable_balance;
+                    window.lastSearchUserData.user.balance = res.user.balance;
+                    renderUserDetails(window.lastSearchUserData);
+                    closeEditBalanceModal();
+                } else {
+                    msgEl.textContent = res.error || 'Save failed';
+                }
+            } catch (e) {
+                msgEl.textContent = e.message || 'Save failed';
+            } finally {
+                btn.disabled = false;
             }
         }
         

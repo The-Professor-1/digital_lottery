@@ -2160,6 +2160,8 @@ def admin_user_edit(request, user_id):
         user.first_name = request.data['first_name']
     if 'last_name' in request.data:
         user.last_name = request.data['last_name']
+    if 'withdrawal_approved' in request.data:
+        user.withdrawal_approved = bool(request.data['withdrawal_approved'])
     
     user.save()
     

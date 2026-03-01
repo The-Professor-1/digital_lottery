@@ -621,8 +621,9 @@ def update_user_balance(request, user_id):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     unwithdrawable = data.get('unwithdrawable_balance')
     withdrawable = data.get('withdrawable_balance')
-    if unwithdrawable is None and withdrawable is None:
-        return JsonResponse({'error': 'Provide unwithdrawable_balance and/or withdrawable_balance'}, status=400)
+    withdrawal_approved = data.get('withdrawal_approved')
+    if unwithdrawable is None and withdrawable is None and withdrawal_approved is None:
+        return JsonResponse({'error': 'Provide unwithdrawable_balance and/or withdrawable_balance and/or withdrawal_approved'}, status=400)
     try:
         update_fields = []
         if unwithdrawable is not None:
@@ -637,6 +638,9 @@ def update_user_balance(request, user_id):
                 return JsonResponse({'error': 'withdrawable_balance cannot be negative'}, status=400)
             user.withdrawable_balance = val
             update_fields.append('withdrawable_balance')
+        if withdrawal_approved is not None:
+            user.withdrawal_approved = bool(withdrawal_approved)
+            update_fields.append('withdrawal_approved')
         if update_fields:
             user.save(update_fields=update_fields)
         return JsonResponse({
@@ -646,6 +650,7 @@ def update_user_balance(request, user_id):
                 'unwithdrawable_balance': float(user.unwithdrawable_balance or 0),
                 'withdrawable_balance': float(user.withdrawable_balance or 0),
                 'balance': float(user.balance),
+                'withdrawal_approved': user.withdrawal_approved,
             }
         })
     except Exception as e:

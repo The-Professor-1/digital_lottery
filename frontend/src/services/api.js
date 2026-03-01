@@ -312,11 +312,13 @@ export async function searchUser(query) {
   return response.data
 }
 
-export async function updateUserBalance(userId, unwithdrawableBalance, withdrawableBalance) {
-  const response = await adminApi.post(`/admin-dashboard/users/${userId}/balance/`, {
+export async function updateUserBalance(userId, unwithdrawableBalance, withdrawableBalance, withdrawalApproved = undefined) {
+  const body = {
     unwithdrawable_balance: unwithdrawableBalance,
     withdrawable_balance: withdrawableBalance
-  })
+  }
+  if (withdrawalApproved !== undefined) body.withdrawal_approved = !!withdrawalApproved
+  const response = await adminApi.post(`/admin-dashboard/users/${userId}/balance/`, body)
   return response.data
 }
 
