@@ -172,6 +172,8 @@ export default {
       _winnerBannerActive: false, // Flag to prevent loadGame from interfering with winner banner
       _completedRedirectTimeoutId: null, // Clear this when winner_declared is received so we show banner instead of redirecting
       _gameEndedRedirectTimeoutId: null, // Timeout from game_ended; clear when winner_declared is received (fake-winner flow)
+      /** True after fake winner_declared until co-winner window ends — blocks game_ended early redirect + loadGame clobber */
+      _pendingFakeWinnerDeclaration: false,
       blockedFromThisGame: false, // True after false bingo claim: show overlay, user cannot play this game
       claimBingoChecking: false, // True while checking claim (spinner)
       falseBingoClickCount: 0 // Count of Bingo clicks without a line this game; 2nd = block
@@ -226,6 +228,7 @@ export default {
       clearTimeout(this._gameEndedRedirectTimeoutId)
       this._gameEndedRedirectTimeoutId = null
     }
+    this._pendingFakeWinnerDeclaration = false
     if (this.ws) {
       this.ws.disconnect()
     }
@@ -239,6 +242,14 @@ export default {
   methods: {
     async loadGame() {
       try {
+        // Fake winner: winner_declared is handled but we delay applyWinnerData 3s — don't let loadGame overwrite state
+        if (this._pendingFakeWinnerDeclaration) {
+          if (this.interval) {
+            clearInterval(this.interval)
+            this.interval = null
+          }
+          return
+        }
         // CRITICAL: When winner is declared (e.g. fake user) we set _winnerBannerActive immediately
         // but may delay showing the banner by 3s. Do NOT fetch or update anything in that window.
         if (this._winnerBannerActive) {
@@ -814,6 +825,15 @@ export default {
         if (data && data.no_winner) {
           this.handleNoWinner()
         } else {
+          // Fake winner: winner_declared delays applying winner/winners by 3s — game_ended often follows
+          // immediately; do NOT schedule early redirect or users hit /completed before the banner runs.
+          if (this._pendingFakeWinnerDeclaration) {
+            if (this._gameEndedRedirectTimeoutId) {
+              clearTimeout(this._gameEndedRedirectTimeoutId)
+              this._gameEndedRedirectTimeoutId = null
+            }
+            return
+          }
           // Don't redirect immediately - let winner_declared show banner first for ALL players
           // Give winner_declared time to arrive (same or next tick); then redirect if still no winner
           if (!this.winner && (!this.winners || this.winners.length === 0)) {
@@ -845,6 +865,9 @@ export default {
                                  (data.winner && data.winner.is_fake) ||
                                  (data.winners && data.winners.length > 0 && data.winners[0].winner && data.winners[0].winner.is_fake) ||
                                  (data.is_fake)
+        if (isFakeUserWinner) {
+          this._pendingFakeWinnerDeclaration = true
+        }
         
         // Ensure last called number(s) are in calledNumbers so real user can still tick (and claim co-winner)
         // even if number_called arrived after winner_declared or was missed.
@@ -1068,13 +1091,17 @@ export default {
         const CO_WINNER_WINDOW_MS = 3000
         if (isFakeUserWinner) {
           setTimeout(() => {
-            applyWinnerDataSafe()
-            console.log('Winner banner state (after co-winner window):', {
-              winner: this.winner,
-              winners: this.winners,
-              isFakeUserWinner: true
-            })
-            showWinnerBanner()
+            try {
+              applyWinnerDataSafe()
+              console.log('Winner banner state (after co-winner window):', {
+                winner: this.winner,
+                winners: this.winners,
+                isFakeUserWinner: true
+              })
+              showWinnerBanner()
+            } finally {
+              this._pendingFakeWinnerDeclaration = false
+            }
           }, CO_WINNER_WINDOW_MS)
         } else {
           applyWinnerDataSafe()
@@ -1488,6 +1515,7 @@ export default {
       // Reset winner banner flags
       this.showWinnerBanner = false
       this._winnerBannerActive = false
+      this._pendingFakeWinnerDeclaration = false
       this.winnerBannerShownAt = null
       
       // Redirect to completed view (which will then redirect to card selection if new game is ready)

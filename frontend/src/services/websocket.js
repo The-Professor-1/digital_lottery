@@ -78,7 +78,18 @@ export class WebSocketService {
 
     // Backend may send batched events (batch_events) - process each so number_called appears sequentially
     if (type === 'batch_events' && messageData && Array.isArray(messageData.events)) {
-      messageData.events.forEach((evt) => {
+      // winner_declared must run before game_ended (fake winner sets _pendingFakeWinnerDeclaration first)
+      const rank = (t) => {
+        if (t === 'winner_declared') return 0
+        if (t === 'game_ended') return 1
+        return 2
+      }
+      const events = [...messageData.events].sort((a, b) => {
+        const ta = a.type || a.event_type || ''
+        const tb = b.type || b.event_type || ''
+        return rank(ta) - rank(tb)
+      })
+      events.forEach((evt) => {
         const evType = evt.type || evt.event_type
         const evData = evt.data || evt
         if (evType === 'number_called') {
