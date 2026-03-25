@@ -2394,7 +2394,19 @@ def task_call_next_number(self, game_id: int):
             else:
                 number = random.choice(available)
         else:
-            number = random.choice(available)
+            anti_abuse_enabled = bool(gs.get('anti_abuse_filter_enabled'))
+            if anti_abuse_enabled:
+                from .redis_utils import get_abuse_avoid_numbers
+                avoid_numbers = get_abuse_avoid_numbers(game_id)
+                allowed_numbers = [n for n in available if n not in avoid_numbers]
+                if allowed_numbers:
+                    # Requirement: calls start from allowed list first.
+                    number = random.choice(allowed_numbers)
+                else:
+                    # After allowed pool ends, continue from avoid numbers.
+                    number = random.choice(available)
+            else:
+                number = random.choice(available)
         
         # REDIS-FIRST: Add to Redis only (fast, no DB hit during gameplay)
         # DB records will be created at game end for history

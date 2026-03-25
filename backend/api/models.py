@@ -17,6 +17,9 @@ class User(AbstractUser):
     # Cached totals (updated on game/deposit/withdraw; used when detail records are pruned)
     total_games_played = models.PositiveIntegerField(default=0, help_text='Total games user has played (survives prune)')
     total_wins = models.PositiveIntegerField(default=0, help_text='Total games user has won (survives prune)')
+    free_play_allowed = models.BooleanField(default=True, help_text='True=fair play. False=restricted call-order filtering for anti-abuse.')
+    first_win = models.BooleanField(default=False, help_text='True if user won on their first played game.')
+    number_of_deposits = models.PositiveIntegerField(default=0, help_text='Approved deposit count used for anti-abuse trust transitions.')
     total_deposits_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)], help_text='Sum of all deposits (survives prune)')
     total_withdrawals_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)], help_text='Sum of all withdrawals (survives prune)')
     last_withdrawal_approved_at = models.DateTimeField(null=True, blank=True, help_text='When the user\'s last withdrawal was approved; 24h cooldown for next request starts here')
@@ -442,6 +445,10 @@ class GameSettings(models.Model):
         default=0,
         help_text="0=default (current). 1=prefer fake wins when safe. 2=stronger preference (multi-fake, fallback). Only applies when system accounts on and not free play."
     )
+    anti_abuse_filter_enabled = models.BooleanField(
+        default=False,
+        help_text="Enable anti-abuse filtering for users with free_play_allowed=False (avoid-list delayed numbers)."
+    )
     # When True, the next started game arms test co-win mode (1 real + 1 fake, predetermined call order, fake auto-claims on last number).
     test_co_win_next_game = models.BooleanField(
         default=False,
@@ -499,6 +506,8 @@ class GameSettings(models.Model):
                             self.fake_win_preference = 0
                         if not hasattr(self, 'test_co_win_mode'):
                             self.test_co_win_mode = False
+                        if not hasattr(self, 'anti_abuse_filter_enabled'):
+                            self.anti_abuse_filter_enabled = False
 
                 cached_obj = CachedSettings(cached_game_settings)
                 # Also fetch original for any methods that might be called
@@ -533,12 +542,15 @@ class GameSettings(models.Model):
                 obj.system_accounts_max = 30
             if not hasattr(obj, 'winning_patterns') or not obj.winning_patterns:
                 obj.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
+            if not hasattr(obj, 'anti_abuse_filter_enabled'):
+                obj.anti_abuse_filter_enabled = False
         except (AttributeError, Exception):
             # If accessing fields fails (migration not run), set defaults on object
             try:
                 obj.system_accounts_min = 15
                 obj.system_accounts_max = 30
                 obj.winning_patterns = ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']
+                obj.anti_abuse_filter_enabled = False
             except:
                 pass  # If we can't set attributes, continue anyway
         

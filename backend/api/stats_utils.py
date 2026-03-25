@@ -64,6 +64,14 @@ def record_game_completed(game, revenue_amount, winner_type=None):
     # User stats: games_played for every user who had a card; total_wins for winners
     from .models import GameCard, User
     user_ids_played = set(GameCard.objects.filter(game=game).values_list('user_id', flat=True))
+    # Capture pre-increment state for first-win detection
+    pre_users = {}
+    if user_ids_played:
+        for u in User.objects.filter(id__in=user_ids_played).only('id', 'total_games_played', 'total_wins', 'first_win', 'free_play_allowed'):
+            pre_users[u.id] = {
+                'games': int(getattr(u, 'total_games_played', 0) or 0),
+                'wins': int(getattr(u, 'total_wins', 0) or 0),
+            }
     if user_ids_played:
         User.objects.filter(id__in=user_ids_played).update(total_games_played=F('total_games_played') + 1)
     winner_ids = set()
@@ -73,6 +81,14 @@ def record_game_completed(game, revenue_amount, winner_type=None):
         winner_ids.add(u.id)
     if winner_ids:
         User.objects.filter(id__in=winner_ids).update(total_wins=F('total_wins') + 1)
+        # Anti-abuse transition: user won on first played game => first_win=True and free_play_allowed=False
+        first_win_user_ids = []
+        for uid in winner_ids:
+            st = pre_users.get(uid)
+            if st and st['games'] == 0 and st['wins'] == 0:
+                first_win_user_ids.append(uid)
+        if first_win_user_ids:
+            User.objects.filter(id__in=first_win_user_ids).update(first_win=True, free_play_allowed=False)
 
 
 def record_deposit(amount, user, at_date=None):
@@ -91,6 +107,13 @@ def record_deposit(amount, user, at_date=None):
     if user_id := getattr(user, 'id', None):
         from .models import User
         User.objects.filter(id=user_id).update(total_deposits_amount=F('total_deposits_amount') + amount)
+        # Anti-abuse trust transition:
+        # deposit #1 => free_play_allowed=False, deposit #2+ => free_play_allowed=True
+        u = User.objects.filter(id=user_id).only('id', 'number_of_deposits').first()
+        if u:
+            next_count = int(getattr(u, 'number_of_deposits', 0) or 0) + 1
+            allow = next_count >= 2
+            User.objects.filter(id=user_id).update(number_of_deposits=next_count, free_play_allowed=allow)
 
 
 def credit_deposit(amount, user, at_date=None):

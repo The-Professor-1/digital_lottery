@@ -48,7 +48,7 @@
         <!-- Countdown before first number -->
         <div v-if="showStartCountdown" class="start-countdown">
           <div class="countdown-number-small">{{ startCountdownSeconds }}</div>
-          <div class="countdown-text-small">ቁጥሮች ለመጥራት በመጀመር ላይ...</div>
+          <div class="countdown-text-small">{{ startCountdownText }}</div>
         </div>
         <NumberCallDisplay
           v-else
@@ -163,6 +163,7 @@ export default {
       visibilityHandler: null,
       showStartCountdown: false, // Show countdown when game just started
       startCountdownSeconds: 0,
+      startCountdownText: 'ቁጥሮች ለመጥራት በመጀመር ላይ...',
       countdownInterval: null, // Store countdown interval reference
       _countdownInitialized: false, // Flag to prevent countdown from starting multiple times
       isMarkingNumber: false, // Prevent duplicate number marking
@@ -440,16 +441,20 @@ export default {
             }
           }
           
-          // Check if game just started and no numbers called yet - show countdown
+          // Check if game just started and no numbers called yet - show ready(5s) + countdown(3s)
           // Use _countdownInitialized flag to prevent multiple countdown starts
           if (game.status === 'active' && (!game.called_numbers || game.called_numbers.length === 0) && !this.showStartCountdown && !this.countdownInterval && !this._countdownInitialized) {
-            // Game just started, show 3-second countdown
+            // Game just started: first "be ready" for 5s, then countdown 3s
             this._countdownInitialized = true // Mark as initialized to prevent duplicate starts
             this.showStartCountdown = true
-            this.startCountdownSeconds = 3
+            this.startCountdownSeconds = 8
+            this.startCountdownText = 'ጨዋታው ሊጀምር ነው፣ ተዘጋጅ!'
             this.countdownInterval = setInterval(() => {
               if (this.startCountdownSeconds > 1) {
                 this.startCountdownSeconds--
+                if (this.startCountdownSeconds <= 3) {
+                  this.startCountdownText = 'ቁጥሮች ለመጥራት በመጀመር ላይ...'
+                }
               } else {
                 clearInterval(this.countdownInterval)
                 this.countdownInterval = null
@@ -493,7 +498,7 @@ export default {
               if (this.game) this.game.current_call_count = this.calledNumbers.length
             }
 
-            // FIX: Only hide countdown if it has finished (3 seconds passed)
+            // FIX: Only hide countdown if it has finished (8 seconds passed)
             if (game.called_numbers.length > 0 && this.showStartCountdown && this.startCountdownSeconds <= 0) {
               this.showStartCountdown = false
               if (this.countdownInterval) {
@@ -662,6 +667,7 @@ export default {
         // This fixes "only first number shows then stuck" when numbers arrive during or right after countdown.
         if (this.showStartCountdown) {
           this.showStartCountdown = false
+          this.startCountdownText = 'ቁጥሮች ለመጥራት በመጀመር ላይ...'
           if (this.countdownInterval) {
             clearInterval(this.countdownInterval)
             this.countdownInterval = null

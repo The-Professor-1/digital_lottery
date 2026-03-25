@@ -638,6 +638,10 @@
               <label><input v-model="settings.test_co_win_next_game" type="checkbox" /> Test co-win next game (QA)</label>
               <small class="form-hint">Arms the next started game: skip min fake fill, predetermined calls so 1 real + 1 fake can tie on the same last number; fake auto-claims; you claim as real. Set system min/max to 1 first. Banner shows both; payout uses real-only split.</small>
             </div>
+            <div class="form-group checkbox">
+              <label><input v-model="settings.anti_abuse_filter_enabled" type="checkbox" /> Anti-abuse filter enabled</label>
+              <small class="form-hint">When enabled, users with free_play_allowed=false have selected cell numbers delayed to the late-call pool.</small>
+            </div>
             <div class="form-group winning-patterns">
               <label>Winning Patterns</label>
               <div class="pattern-checkboxes">
@@ -958,6 +962,7 @@ export default {
         disable_bot_withdraw: false,
         fake_win_preference: 0,
         test_co_win_next_game: false,
+        anti_abuse_filter_enabled: false,
         support_phone: '',
         instruction_text: '',
         telebirr_verify_api_key: '',

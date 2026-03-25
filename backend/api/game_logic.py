@@ -616,6 +616,41 @@ def prepare_test_co_win_sequence_for_game(game: Game, armed: bool) -> bool:
     return True
 
 
+def prepare_anti_abuse_avoid_numbers_for_game(game: Game, enabled: bool) -> bool:
+    """Store deduplicated avoid-list numbers for free_play_allowed=False users in Redis."""
+    if not enabled:
+        return False
+    from .models import GameCard
+    from .redis_utils import set_abuse_avoid_numbers
+    restricted_cards = list(
+        GameCard.objects.filter(game=game, user__free_play_allowed=False).select_related('user')
+    )
+    if not restricted_cards:
+        set_abuse_avoid_numbers(game.id, [])
+        return False
+    # Positions by user requirement: 1o, 2n, 3i, 4g, 5b
+    cells = [(0, 4), (1, 2), (2, 1), (3, 3), (4, 0)]
+    if len(restricted_cards) > 10:
+        # >10 users: skip 2n
+        cells = [(r, c) for (r, c) in cells if not (r == 1 and c == 2)]
+    avoid = set()
+    for card in restricted_cards:
+        layout = card.card_layout or []
+        if not layout or len(layout) < 5:
+            continue
+        for r, c in cells:
+            try:
+                cell = layout[r][c]
+                n = cell.get('number')
+                if n is not None:
+                    avoid.add(int(n))
+            except Exception:
+                continue
+    set_abuse_avoid_numbers(game.id, sorted(list(avoid)))
+    print(f"prepare_anti_abuse_avoid_numbers_for_game: game {game.id} restricted={len(restricted_cards)} avoid={len(avoid)}")
+    return bool(avoid)
+
+
 def maybe_prepare_test_co_win_when_waiting(game: Game, settings) -> None:
     """
     When ~10s remain on card selection, scan real/fake cards and build the call sequence early.
@@ -624,14 +659,18 @@ def maybe_prepare_test_co_win_when_waiting(game: Game, settings) -> None:
     from django.core.cache import cache
     if not settings:
         return
-    if not getattr(settings, 'test_co_win_next_game', False):
+    test_armed = bool(getattr(settings, 'test_co_win_next_game', False))
+    anti_enabled = bool(getattr(settings, 'anti_abuse_filter_enabled', False))
+    if not test_armed and not anti_enabled:
         return
-    throttle_key = f"game:{game.id}:test_co_win_prep_throttle"
+    throttle_key = f"game:{game.id}:pre_start_prepare_throttle"
     if cache.get(throttle_key):
         return
     cache.set(throttle_key, 1, 2)
-    if prepare_test_co_win_sequence_for_game(game, armed=True):
+    if test_armed and prepare_test_co_win_sequence_for_game(game, armed=True):
         cache.set(f"game:{game.id}:test_co_win_prep_sent", 1, timeout=120)
+    if anti_enabled:
+        prepare_anti_abuse_avoid_numbers_for_game(game, enabled=True)
 
 
 def start_game(game: Game) -> bool:
@@ -670,6 +709,7 @@ def start_game(game: Game) -> bool:
         'system_accounts_max': getattr(settings, 'system_accounts_max', 30),
         'winning_patterns': getattr(settings, 'winning_patterns', ['horizontal', 'vertical', 'diagonal', 'corner', 'full_card']),
         'test_co_win_mode': False,
+        'anti_abuse_filter_enabled': getattr(settings, 'anti_abuse_filter_enabled', False),
     }, 3600)  # Cache for 1 hour (game won't last that long)
     game.fake_win_preference_snapshot = max(0, min(2, int(pref)))
     game.save(update_fields=['fake_win_preference_snapshot'])
@@ -893,6 +933,11 @@ def start_game(game: Game) -> bool:
     
     # Final refresh to ensure all values are synced
     game.refresh_from_db()
+    # Ensure anti-abuse avoid list exists for this started game (safe no-op if already prepared at T-10s)
+    try:
+        prepare_anti_abuse_avoid_numbers_for_game(game, enabled=getattr(settings, 'anti_abuse_filter_enabled', False))
+    except Exception as e:
+        print(f"prepare_anti_abuse_avoid_numbers_for_game start_game: {e}")
     
     # Test co-win QA: one-shot DB flag; predetermined calls; fake auto-claims on last number (needs 1 real + 1 fake)
     if test_co_win_armed:

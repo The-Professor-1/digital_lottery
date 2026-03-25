@@ -1290,6 +1290,7 @@ def game_settings_api(request):
             'disable_bot_withdraw': getattr(settings, 'disable_bot_withdraw', False),
             'fake_win_preference': getattr(settings, 'fake_win_preference', 0),
             'test_co_win_next_game': getattr(settings, 'test_co_win_next_game', False),
+            'anti_abuse_filter_enabled': getattr(settings, 'anti_abuse_filter_enabled', False),
         }
         try:
             response_data['users_created_today'] = _get_users_created_today_count()
@@ -1403,6 +1404,8 @@ def game_settings_api(request):
                 settings_obj.fake_win_preference = max(0, min(2, val))  # 0, 1, or 2
             if 'test_co_win_next_game' in data:
                 settings_obj.test_co_win_next_game = bool(data['test_co_win_next_game'])
+            if 'anti_abuse_filter_enabled' in data:
+                settings_obj.anti_abuse_filter_enabled = bool(data['anti_abuse_filter_enabled'])
             
             settings_obj.save()
             

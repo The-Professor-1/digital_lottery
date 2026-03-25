@@ -363,6 +363,7 @@ def cleanup_game_redis_keys(game_id):
             get_test_co_win_completing_key(game_id),
             get_test_co_win_fake_card_key(game_id),
             get_test_co_win_active_key(game_id),
+            get_abuse_avoid_set_key(game_id),
         ]
         for key in keys_to_delete:
             r.delete(key)
@@ -385,6 +386,43 @@ def get_test_co_win_fake_card_key(game_id: int) -> str:
 def get_test_co_win_active_key(game_id: int) -> str:
     """Celery workers must read test mode from Redis (Django cache is often not shared with Celery)."""
     return f"game:{game_id}:test_co_win_active"
+
+
+def get_abuse_avoid_set_key(game_id: int) -> str:
+    return f"game:{game_id}:abuse_avoid_set"
+
+
+def set_abuse_avoid_numbers(game_id: int, numbers: list) -> None:
+    r = get_redis_client()
+    if not r:
+        return
+    try:
+        k = get_abuse_avoid_set_key(game_id)
+        r.delete(k)
+        if numbers:
+            for n in numbers:
+                r.sadd(k, str(int(n)))
+        r.expire(k, 3600)
+    except Exception as e:
+        print(f"set_abuse_avoid_numbers error: {e}")
+
+
+def get_abuse_avoid_numbers(game_id: int) -> set:
+    r = get_redis_client()
+    if not r:
+        return set()
+    try:
+        vals = r.smembers(get_abuse_avoid_set_key(game_id)) or set()
+        out = set()
+        for v in vals:
+            try:
+                out.add(int(v))
+            except Exception:
+                pass
+        return out
+    except Exception as e:
+        print(f"get_abuse_avoid_numbers error: {e}")
+        return set()
 
 
 def set_test_co_win_active_redis(game_id: int, active: bool) -> None:
