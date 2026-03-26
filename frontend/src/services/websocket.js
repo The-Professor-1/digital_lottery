@@ -102,8 +102,6 @@ export class WebSocketService {
           this.emit('game_started', evData)
         } else if (evType === 'card_selected') {
           this.emit('card_selected', evData)
-        } else if (evType === 'game_state_sync') {
-          this.emit('game_state_sync', evData)
         }
       })
       return
@@ -130,9 +128,6 @@ export class WebSocketService {
         break
       case 'game_cancelled':
         this.emit('game_cancelled', messageData)
-        break
-      case 'game_state_sync':
-        this.emit('game_state_sync', messageData)
         break
       default:
         this.emit('message', data)

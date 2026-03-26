@@ -633,49 +633,10 @@ export default {
         console.error('Error loading game (non-404):', error)
       }
     },
-    /**
-     * Periodic server snapshot (every ~10s): only patch gaps from latency/missed WS — does not drive UI.
-     * Does not replace game object, winner flow, or banners; same merge idea as loadGame for called numbers.
-     */
-    mergeGameStateFromSync(payload) {
-      if (!payload || !payload.game) return
-      if (this._pendingFakeWinnerDeclaration) return
-      if (this._winnerBannerActive) return
-      const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : Infinity
-      const isBannerShowing = this.showWinnerBanner || this._winnerBannerActive
-      if (isBannerShowing && timeSinceBannerShown < 8000) return
-      if (this.game && payload.game.id !== this.game.id) return
-      const game = payload.game
-
-      if (game.called_numbers && Array.isArray(game.called_numbers)) {
-        const serverNums = game.called_numbers.map((cn) =>
-          typeof cn === 'object' && cn !== null ? cn.number : cn
-        )
-        const merged = [...this.calledNumbers]
-        for (const n of serverNums) {
-          if (!merged.includes(n)) merged.push(n)
-        }
-        if (merged.length !== this.calledNumbers.length) {
-          this.calledNumbers = merged
-        }
-        if (this.game) {
-          this.game.current_call_count = Math.max(
-            this.calledNumbers.length,
-            this.game.current_call_count || 0,
-            game.current_call_count != null ? game.current_call_count : 0
-          )
-        }
-      } else if (this.game && game.current_call_count != null) {
-        const n = Math.max(this.game.current_call_count || 0, game.current_call_count, this.calledNumbers.length)
-        if (n > (this.game.current_call_count || 0)) {
-          this.game.current_call_count = n
-        }
-      }
-    },
     setupWebSocket() {
       if (!this.game) return
-      // Room separation: player = has card, watcher = spectating (see docs/WEBSOCKET_EVENTS.md)
-      this.ws = new WebSocketService(this.game.id, { role: this.userCard ? 'player' : 'watcher' })
+      // Room separation: game view = player room (see docs/WEBSOCKET_EVENTS.md)
+      this.ws = new WebSocketService(this.game.id, { role: 'player' })
       
       this.ws.on('connected', () => {
         console.log('WebSocket connected successfully')
@@ -697,10 +658,6 @@ export default {
         this.wsConnected = false
         // Resume polling when WebSocket disconnects - fallback to HTTP polling
         this.startPolling()
-      })
-
-      this.ws.on('game_state_sync', (payload) => {
-        this.mergeGameStateFromSync(payload)
       })
       
       this.ws.on('number_called', (data) => {

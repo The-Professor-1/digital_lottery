@@ -3644,33 +3644,3 @@ def task_adjust_fake_users_before_game_start(self, game_id: int):
         traceback.print_exc()
         return {'error': str(e), 'stopped': True}
 
-
-@shared_task(bind=True, name='api.tasks.task_broadcast_active_game_state_sync')
-def task_broadcast_active_game_state_sync(self):
-    """
-    Celery Beat (every 10s): broadcast full game snapshot for each active game so clients
-    recover from flaky WebSocket delivery.
-    """
-    import logging
-    from django.db.models import Prefetch
-    logger = logging.getLogger(__name__)
-    try:
-        from .models import CalledNumber
-        games = Game.objects.filter(status__in=['active', 'waiting']).select_related('winner').prefetch_related(
-            'gamecards__user',
-            'winners',
-            Prefetch('called_numbers', queryset=CalledNumber.objects.all().order_by('called_at')),
-        )
-        from .redis_utils import sync_spectator_count_to_db
-        from .serializers import GameSerializer
-        for game in games:
-            try:
-                sync_spectator_count_to_db(game.id)
-                game.refresh_from_db()
-                payload = GameSerializer(game).data
-                broadcast_to_game_rooms(game.id, 'game_state_sync', {'game': payload})
-            except Exception as e:
-                logger.exception("game_state_sync failed for game %s: %s", game.id, e)
-    except Exception as e:
-        logger.exception("task_broadcast_active_game_state_sync: %s", e)
-

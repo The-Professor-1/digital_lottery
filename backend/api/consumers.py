@@ -1,22 +1,8 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
-from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 
 from api.channels import room_players, room_watchers, room_legacy
-
-
-@database_sync_to_async
-def _ws_connection_incr(game_id):
-    from api.redis_utils import incr_game_ws_connection
-    incr_game_ws_connection(int(game_id))
-
-
-@database_sync_to_async
-def _ws_connection_decr(game_id):
-    from api.redis_utils import decr_game_ws_connection
-    decr_game_ws_connection(int(game_id))
-
 
 User = get_user_model()
 
@@ -46,16 +32,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-        # One increment per WebSocket (any role); spectators = connections - real GameCards (periodic sync).
-        self._presence_tracked = True
-        await _ws_connection_incr(self.game_id)
-
     async def disconnect(self, close_code):
-        if getattr(self, '_presence_tracked', False):
-            try:
-                await _ws_connection_decr(self.game_id)
-            except Exception:
-                pass
         # Leave all groups we may have joined (players, watchers, legacy)
         for group_name in (room_players(self.game_id), room_watchers(self.game_id), room_legacy(self.game_id)):
             await self.channel_layer.group_discard(group_name, self.channel_name)
@@ -146,9 +123,3 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'type': evt.get('type', 'unknown'),
                 'data': evt.get('data', {})
             }))
-
-    async def game_state_sync(self, event):
-        await self.send(text_data=json.dumps({
-            'type': 'game_state_sync',
-            'data': event['data']
-        }))

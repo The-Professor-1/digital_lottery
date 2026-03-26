@@ -2013,7 +2013,6 @@ def admin_dashboard_api(request):
         today_games_data.append({
             'id': game.id,
             'players': game.total_players,
-            'spectator_count': getattr(game, 'spectator_count', 0) or 0,
             'bid_amount': float(game.bet_amount),
             'automatic_count': 0,  # Removed expensive calculation
             'manual_count': 0,  # Removed expensive calculation
@@ -2133,7 +2132,6 @@ def admin_dashboard_api(request):
             'id': game.id,
             'status': game.status,
             'players': game.total_players,
-            'spectator_count': getattr(game, 'spectator_count', 0) or 0,
             'derash_amount': float(game.derash_amount),
         })
     
@@ -2274,7 +2272,6 @@ def admin_dashboard_api(request):
                 'id': g.id,
                 'status': g.status,
                 'players': g.total_players,
-                'spectator_count': getattr(g, 'spectator_count', 0) or 0,
                 'bid_amount': float(g.bet_amount),
                 'derash_amount': float(g.derash_amount),
                 'winner_phones': list({(w.phone_number or 'N/A') for w in [g.winner] + list(g.winners.all()) if w}),
@@ -2411,7 +2408,6 @@ def second_admin_dashboard_api(request):
             'id': game.id,
             'status': game.status,
             'players': game.total_players,
-            'spectator_count': getattr(game, 'spectator_count', 0) or 0,
             'derash_amount': float(game.derash_amount),
         })
     
@@ -2448,7 +2444,6 @@ def second_admin_dashboard_api(request):
         today_games_data.append({
             'id': game.id,
             'players': game.total_players,
-            'spectator_count': getattr(game, 'spectator_count', 0) or 0,
             'bid_amount': float(game.bet_amount),
             'automatic_count': 0,  # Removed expensive calculation
             'manual_count': 0,  # Removed expensive calculation

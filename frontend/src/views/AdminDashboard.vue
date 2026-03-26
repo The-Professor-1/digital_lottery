@@ -438,14 +438,13 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>ID</th><th>Status</th><th>Players</th><th>Spectators</th><th>Derash</th><th>Actions</th></tr>
+              <tr><th>ID</th><th>Status</th><th>Players</th><th>Derash</th><th>Actions</th></tr>
             </thead>
             <tbody>
               <tr v-for="g in (data.active_games || [])" :key="'ag-' + g.id">
                 <td>{{ g.id }}</td>
                 <td>{{ g.status }}</td>
                 <td>{{ g.players }}</td>
-                <td>{{ g.spectator_count ?? 0 }}</td>
                 <td>{{ formatCurrency(g.derash_amount) }}</td>
                 <td>
                   <template v-if="g.status === 'waiting'">
@@ -473,21 +472,20 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>ID</th><th>Time</th><th>Players</th><th>Spectators</th><th>Bid</th><th>Real</th><th>System</th><th>Status</th></tr>
+              <tr><th>ID</th><th>Time</th><th>Players</th><th>Bid</th><th>Real</th><th>System</th><th>Status</th></tr>
             </thead>
             <tbody>
               <tr v-for="g in (data.today_games || [])" :key="'tg-' + g.id">
                 <td>{{ g.id }}</td>
                 <td>{{ g.created_at }}</td>
                 <td>{{ g.players }}</td>
-                <td>{{ g.spectator_count ?? 0 }}</td>
                 <td>{{ formatCurrency(g.bid_amount) }}</td>
                 <td>{{ g.real_users }}</td>
                 <td>{{ g.system_users }}</td>
                 <td>{{ g.status }}</td>
               </tr>
               <tr v-if="!(data.today_games && data.today_games.length)">
-                <td colspan="8">No games today</td>
+                <td colspan="7">No games today</td>
               </tr>
             </tbody>
           </table>
@@ -835,14 +833,13 @@
         <div v-if="showGameDetails" class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>ID</th><th>Status</th><th>Players</th><th>Spectators</th><th>Bid</th><th>Derash</th><th>Winner</th><th>Called</th><th>Created</th></tr>
+              <tr><th>ID</th><th>Status</th><th>Players</th><th>Bid</th><th>Derash</th><th>Winner</th><th>Called</th><th>Created</th></tr>
             </thead>
             <tbody>
               <tr v-for="g in (data.games_detail || [])" :key="'gd-' + g.id">
                 <td>{{ g.id }}</td>
                 <td>{{ g.status }}</td>
                 <td>{{ g.players }}</td>
-                <td>{{ g.spectator_count ?? 0 }}</td>
                 <td>{{ formatCurrency(g.bid_amount) }}</td>
                 <td>{{ formatCurrency(g.derash_amount) }}</td>
                 <td>{{ (g.winner_phones || []).join(', ') || '-' }}</td>
@@ -850,7 +847,7 @@
                 <td>{{ g.created_at }}</td>
               </tr>
               <tr v-if="!(data.games_detail && data.games_detail.length)">
-                <td colspan="9">No games found</td>
+                <td colspan="8">No games found</td>
               </tr>
             </tbody>
           </table>

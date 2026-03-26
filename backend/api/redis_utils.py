@@ -364,8 +364,6 @@ def cleanup_game_redis_keys(game_id):
             get_test_co_win_fake_card_key(game_id),
             get_test_co_win_active_key(game_id),
             get_abuse_avoid_set_key(game_id),
-            get_game_ws_connections_key(game_id),
-            _legacy_spectator_redis_key(game_id),
         ]
         for key in keys_to_delete:
             r.delete(key)
@@ -425,80 +423,6 @@ def get_abuse_avoid_numbers(game_id: int) -> set:
     except Exception as e:
         print(f"get_abuse_avoid_numbers error: {e}")
         return set()
-
-
-def get_game_ws_connections_key(game_id: int) -> str:
-    """Live WebSocket client count for this game (one per browser tab; any role)."""
-    return f"game:{game_id}:ws_connections"
-
-
-def _legacy_spectator_redis_key(game_id: int) -> str:
-    """Old key; removed from logic but deleted on cleanup."""
-    return f"game:{game_id}:spectator_count"
-
-
-def incr_game_ws_connection(game_id: int) -> int:
-    r = get_redis_client()
-    if not r:
-        return 0
-    try:
-        k = get_game_ws_connections_key(game_id)
-        v = int(r.incr(k))
-        r.expire(k, 86400)
-        return v
-    except Exception as e:
-        print(f"incr_game_ws_connection error: {e}")
-        return 0
-
-
-def decr_game_ws_connection(game_id: int) -> int:
-    r = get_redis_client()
-    if not r:
-        return 0
-    try:
-        k = get_game_ws_connections_key(game_id)
-        v = int(r.decr(k))
-        if v < 0:
-            r.set(k, 0)
-            return 0
-        r.expire(k, 86400)
-        return v
-    except Exception as e:
-        print(f"decr_game_ws_connection error: {e}")
-        return 0
-
-
-def get_game_ws_connections_redis(game_id: int) -> int:
-    r = get_redis_client()
-    if not r:
-        return 0
-    try:
-        v = r.get(get_game_ws_connections_key(game_id))
-        return int(v) if v is not None else 0
-    except Exception as e:
-        print(f"get_game_ws_connections_redis error: {e}")
-        return 0
-
-
-def sync_spectator_count_to_db(game_id: int) -> bool:
-    """
-    Spectators = max(0, ws_connections - real_game_cards).
-    Fake players have no WebSocket; we only subtract human GameCard rows.
-    """
-    from .models import Game, GameCard
-    ws = get_game_ws_connections_redis(game_id)
-    try:
-        real_cards = GameCard.objects.filter(game_id=game_id).count()
-    except Exception as e:
-        print(f"sync_spectator_count_to_db card count error: {e}")
-        real_cards = 0
-    spectators = max(0, ws - real_cards)
-    try:
-        Game.objects.filter(id=game_id, status__in=['waiting', 'active']).update(spectator_count=spectators)
-        return True
-    except Exception as e:
-        print(f"sync_spectator_count_to_db error: {e}")
-        return False
 
 
 def set_test_co_win_active_redis(game_id: int, active: bool) -> None:
@@ -1797,8 +1721,6 @@ def cleanup_game_live_state(game_id: int):
             f"game:{game_id}:bingo_window",
             f"game:{game_id}:bingo_winners",
             f"game:{game_id}:bingo_claim_lock",
-            get_game_ws_connections_key(game_id),
-            _legacy_spectator_redis_key(game_id),
         ]
         
         # Delete specific keys

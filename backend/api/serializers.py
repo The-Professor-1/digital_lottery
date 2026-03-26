@@ -46,7 +46,7 @@ class GameSerializer(serializers.ModelSerializer):
             'started_at', 'completed_at', 'winner', 'created_at', 'updated_at',
             'gamecards', 'called_numbers', 'total_players', 'total_derash', 'total_cards',
             'card_selection_timer', 'automatic_mode_enabled', 'selection_remaining_seconds',
-            'spectator_count', 'avoid_list_numbers',
+            'avoid_list_numbers',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
     
