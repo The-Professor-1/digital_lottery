@@ -941,11 +941,6 @@ def start_game(game: Game) -> bool:
     game.started_at = timezone.now()
     game.save()
     
-    # Reset spectator tracking for this game (new active session)
-    from .redis_utils import reset_game_spectator_count_redis
-    reset_game_spectator_count_redis(game.id)
-    Game.objects.filter(id=game.id).update(spectator_count=0)
-    
     # PHASE 4 OPTIMIZATION: Sync game state to Redis immediately when game starts
     from .redis_utils import sync_game_state_to_redis
     sync_game_state_to_redis(game)

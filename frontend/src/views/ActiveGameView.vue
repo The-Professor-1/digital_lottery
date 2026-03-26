@@ -633,22 +633,43 @@ export default {
         console.error('Error loading game (non-404):', error)
       }
     },
+    /**
+     * Periodic server snapshot (every ~10s): only patch gaps from latency/missed WS — does not drive UI.
+     * Does not replace game object, winner flow, or banners; same merge idea as loadGame for called numbers.
+     */
     mergeGameStateFromSync(payload) {
       if (!payload || !payload.game) return
-      if (this._pendingFakeWinnerDeclaration || this._winnerBannerActive) return
+      if (this._pendingFakeWinnerDeclaration) return
+      if (this._winnerBannerActive) return
+      const timeSinceBannerShown = this.winnerBannerShownAt ? Date.now() - this.winnerBannerShownAt : Infinity
+      const isBannerShowing = this.showWinnerBanner || this._winnerBannerActive
+      if (isBannerShowing && timeSinceBannerShown < 8000) return
       if (this.game && payload.game.id !== this.game.id) return
       const game = payload.game
-      this.game = { ...this.game, ...game }
+
       if (game.called_numbers && Array.isArray(game.called_numbers)) {
-        const newCalledNumbers = game.called_numbers.map((cn) =>
+        const serverNums = game.called_numbers.map((cn) =>
           typeof cn === 'object' && cn !== null ? cn.number : cn
         )
-        const merged = [...newCalledNumbers]
-        for (const n of this.calledNumbers) {
+        const merged = [...this.calledNumbers]
+        for (const n of serverNums) {
           if (!merged.includes(n)) merged.push(n)
         }
-        this.calledNumbers = merged
-        if (this.game) this.game.current_call_count = this.calledNumbers.length
+        if (merged.length !== this.calledNumbers.length) {
+          this.calledNumbers = merged
+        }
+        if (this.game) {
+          this.game.current_call_count = Math.max(
+            this.calledNumbers.length,
+            this.game.current_call_count || 0,
+            game.current_call_count != null ? game.current_call_count : 0
+          )
+        }
+      } else if (this.game && game.current_call_count != null) {
+        const n = Math.max(this.game.current_call_count || 0, game.current_call_count, this.calledNumbers.length)
+        if (n > (this.game.current_call_count || 0)) {
+          this.game.current_call_count = n
+        }
       }
     },
     setupWebSocket() {

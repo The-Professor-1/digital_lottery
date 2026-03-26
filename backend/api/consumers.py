@@ -7,15 +7,16 @@ from api.channels import room_players, room_watchers, room_legacy
 
 
 @database_sync_to_async
-def _spectator_incr(game_id):
-    from api.redis_utils import incr_game_spectator_count
-    incr_game_spectator_count(int(game_id))
+def _ws_connection_incr(game_id):
+    from api.redis_utils import incr_game_ws_connection
+    incr_game_ws_connection(int(game_id))
 
 
 @database_sync_to_async
-def _spectator_decr(game_id):
-    from api.redis_utils import decr_game_spectator_count
-    decr_game_spectator_count(int(game_id))
+def _ws_connection_decr(game_id):
+    from api.redis_utils import decr_game_ws_connection
+    decr_game_ws_connection(int(game_id))
+
 
 User = get_user_model()
 
@@ -45,11 +46,16 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
-        self._spectator_tracked = role == 'watcher'
-        if self._spectator_tracked:
-            await _spectator_incr(self.game_id)
+        # One increment per WebSocket (any role); spectators = connections - real GameCards (periodic sync).
+        self._presence_tracked = True
+        await _ws_connection_incr(self.game_id)
 
     async def disconnect(self, close_code):
+        if getattr(self, '_presence_tracked', False):
+            try:
+                await _ws_connection_decr(self.game_id)
+            except Exception:
+                pass
         # Leave all groups we may have joined (players, watchers, legacy)
         for group_name in (room_players(self.game_id), room_watchers(self.game_id), room_legacy(self.game_id)):
             await self.channel_layer.group_discard(group_name, self.channel_name)
@@ -146,4 +152,3 @@ class GameConsumer(AsyncWebsocketConsumer):
             'type': 'game_state_sync',
             'data': event['data']
         }))
-

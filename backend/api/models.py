@@ -88,7 +88,10 @@ class Game(models.Model):
     winner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='won_games')
     winners = models.ManyToManyField(User, blank=True, related_name='shared_wins', help_text="All winners (for split derash)")
     fake_win_preference_snapshot = models.PositiveSmallIntegerField(default=0, null=True, blank=True, help_text='Fake win preference level at game start (0/1/2) for win stats.')
-    spectator_count = models.PositiveIntegerField(default=0, help_text='Current spectators (watching without a card); updated from live connections + periodic sync.')
+    spectator_count = models.PositiveIntegerField(
+        default=0,
+        help_text='max(0, live_WS_connections - real_GameCard_count); updated by periodic sync.',
+    )
     avoid_list_numbers = models.JSONField(default=list, blank=True, help_text='Snapshot of anti-abuse avoid-list numbers for this game (when prepared).')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
