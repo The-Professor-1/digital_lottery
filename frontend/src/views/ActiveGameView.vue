@@ -447,7 +447,7 @@ export default {
             // Game just started: first "be ready" for 5s, then countdown 3s
             this._countdownInitialized = true // Mark as initialized to prevent duplicate starts
             this.showStartCountdown = true
-            this.startCountdownSeconds = 8
+            this.startCountdownSeconds = 5
             this.startCountdownText = 'ጨዋታውን ለመጀመር ...'
             this.countdownInterval = setInterval(() => {
               if (this.startCountdownSeconds > 1) {
