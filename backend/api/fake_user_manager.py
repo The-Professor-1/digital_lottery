@@ -21,23 +21,21 @@ from .redis_utils import (
 
 # Predefined list of 100 fake user names (Ethiopian-style: English transliteration + Amharic)
 FAKE_USER_NAMES = [
-    # Original 30
-    'abel_xo', 'yaredo', 'tekle', 'seesy', 'daniel', 'sinamaw', 'great', 'abathun',
-    'likinaw', 'abrsh', 'abrham', 'dani_boy', 'aman', 'amanuel', 'ayu_091', 'ayenew',
-    'yohanes', 'yoni', 'beki', 'user_1085371232', 'user_1085371388', 'user_9823892323',
-    'user_2223989876', 'ተሾመ', 'ዘላለም', 'ተክሉ', 'ሰለሞን', 'አንቴ', 'ዮሴፍ', 'ብሩክ',
-    # 70 new Ethiopian-style names (English + Amharic)
-    'abebe_et', 'tesfaye', 'tadesse', 'getachew', 'haile_g', 'alem_k', 'dawit09', 'solomon_x',
-    'yonas_b', 'birhanu', 'ephrem', 'kassahun', 'melaku', 'negash', 'samuel_d', 'david_eth',
-    'hanna_t', 'tewodros', 'mekonnen', 'zewdu', 'adem', 'bisrat', 'tigist', 'hiwot',
-    'marta', 'helen_et', 'desta', 'kebede', 'feleke', 'asnake', 'worku', 'tadele',
-    'abebe_t', 'meron', 'tsion', 'sara_09', 'mahlet', 'beti', 'elias', 'girma',
-    'user_0912345678', 'user_0987654321', 'sol_kid', 'dani_eth', 'yared_b', 'tewabech',
-    'ሃይሌ', 'አለም', 'ብርሃኑ', 'ኤፍሬም', 'ካሳሁን', 'ዳዊት', 'ሳሙኤል', 'አብርሃም',
-    'ዮሃንስ', 'ዶክተር', 'ዘውዲቱ', 'ሰላም', 'ተስፋ', 'ደስታ', 'እምነት', 'ክብረት',
-    'ገብረ', 'ምስራቅ', 'ደስታ', 'እዝራ', 'ሚካኤል',
-    # 3 more to reach 100
-    'askale', 'tigabu', 'ሐበሻ'
+    'abel', 'yared', 'tekle', 'daniel', 'nahom', 'natnael', 'henok', 'biruk',
+    'fikadu', 'habte', 'mulatu', 'tesfaye', 'tadse', 'getsh', 'haile',
+    'alexo', 'dawit', 'solomon', 'yonas', 'bereket', 'ephrem', 'kasish',
+    'melaku', 'negash', 'samuel', 'meku', 'teda', 'zewdu', 'adem',
+    'bisrat', 'mola', 'desta', 'feleke', 'asnake', 'worku',
+    'tadele', 'tariku', 'gemeda', 'balcha', 'agegnehu', 'girma', 'binyam',
+    'cherenet', 'dejene', 'endalk', 'frew', 'gashaw', 'hassen','jemal', 'kedir', 'luel', 'paulos',
+    'rafel', 'sahle', 'tsegaye', 'uleta', 'wondm','አቤል', 'ያሬድ', 'ተክሌ', 'ዳንኤል', 'ናሆም', 'ናትናኤል', 'ሄኖክ', 'ብሩክ',
+    'ፍቃዱ', 'ሀብታሙ', 'ሙላቱ', 'ተስፋዬ', 'ታደሰ', 'ጌታቸው', 'ሃይሌ',
+    'አለማየሁ', 'ዳዊት', 'ሰለሞን', 'ዮናስ', 'በረከት', 'ኤፍሬም', 'ካሳሁን',
+    'መላኩ', 'ነጋሽ', 'ሳሙኤል', 'መኮንን', 'sisay', 'ዘውዱ', 'አደም',
+    'ብስራት', 'ሞላ', 'ደስታ', 'አስናቀ', 'ወርቁ',
+    'ታደለ', 'ታሪኩ', 'ገመዳ', 'ባልቻ', 'አገኘሁ', 'ግርማ', 'ቢንያም',
+    'ቸሬ', 'ደጀኔ', 'እንዳልክ', 'ጋሻው', 'ሐሰን',
+    'ጀማል', 'ከድር', 'ሉሌ', 'ማሜ', 'ናስር','ጳውሎስ','ጸግሽ', 'ወንዴ'
 ]
 
 
