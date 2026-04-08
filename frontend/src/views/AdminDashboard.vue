@@ -655,6 +655,19 @@
               <label><input v-model="settings.anti_abuse_filter_enabled" type="checkbox" /> Anti-abuse filter enabled</label>
               <small class="form-hint">When enabled, users with free_play_allowed=false have selected cell numbers delayed to the late-call pool.</small>
             </div>
+            <h3 class="settings-subsection">Free play (per user)</h3>
+            <div class="form-group checkbox">
+              <label><input v-model="settings.default_free_play_for_new_users" type="checkbox" /> Default free play for new registrations</label>
+              <small class="form-hint">When checked, first-time phone registration sets free play ON. When unchecked, new users start with free play OFF (you can enable per user in search).</small>
+            </div>
+            <div class="form-group checkbox">
+              <label><input v-model="settings.allow_free_play_after_real_win" type="checkbox" /> Allow free play after real win</label>
+              <small class="form-hint">When checked, winning does not turn free play off. When unchecked, every real win sets free play OFF after payout (deposits also set free play OFF).</small>
+            </div>
+            <div class="form-group checkbox">
+              <label><input v-model="enableFreePlayForAllUsers" type="checkbox" /> Enable free play for all users (one-time on save)</label>
+              <small class="form-hint">When checked and you save, sets free play ON for every user. Leave unchecked for normal saves.</small>
+            </div>
             <div class="form-group winning-patterns">
               <label>Winning Patterns</label>
               <div class="pattern-checkboxes">
@@ -977,6 +990,8 @@ export default {
         fake_win_preference: 0,
         test_co_win_next_game: false,
         anti_abuse_filter_enabled: false,
+        default_free_play_for_new_users: true,
+        allow_free_play_after_real_win: true,
         support_phone: '',
         instruction_text: '',
         telebirr_verify_api_key: '',
@@ -986,6 +1001,7 @@ export default {
       settingsSaving: false,
       settingsMessage: '',
       settingsError: false,
+      enableFreePlayForAllUsers: false,
       callNumberInput: {},
       restartMessage: '',
       restartRefund: false,
@@ -1384,9 +1400,11 @@ export default {
         const payload = {
           ...this.settings,
           deposit_accounts: this.depositAccounts,
-          winning_patterns: Array.isArray(this.settings.winning_patterns) ? this.settings.winning_patterns : []
+          winning_patterns: Array.isArray(this.settings.winning_patterns) ? this.settings.winning_patterns : [],
+          enable_free_play_for_all_users: this.enableFreePlayForAllUsers
         }
         await updateGameSettings(payload)
+        this.enableFreePlayForAllUsers = false
         this.settingsMessage = 'Settings saved.'
       } catch (err) {
         this.settingsError = true

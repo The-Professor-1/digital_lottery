@@ -81,14 +81,18 @@ def record_game_completed(game, revenue_amount, winner_type=None):
         winner_ids.add(u.id)
     if winner_ids:
         User.objects.filter(id__in=winner_ids).update(total_wins=F('total_wins') + 1)
-        # Anti-abuse transition: user won on first played game => first_win=True and free_play_allowed=False
+        from .models import GameSettings
+        gs = GameSettings.get_settings()
+        allow_fp_after_win = getattr(gs, 'allow_free_play_after_real_win', True)
         first_win_user_ids = []
         for uid in winner_ids:
             st = pre_users.get(uid)
             if st and st['games'] == 0 and st['wins'] == 0:
                 first_win_user_ids.append(uid)
+        if not allow_fp_after_win:
+            User.objects.filter(id__in=winner_ids).update(free_play_allowed=False)
         if first_win_user_ids:
-            User.objects.filter(id__in=first_win_user_ids).update(first_win=True, free_play_allowed=False)
+            User.objects.filter(id__in=first_win_user_ids).update(first_win=True)
 
 
 def record_deposit(amount, user, at_date=None):
@@ -107,13 +111,11 @@ def record_deposit(amount, user, at_date=None):
     if user_id := getattr(user, 'id', None):
         from .models import User
         User.objects.filter(id=user_id).update(total_deposits_amount=F('total_deposits_amount') + amount)
-        # Anti-abuse trust transition:
-        # deposit #1 => free_play_allowed=False, deposit #2+ => free_play_allowed=True
+        # After each deposit, free_play_allowed defaults to False (admins can enable per user).
         u = User.objects.filter(id=user_id).only('id', 'number_of_deposits').first()
         if u:
             next_count = int(getattr(u, 'number_of_deposits', 0) or 0) + 1
-            allow = next_count >= 2
-            User.objects.filter(id=user_id).update(number_of_deposits=next_count, free_play_allowed=allow)
+            User.objects.filter(id=user_id).update(number_of_deposits=next_count, free_play_allowed=False)
 
 
 def credit_deposit(amount, user, at_date=None):

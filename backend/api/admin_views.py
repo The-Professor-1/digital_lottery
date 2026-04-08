@@ -1293,6 +1293,8 @@ def game_settings_api(request):
             'fake_win_preference': getattr(settings, 'fake_win_preference', 0),
             'test_co_win_next_game': getattr(settings, 'test_co_win_next_game', False),
             'anti_abuse_filter_enabled': getattr(settings, 'anti_abuse_filter_enabled', False),
+            'default_free_play_for_new_users': getattr(settings, 'default_free_play_for_new_users', True),
+            'allow_free_play_after_real_win': getattr(settings, 'allow_free_play_after_real_win', True),
         }
         try:
             response_data['users_created_today'] = _get_users_created_today_count()
@@ -1408,8 +1410,16 @@ def game_settings_api(request):
                 settings_obj.test_co_win_next_game = bool(data['test_co_win_next_game'])
             if 'anti_abuse_filter_enabled' in data:
                 settings_obj.anti_abuse_filter_enabled = bool(data['anti_abuse_filter_enabled'])
+            if 'default_free_play_for_new_users' in data:
+                settings_obj.default_free_play_for_new_users = bool(data['default_free_play_for_new_users'])
+            if 'allow_free_play_after_real_win' in data:
+                settings_obj.allow_free_play_after_real_win = bool(data['allow_free_play_after_real_win'])
             
             settings_obj.save()
+
+            if bool(data.get('enable_free_play_for_all_users')):
+                from .models import User
+                User.objects.all().update(free_play_allowed=True)
             
             return JsonResponse({'success': True, 'message': 'Settings updated'})
         except Exception as e:

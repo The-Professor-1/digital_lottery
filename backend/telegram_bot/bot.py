@@ -1000,11 +1000,16 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 release_registration_lock(user.id)
                 return  # Over limit: no response to reduce server load
             
-            # Update phone number (MINIMAL - only if changed)
+            # Update phone number (MINIMAL - only if changed). First registration: apply default_free_play_for_new_users.
             if not telegram_user.phone_number or telegram_user.phone_number != normalized_phone:
                 telegram_user.phone_number = normalized_phone
+                if is_first_registration:
+                    telegram_user.free_play_allowed = bool(getattr(gs, 'default_free_play_for_new_users', True))
                 async def save_user():
-                    await sync_to_async(telegram_user.save)(update_fields=['phone_number'])
+                    fields = ['phone_number']
+                    if is_first_registration:
+                        fields.append('free_play_allowed')
+                    await sync_to_async(telegram_user.save)(update_fields=fields)
                 await db_operation_with_retry(save_user)
             
             # QUEUE CELERY TASK FOR REWARDS (async, non-blocking)

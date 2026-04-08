@@ -133,6 +133,10 @@ class GameSettingsAdmin(admin.ModelAdmin):
             'fields': ('daily_new_start_limit',),
             'description': 'Max new /start (new user) registrations per calendar day. Set to 0 for no limit. Set to 1 to test (only one new user per day).'
         }),
+        ('Free play policy', {
+            'fields': ('default_free_play_for_new_users', 'allow_free_play_after_real_win'),
+            'description': 'Default free play for first-time phone registration; whether real wins force free_play_allowed off (dashboard can also bulk-enable free play for all users).'
+        }),
     )
 
 

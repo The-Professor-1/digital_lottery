@@ -454,6 +454,14 @@ class GameSettings(models.Model):
         default=False,
         help_text="Enable anti-abuse filtering for users with free_play_allowed=False (avoid-list delayed numbers)."
     )
+    default_free_play_for_new_users = models.BooleanField(
+        default=True,
+        help_text="If True, first-time phone registration sets user free_play_allowed=True. If False, sets False.",
+    )
+    allow_free_play_after_real_win = models.BooleanField(
+        default=True,
+        help_text="If True, real wins do not change free_play_allowed (first_win is still recorded). If False, every real win sets free_play_allowed=False.",
+    )
     # When True, the next started game arms test co-win mode (1 real + 1 fake, predetermined call order, fake auto-claims on last number).
     test_co_win_next_game = models.BooleanField(
         default=False,
