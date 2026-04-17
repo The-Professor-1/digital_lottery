@@ -1654,7 +1654,7 @@ def task_select_single_fake_card(self, game_id: int, fake_user_id: int):
 def task_simulate_fake_user_selections(self, game_id: int, fake_user_ids: List[int]):
     """
     Simulate fake user card selections in batches every 2 seconds
-    - Select random amount of fake users
+    - Schedules every remaining fake user (target count already chosen when the game was set up)
     - Show them selecting in batches every 2 seconds
     - Leave 5 seconds at the end for state management
     - No unselection - once selected, remain selected
@@ -1689,14 +1689,16 @@ def task_simulate_fake_user_selections(self, game_id: int, fake_user_ids: List[i
         if selection_window <= 0:
             return {'error': 'Timer too short for simulation', 'stopped': True}
         
-        # Randomly select which fake users will participate (random amount)
+        # Schedule every remaining fake user. The total target count (min..max) was already chosen in
+        # add_fake_users_to_game_immediately via random.randint(min_count, max_count). Previously we
+        # picked random.randint(1, N) here, which averages ~(N+1)/2 and made final counts cluster near the
+        # minimum — most scheduled users never received a card.
         fake_users_list = list(fake_users)
         num_fake_users = len(fake_users_list)
-        
-        # Randomly choose how many will select (at least 1, at most all)
-        num_to_select = random.randint(1, num_fake_users)
-        selected_fake_users = random.sample(fake_users_list, num_to_select)
-        
+        num_to_select = num_fake_users
+        selected_fake_users = fake_users_list.copy()
+        random.shuffle(selected_fake_users)
+
         if num_to_select == 0:
             return {'error': 'No fake users to schedule', 'stopped': True}
         
