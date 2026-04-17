@@ -3,12 +3,43 @@ from typing import List, Dict, Tuple, Optional
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
-from .models import Game, GameCard, CalledNumber, User, Transaction
+from .models import Game, GameCard, CalledNumber, User, Transaction, CardUnselectRefund
 from .redis_utils import (
     try_acquire_bingo_window, add_bingo_winner,
     get_bingo_winners, cleanup_game_redis_keys,
     acquire_bingo_claim_lock, release_bingo_claim_lock
 )
+
+
+def get_bet_purchase_transaction(user, game):
+    """Single purchase bet for this user in this game (card switches do not create extra purchases)."""
+    return Transaction.objects.filter(
+        user=user, game=game, transaction_type='bet',
+        description__startswith='Purchased card',
+    ).exclude(description__icontains='Refund').order_by('id').first()
+
+
+def clear_unselect_markers_for_paid_selection(user, game):
+    """Call when user pays for a new card after an unselect — allows re-selection and clears duplicate guards."""
+    from django.core.cache import cache
+    cache.delete(f'unselect_recent:{user.id}:{game.id}')
+    CardUnselectRefund.objects.filter(user=user, game=game).delete()
+
+
+def refund_split_from_purchase_tx(purchase_tx, bet_amount: Decimal) -> tuple:
+    """How much to return to each bucket on unselect; legacy rows without split go entirely to unwithdrawable."""
+    bet_amount = Decimal(str(bet_amount))
+    if purchase_tx and purchase_tx.bet_from_unwithdrawable is not None:
+        u = Decimal(str(purchase_tx.bet_from_unwithdrawable))
+        w = Decimal(str(purchase_tx.bet_from_withdrawable or 0))
+        total = u + w
+        if total != bet_amount and total > 0:
+            u = (u / total) * bet_amount
+            w = bet_amount - u
+        elif total == 0:
+            u, w = bet_amount, Decimal('0')
+        return u, w
+    return bet_amount, Decimal('0')
 
 
 def generate_bingo_card() -> Dict:
@@ -102,6 +133,8 @@ def create_game_card(game: Game, user: User, card_number: int) -> GameCard:
         if not user.telegram_id:
             raise ValueError("Only authenticated users can purchase cards. Please login through Telegram.")
         
+        clear_unselect_markers_for_paid_selection(user, game)
+
         # Refresh user from database to get latest balance
         user.refresh_from_db()
         
@@ -114,6 +147,11 @@ def create_game_card(game: Game, user: User, card_number: int) -> GameCard:
         if current_balance < bet_amount:
             raise ValueError(f"በቂ ሂሳብ የሎትም።\nያለዎት ሂሳብ: {current_balance} ብር\nየሚያስፈልገው: {bet_amount} ብር\n\nእባክዎ ገንዘብ ያስገቡ።")
         
+        # Split mirrors deduct_bid (unwithdrawable first) — stored on Transaction for correct unselect refund
+        u_before = Decimal(str(user.unwithdrawable_balance or 0))
+        u_taken = min(u_before, bet_amount)
+        w_taken = bet_amount - u_taken
+
         # Deduct from unwithdrawable_balance first, then withdrawable_balance
         user.deduct_bid(bet_amount)
         
@@ -136,7 +174,9 @@ def create_game_card(game: Game, user: User, card_number: int) -> GameCard:
             transaction_type='bet',
             amount=game.bet_amount,
             game=game,
-            description=f'Purchased card {card_number} for game {game.id}'
+            description=f'Purchased card {card_number} for game {game.id}',
+            bet_from_unwithdrawable=u_taken,
+            bet_from_withdrawable=w_taken,
         )
     
     # Create game card

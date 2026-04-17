@@ -67,6 +67,20 @@ class User(AbstractUser):
         self.withdrawable_balance = w - rem
         self.save(update_fields=['unwithdrawable_balance', 'withdrawable_balance'])
 
+    def credit_bid_refund(self, from_unwithdrawable, from_withdrawable):
+        """Restore amounts to the same buckets used by deduct_bid (inverse split). Caller must lock row if needed."""
+        from decimal import Decimal
+        u_amt = Decimal(str(from_unwithdrawable or 0))
+        w_amt = Decimal(str(from_withdrawable or 0))
+        if u_amt < 0 or w_amt < 0:
+            raise ValueError('Refund split cannot be negative')
+        self.refresh_from_db()
+        u = Decimal(str(self.unwithdrawable_balance or 0))
+        w = Decimal(str(self.withdrawable_balance or 0))
+        self.unwithdrawable_balance = u + u_amt
+        self.withdrawable_balance = w + w_amt
+        self.save(update_fields=['unwithdrawable_balance', 'withdrawable_balance'])
+
     def __str__(self):
         return f"{self.username} ({self.telegram_id})"
 
@@ -343,6 +357,15 @@ class Transaction(models.Model):
     deposit = models.ForeignKey(Deposit, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
     transfer = models.ForeignKey('Transfer', on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
     description = models.TextField(null=True, blank=True)
+    # For bet transactions: amounts taken from each bucket (mirrors deduct_bid); used for correct unselect refund
+    bet_from_unwithdrawable = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Portion of this bet deducted from unwithdrawable_balance',
+    )
+    bet_from_withdrawable = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Portion of this bet deducted from withdrawable_balance',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -355,6 +378,26 @@ class Transaction(models.Model):
 
     def __str__(self):
         return f"{self.transaction_type} - {self.user.username} - {self.amount}"
+
+
+class CardUnselectRefund(models.Model):
+    """One row per user per game after a successful unselect; prevents double-refund credits."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='card_unselect_refunds')
+    game = models.ForeignKey('Game', on_delete=models.CASCADE, related_name='card_unselect_refunds')
+    card_number = models.PositiveIntegerField(help_text='Last unselected card (audit)')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'card_unselect_refunds'
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'game'], name='uniq_card_unselect_refund_user_game'),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'game']),
+        ]
+
+    def __str__(self):
+        return f"unselect refund marker u={self.user_id} g={self.game_id} card={self.card_number}"
 
 
 class GameSettings(models.Model):

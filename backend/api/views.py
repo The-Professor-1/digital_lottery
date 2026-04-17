@@ -4,12 +4,14 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
+from django.db import IntegrityError, transaction as db_transaction
 from django.db.models import Q, Sum, F
+from django.core.cache import cache
 from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal
 from django.utils import timezone
 
-from .models import Game, GameCard, CalledNumber, Deposit, Transaction, User, Transfer
+from .models import Game, GameCard, CalledNumber, Deposit, Transaction, User, Transfer, CardUnselectRefund
 from .serializers import (
     UserSerializer, GameSerializer, GameCardSerializer, GameCardDetailSerializer,
     DepositSerializer, TransactionSerializer, SelectCardSerializer, MarkNumberSerializer,
@@ -17,7 +19,8 @@ from .serializers import (
 )
 from .game_logic import (
     create_game_card, call_number, mark_number_on_card, claim_bingo,
-    start_game as start_game_logic, get_available_card_numbers
+    start_game as start_game_logic, get_available_card_numbers,
+    get_bet_purchase_transaction, refund_split_from_purchase_tx,
 )
 from .auth_utils import get_user_from_token
 from .phone_utils import normalize_phone_number, find_user_by_phone
@@ -724,69 +727,101 @@ class GameViewSet(viewsets.ReadOnlyModelViewSet):
             try:
                 # Check if user already has this exact card (unselection case)
                 existing_card = GameCard.objects.filter(game=game, user=user, card_number=card_number).first()
-                
+
                 if existing_card:
-                    # User is unselecting the same card - refund and delete
-                    from decimal import Decimal
-                    from .models import Transaction
-                    
+                    # User is unselecting the same card — refund to exact buckets used by deduct_bid; prevent double refund
                     bet_amount = Decimal(str(game.bet_amount))
-                    if user.has_withdrawable_active():
-                        User.objects.filter(id=user.id).update(withdrawable_balance=F('withdrawable_balance') + bet_amount)
-                    else:
-                        User.objects.filter(id=user.id).update(unwithdrawable_balance=F('unwithdrawable_balance') + bet_amount)
-                    user.refresh_from_db()
-                    # Delete the card first
-                    existing_card.delete()
-                    
-                    # Recalculate derash instead of manually subtracting
-                    # This ensures fake users are included in the calculation
+                    try:
+                        with db_transaction.atomic():
+                            user_locked = User.objects.select_for_update().get(id=user.id)
+                            ec = GameCard.objects.select_for_update().filter(
+                                game=game, user=user_locked, card_number=card_number
+                            ).first()
+                            if not ec:
+                                user_locked.refresh_from_db()
+                                from .redis_utils import release_card_lock
+                                release_card_lock(card_number)
+                                return Response({
+                                    'unselected': True,
+                                    'message': 'Already unselected',
+                                    'balance': float(user_locked.balance),
+                                }, status=status.HTTP_200_OK)
+                            try:
+                                CardUnselectRefund.objects.create(
+                                    user=user_locked, game=game, card_number=card_number
+                                )
+                            except IntegrityError:
+                                user_locked.refresh_from_db()
+                                from .redis_utils import release_card_lock
+                                release_card_lock(card_number)
+                                return Response({
+                                    'unselected': True,
+                                    'message': 'Already unselected',
+                                    'balance': float(user_locked.balance),
+                                }, status=status.HTTP_200_OK)
+                            purchase_tx = get_bet_purchase_transaction(user_locked, game)
+                            u_ref, w_ref = refund_split_from_purchase_tx(purchase_tx, bet_amount)
+                            user_locked.credit_bid_refund(u_ref, w_ref)
+                            ec.delete()
+                            Transaction.objects.create(
+                                user=user_locked,
+                                transaction_type='bet',
+                                amount=bet_amount,
+                                game=game,
+                                description=f'Refund for unselecting card {card_number} in game {game.id}',
+                            )
+                    except Exception as e:
+                        from .redis_utils import release_card_lock
+                        release_card_lock(card_number)
+                        raise
+
+                    game.refresh_from_db()
                     game.recalculate_derash()
-                    
-                    # Create refund transaction
-                    Transaction.objects.create(
-                        user=user,
-                        transaction_type='bet',
-                        amount=bet_amount,
-                        game=game,
-                        description=f'Refund for unselecting card {card_number} in game {game.id}'
-                    )
-                    
-                    # CRITICAL: Add one fake user back when real player unselects card
+
+                    cache.set(f'unselect_recent:{user.id}:{game.id}', card_number, 3)
+
                     try:
                         from .fake_user_manager import adjust_fake_users_for_real_player_change
                         adjust_fake_users_for_real_player_change(game, is_selection=False)
                     except Exception as e:
                         print(f"Error adjusting fake users on card unselection: {e}")
-                    
-                    # Invalidate game cache when derash changes
+
                     from django.core.cache import cache as django_cache
                     if django_cache:
                         django_cache.delete('game:current')
-                    
-                    # Broadcast card unselection (players + watchers rooms)
+
                     try:
-                        from .game_logic import get_available_card_numbers
                         broadcast_to_game_rooms(game.id, 'card_selected', {
-                            'card_number': None,  # Indicates unselection
+                            'card_number': None,
                             'user_id': user.id,
                             'username': user.username,
-                            'available_cards': get_available_card_numbers(game)
+                            'available_cards': get_available_card_numbers(game),
                         })
                     except Exception as e:
                         print(f"WebSocket broadcast error: {e}")
-                    
-                    # Release card lock on unselection
+
                     from .redis_utils import release_card_lock
                     release_card_lock(card_number)
-                    
-                    # Return success with no card (unselected)
+
+                    user.refresh_from_db()
                     return Response({
                         'unselected': True,
                         'message': 'Card unselected and refunded',
-                        'balance': float(user.balance)
+                        'balance': float(user.balance),
                     }, status=status.HTTP_200_OK)
-                
+
+                # Duplicate unselect retry within a few seconds (cache set on successful unselect)
+                dup_key = f'unselect_recent:{user.id}:{game.id}'
+                if cache.get(dup_key) is not None:
+                    user.refresh_from_db()
+                    from .redis_utils import release_card_lock
+                    release_card_lock(card_number)
+                    return Response({
+                        'unselected': True,
+                        'message': 'Already unselected',
+                        'balance': float(user.balance),
+                    }, status=status.HTTP_200_OK)
+
                 # User is selecting a card (new or different) - create card directly
                 # Use create_game_card which handles payment and validation
                 from .game_logic import create_game_card
