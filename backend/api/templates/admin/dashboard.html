@@ -497,6 +497,9 @@
                         <input type="number" id="daily_new_start_limit" min="0" value="{{ game_settings.daily_new_start_limit|default:100 }}" style="width: 120px; padding: 8px; border: 1px solid #ddd; border-radius: 5px; margin-top: 5px;">
                         <p style="font-size: 12px; color: #666; margin-top: 8px;">Limit how many new users can start the bot per calendar day. Set to <strong>0 for no limit</strong>. Set to 1 to test.</p>
                         <p style="font-size: 12px; color: #2196f3; margin-top: 6px;"><strong>Registers (24h window): {{ new_starts_count_in_window|default:0 }} / {{ game_settings.daily_new_start_limit|default:100 }}</strong> — Count is updated when a new user shares contact. <strong>Users created today: {{ users_created_today|default:0 }}</strong></p>
+                        {% if not register_window_active and registers_last_window %}
+                        <p style="font-size: 12px; color: #5c6bc0; margin-top: 6px;"><strong>Registers (last 24h window — ended): {{ registers_last_window }}</strong> — Users created yesterday: <strong>{{ users_created_yesterday|default:0 }}</strong></p>
+                        {% endif %}
                         <p style="font-size: 11px; color: #666; margin-top: 4px;">When count &ge; limit, new /start are blocked until the 24h window resets. If you see count &gt; limit (e.g. 8/7), the limit was likely lowered after some had already registered, or the bot once fell back to the default limit (e.g. after a DB hiccup); the block is active now. The bot reads the limit from the database on each request, so changes apply without restarting the bot.</p>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px;">

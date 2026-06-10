@@ -24,14 +24,8 @@ channel_layer = get_channel_layer()
 def _get_new_starts_count_for_context():
     """Return current 24h-window register count for dashboard. When Redis has no window or count 0, fall back to users created today (DB) so the admin sees a sensible number."""
     try:
-        from .redis_utils import get_new_starts_window_count
-        data = get_new_starts_window_count()
-        count = data.get('count', 0)
-        window_end_ts = data.get('window_end_ts')
-        # When Redis window was never set or expired, and count is 0, show DB "users created today" so admin sees activity
-        if count == 0 and window_end_ts is None:
-            return _get_users_created_today_count()
-        return count
+        stats = _get_register_window_stats()
+        return stats['new_starts_count_in_window']
     except Exception:
         return _get_users_created_today_count()
 
@@ -43,6 +37,52 @@ def _get_users_created_today_count():
         return User.objects.filter(telegram_id__isnull=False, created_at__gte=today_start).count()
     except Exception:
         return 0
+
+
+def _get_users_created_yesterday_count():
+    """Return number of users (with telegram_id) created yesterday (calendar day, server timezone)."""
+    try:
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start = today_start - timedelta(days=1)
+        return User.objects.filter(
+            telegram_id__isnull=False,
+            created_at__gte=yesterday_start,
+            created_at__lt=today_start,
+        ).count()
+    except Exception:
+        return 0
+
+
+def _get_register_window_stats():
+    """Register stats for admin game settings: active window count and last completed window."""
+    try:
+        from .redis_utils import get_new_starts_window_count
+        data = get_new_starts_window_count()
+        window_active = data.get('window_active', False)
+        count = data.get('count', 0)
+        window_end_ts = data.get('window_end_ts')
+        registers_last_window = data.get('registers_last_window', 0)
+        if window_active:
+            new_starts_count_in_window = count
+        elif count == 0 and window_end_ts is None and registers_last_window == 0:
+            new_starts_count_in_window = _get_users_created_today_count()
+        else:
+            new_starts_count_in_window = count
+        return {
+            'new_starts_count_in_window': new_starts_count_in_window,
+            'registers_last_window': registers_last_window,
+            'register_window_active': window_active,
+            'users_created_today': _get_users_created_today_count(),
+            'users_created_yesterday': _get_users_created_yesterday_count(),
+        }
+    except Exception:
+        return {
+            'new_starts_count_in_window': _get_users_created_today_count(),
+            'registers_last_window': 0,
+            'register_window_active': False,
+            'users_created_today': _get_users_created_today_count(),
+            'users_created_yesterday': _get_users_created_yesterday_count(),
+        }
 
 
 def _get_win_stats():
@@ -508,8 +548,7 @@ def admin_dashboard(request):
         'approved_withdraws_count': approved_withdraws_count,
         'active_games': active_games,
         'game_settings': game_settings,
-        'new_starts_count_in_window': _get_new_starts_count_for_context(),
-        'users_created_today': _get_users_created_today_count(),
+        **_get_register_window_stats(),
         'registered_users': registered_users,
         'today_games_data': today_games_data,
         'games_detail_data': games_detail_data,
@@ -1052,6 +1091,35 @@ def delete_failed_deposit_api(request, failed_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def bulk_delete_failed_deposits_api(request):
+    """Delete many failed deposit request records. Body: {\"ids\": [1, 2, 3]}."""
+    if not (request.user.is_staff or request.session.get('second_admin_authenticated')):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    try:
+        body = json.loads(request.body) if request.body else {}
+        ids = body.get('ids')
+        if not isinstance(ids, list) or len(ids) == 0:
+            return JsonResponse({'error': 'ids must be a non-empty list of failed deposit ids'}, status=400)
+        id_list = []
+        seen = set()
+        for x in ids:
+            try:
+                i = int(x)
+                if i not in seen:
+                    seen.add(i)
+                    id_list.append(i)
+            except (TypeError, ValueError):
+                continue
+        if not id_list:
+            return JsonResponse({'error': 'No valid integer ids'}, status=400)
+        deleted_count, _ = FailedDepositRequest.objects.filter(id__in=id_list).delete()
+        return JsonResponse({'success': True, 'deleted': deleted_count, 'message': f'Deleted {deleted_count} failed deposit(s)'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def approve_failed_deposit_api(request, failed_id):
     """Manually approve a failed deposit: credit user, save ref to CbeReceipt (CBE) or TelebirrReceipt (Telebirr), then delete the failed record. Optional body: transaction_number/reference so the ref is saved and cannot be reused."""
     if not (request.user.is_staff or request.session.get('second_admin_authenticated')):
@@ -1296,21 +1364,7 @@ def game_settings_api(request):
             'default_free_play_for_new_users': getattr(settings, 'default_free_play_for_new_users', True),
             'allow_free_play_after_real_win': getattr(settings, 'allow_free_play_after_real_win', True),
         }
-        try:
-            response_data['users_created_today'] = _get_users_created_today_count()
-        except Exception:
-            response_data['users_created_today'] = 0
-        try:
-            from .redis_utils import get_new_starts_window_count
-            window_data = get_new_starts_window_count()
-            count = window_data.get('count', 0)
-            window_end_ts = window_data.get('window_end_ts')
-            if count == 0 and window_end_ts is None:
-                response_data['new_starts_count_in_window'] = response_data.get('users_created_today', 0)
-            else:
-                response_data['new_starts_count_in_window'] = count
-        except Exception:
-            response_data['new_starts_count_in_window'] = response_data.get('users_created_today', 0)
+        response_data.update(_get_register_window_stats())
         return JsonResponse(response_data)
     
     elif request.method == 'POST':
@@ -1833,8 +1887,7 @@ def second_admin_dashboard(request):
         'approved_withdraws_count': approved_withdraws_count,
         'active_games': active_games,
         'game_settings': game_settings,
-        'new_starts_count_in_window': _get_new_starts_count_for_context(),
-        'users_created_today': _get_users_created_today_count(),
+        **_get_register_window_stats(),
         'registered_users': registered_users,
         'today_games_data': today_games_data,
         'today_games_count': today_games_count,  # Total count for "show more" functionality

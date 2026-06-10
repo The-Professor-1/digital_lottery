@@ -350,6 +350,12 @@ export async function deleteFailedDeposit(failedId) {
   return response.data
 }
 
+/** Delete multiple failed deposit records (same as Delete per row). */
+export async function bulkDeleteFailedDeposits(ids) {
+  const response = await adminApi.post('/admin-dashboard/failed-deposits/bulk-delete/', { ids })
+  return response.data
+}
+
 export async function approveFailedDeposit(failedId, transactionNumber = null) {
   const body = transactionNumber ? { transaction_number: transactionNumber, reference: transactionNumber } : {}
   const response = await adminApi.post(`/admin-dashboard/failed-deposits/${failedId}/approve/`, body)

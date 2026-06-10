@@ -550,6 +550,7 @@ def get_test_co_win_fake_card_id(game_id: int):
 # /start and /register do not respond at all (no server load). Window resets 24h after it started.
 BOT_NEW_STARTS_WINDOW_END_KEY = "bot:new_starts:window_end"  # Unix timestamp when current window ends
 BOT_NEW_STARTS_COUNT_KEY = "bot:new_starts:count"
+BOT_NEW_STARTS_PREV_COUNT_KEY = "bot:new_starts:prev_count"  # Count from last completed 24h window
 WINDOW_SECONDS = 24 * 3600  # 24h rolling window
 DEFAULT_DAILY_NEW_START_LIMIT = 100
 
@@ -576,6 +577,9 @@ if limit == nil or limit <= 0 then return 1 end
 local we = redis.call("GET", "bot:new_starts:window_end")
 local count = tonumber(redis.call("GET", "bot:new_starts:count") or "0")
 if we == nil or now > tonumber(we) then
+  if we ~= nil and count > 0 then
+    redis.call("SET", "bot:new_starts:prev_count", count)
+  end
   redis.call("SET", "bot:new_starts:window_end", now + window_sec)
   redis.call("SET", "bot:new_starts:count", "0")
   count = 0
@@ -671,27 +675,46 @@ def try_acquire_daily_start_slot():
 
 def get_new_starts_window_count():
     """
-    Return current registration count in the 24h window (for admin display).
-    Returns dict: { 'count': int, 'window_end_ts': int or None }.
-    Returns the stored Redis count even when the window has expired, so the dashboard
-    shows the last known value (bot increments on first-time contact share).
+    Return registration counts for the rolling 24h window (for admin display).
+    Returns dict:
+      - count: registrations in the *active* window (0 when window has ended)
+      - window_end_ts: Unix timestamp when current window ends, or None
+      - window_active: True while the 24h window is open
+      - registers_last_window: total from the last completed window (shown after today's window ends)
     """
     r = get_redis_client()
     if not r:
-        return {'count': 0, 'window_end_ts': None}
+        return {'count': 0, 'window_end_ts': None, 'window_active': False, 'registers_last_window': 0}
     try:
         import time
         now = int(time.time())
         we = r.get(BOT_NEW_STARTS_WINDOW_END_KEY)
         count = int(r.get(BOT_NEW_STARTS_COUNT_KEY) or 0)
+        prev_count = int(r.get(BOT_NEW_STARTS_PREV_COUNT_KEY) or 0)
         window_end_ts = int(we) if we else None
-        # When window expired or never set, still return stored count so admin sees last value
         if window_end_ts is not None and now <= window_end_ts:
-            return {'count': count, 'window_end_ts': window_end_ts}
-        return {'count': count, 'window_end_ts': None}
+            return {
+                'count': count,
+                'window_end_ts': window_end_ts,
+                'window_active': True,
+                'registers_last_window': prev_count,
+            }
+        if window_end_ts is not None and now > window_end_ts:
+            return {
+                'count': 0,
+                'window_end_ts': window_end_ts,
+                'window_active': False,
+                'registers_last_window': count if count > 0 else prev_count,
+            }
+        return {
+            'count': 0,
+            'window_end_ts': None,
+            'window_active': False,
+            'registers_last_window': prev_count if prev_count > 0 else count,
+        }
     except Exception as e:
         print(f"Error in get_new_starts_window_count: {e}")
-        return {'count': 0, 'window_end_ts': None}
+        return {'count': 0, 'window_end_ts': None, 'window_active': False, 'registers_last_window': 0}
 
 
 # PHASE 2 OPTIMIZATION: Redis-based called numbers caching

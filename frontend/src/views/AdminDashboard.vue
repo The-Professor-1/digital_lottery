@@ -296,15 +296,37 @@
         </div>
 
         <h3>❌ Failed Deposit Requests</h3>
+        <div v-if="(data.failed_deposits || []).length" class="bulk-toolbar">
+          <label class="bulk-select-all">
+            <input
+              type="checkbox"
+              :checked="allFailedDepositsSelected"
+              @change="toggleAllFailedDeposits($event.target.checked)"
+            />
+            Select all ({{ (data.failed_deposits || []).length }})
+          </label>
+          <button
+            type="button"
+            class="btn btn-reject"
+            :disabled="!selectedFailedDepositIds.length"
+            @click="bulkDeleteFailedDeposits"
+          >
+            Delete selected ({{ selectedFailedDepositIds.length }})
+          </button>
+        </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
+                <th class="th-checkbox"></th>
                 <th>ID</th><th>User</th><th>Amount</th><th>Platform</th><th>Reason</th><th>Ref</th><th>Suffix</th><th>Created</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="fd in (data.failed_deposits || [])" :key="'fd-' + fd.id">
+                <td class="td-checkbox">
+                  <input type="checkbox" :value="fd.id" v-model="selectedFailedDepositIds" />
+                </td>
                 <td>{{ fd.id }}</td>
                 <td>{{ fd.username }}</td>
                 <td>{{ fd.amount != null ? formatCurrency(fd.amount) : '—' }}</td>
@@ -319,7 +341,7 @@
                 </td>
               </tr>
               <tr v-if="!(data.failed_deposits && data.failed_deposits.length)">
-                <td colspan="9">No failed deposit requests</td>
+                <td colspan="10">No failed deposit requests</td>
               </tr>
             </tbody>
           </table>
@@ -563,6 +585,13 @@
               <label>📋 Max register limit (new users per 24h window)</label>
               <input v-model.number="settings.daily_new_start_limit" type="number" min="0" placeholder="0 = no limit" />
               <small class="form-hint">Registers (24h window): <strong>{{ (settings.new_starts_count_in_window ?? 0) }} / {{ settings.daily_new_start_limit }}</strong> — count updates when a new user shares contact. Users created today: <strong>{{ settings.users_created_today ?? 0 }}</strong>. 0 = no limit.</small>
+              <small
+                v-if="settings.register_window_active === false && (settings.registers_last_window ?? 0) > 0"
+                class="form-hint yesterday-registers"
+              >
+                Registers (last 24h window — ended): <strong>{{ settings.registers_last_window }}</strong>
+                — Users created yesterday: <strong>{{ settings.users_created_yesterday ?? 0 }}</strong>
+              </small>
             </div>
           </div>
           <h3 class="settings-subsection">🚫 Disable bot menus</h3>
@@ -914,6 +943,7 @@ import {
   rejectDeposit as apiRejectDeposit,
   bulkDeletePendingDeposits as apiBulkDeletePendingDeposits,
   deleteFailedDeposit as apiDeleteFailedDeposit,
+  bulkDeleteFailedDeposits as apiBulkDeleteFailedDeposits,
   approveFailedDeposit as apiApproveFailedDeposit,
   addCbeReceiptRef as apiAddCbeReceiptRef,
   deleteCbeReceiptRef as apiDeleteCbeReceiptRef,
@@ -982,6 +1012,9 @@ export default {
         daily_new_start_limit: 100,
         new_starts_count_in_window: 0,
         users_created_today: 0,
+        users_created_yesterday: 0,
+        registers_last_window: 0,
+        register_window_active: true,
         disable_bot_start: false,
         disable_bot_register: false,
         disable_bot_transfer: false,
@@ -1040,7 +1073,8 @@ export default {
       registeredLimit: 10,
       registeredSort: 'created_at',
       selectedPendingDepositIds: [],
-      selectedPendingWithdrawIds: []
+      selectedPendingWithdrawIds: [],
+      selectedFailedDepositIds: []
     }
   },
   computed: {
@@ -1067,6 +1101,11 @@ export default {
       const rows = this.data?.pending_withdraws || []
       if (!rows.length) return false
       return rows.every(w => this.selectedPendingWithdrawIds.includes(w.id))
+    },
+    allFailedDepositsSelected() {
+      const rows = this.data?.failed_deposits || []
+      if (!rows.length) return false
+      return rows.every(fd => this.selectedFailedDepositIds.includes(fd.id))
     }
   },
   async mounted() {
@@ -1118,6 +1157,8 @@ export default {
       this.selectedPendingDepositIds = this.selectedPendingDepositIds.filter(id => depIds.has(id))
       const wIds = new Set((this.data?.pending_withdraws || []).map(w => w.id))
       this.selectedPendingWithdrawIds = this.selectedPendingWithdrawIds.filter(id => wIds.has(id))
+      const fdIds = new Set((this.data?.failed_deposits || []).map(fd => fd.id))
+      this.selectedFailedDepositIds = this.selectedFailedDepositIds.filter(id => fdIds.has(id))
     },
     toggleAllPendingDeposits(checked) {
       const rows = this.data?.pending_deposits || []
@@ -1164,6 +1205,30 @@ export default {
         alert(res?.message || `Removed ${d} withdrawal request(s).`)
       } catch (err) {
         console.error('Bulk delete withdraws failed:', err)
+        alert(err.response?.data?.error || err.message || 'Bulk delete failed')
+      }
+    },
+    toggleAllFailedDeposits(checked) {
+      const rows = this.data?.failed_deposits || []
+      if (checked) {
+        this.selectedFailedDepositIds = rows.map(fd => fd.id)
+      } else {
+        this.selectedFailedDepositIds = []
+      }
+    },
+    async bulkDeleteFailedDeposits() {
+      const ids = [...this.selectedFailedDepositIds]
+      if (!ids.length) return
+      const n = ids.length
+      if (!confirm(`Delete ${n} failed deposit record(s) from the database?`)) return
+      try {
+        const res = await apiBulkDeleteFailedDeposits(ids)
+        this.selectedFailedDepositIds = []
+        await this.loadData()
+        const d = res?.deleted != null ? res.deleted : n
+        alert(res?.message || `Removed ${d} failed deposit record(s).`)
+      } catch (err) {
+        console.error('Bulk delete failed deposits failed:', err)
         alert(err.response?.data?.error || err.message || 'Bulk delete failed')
       }
     },
@@ -1317,6 +1382,7 @@ export default {
       if (!confirm('Delete this failed deposit record?')) return
       try {
         await apiDeleteFailedDeposit(id)
+        this.selectedFailedDepositIds = this.selectedFailedDepositIds.filter(x => x !== id)
         await this.loadData()
       } catch (err) {
         console.error('Delete failed deposit failed:', err)
@@ -2071,6 +2137,7 @@ export default {
 .link:hover { text-decoration: underline; }
 
 .settings-form { background: #fafafa; padding: 16px; border-radius: 8px; }
+.yesterday-registers { display: block; margin-top: 6px; color: #5c6bc0; }
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
