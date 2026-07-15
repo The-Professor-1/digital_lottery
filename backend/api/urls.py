@@ -13,6 +13,7 @@ urlpatterns = [
     path('health/', views.health_check, name='health-check'),
     path('lottery/settings/', lottery_views.lottery_settings_public, name='lottery-settings-public'),
     path('lottery/me/', lottery_views.lottery_me, name='lottery-me'),
+    path('lottery/language/', lottery_views.lottery_set_language, name='lottery-set-language'),
     path('lottery/tickets/', lottery_views.lottery_tickets, name='lottery-tickets'),
     path('lottery/purchase/', lottery_views.lottery_submit_purchase, name='lottery-purchase'),
     path('auth/telegram/', views.authenticate_telegram, name='authenticate-telegram'),

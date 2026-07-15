@@ -45,6 +45,7 @@ export function applyPublicSettings(data) {
     name: data.car_name || store.raffle.name,
     displayName: data.display_name || store.raffle.displayName,
     color: data.car_color || store.raffle.color,
+    // Always take API image when present so admin uploads replace the mock photo
     image: data.car_image_url || store.raffle.image,
     ticketPrice: data.ticket_price ?? store.raffle.ticketPrice,
     totalTickets: data.total_tickets ?? store.raffle.totalTickets,
@@ -89,6 +90,10 @@ export async function loadUserProfile() {
       if (store.phone.startsWith('0') && store.phone.length === 10) {
         store.phone = '251' + store.phone.slice(1)
       }
+    }
+    if (me?.preferred_language) {
+      const { applyPreferredLocale } = await import('../composables/useI18n')
+      applyPreferredLocale(me.preferred_language)
     }
   } catch (e) {
     // Not authenticated — leave phone empty for user input
@@ -227,8 +232,7 @@ export async function submitOrder() {
     const res = await submitLotteryPurchase(form)
     store.orderDone = true
     store.checkoutStep = 3
-    store.submitMessage =
-      res.message || 'We will let you know when we have verified your receipt.'
+    store.submitMessage = ''
     await loadPublicSettings()
     await loadTicketsForPhone(store.phone)
     return true

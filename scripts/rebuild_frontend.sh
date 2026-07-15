@@ -51,4 +51,9 @@ cd backend
 cd "$ROOT"
 
 sudo systemctl restart carlottery-gunicorn
+echo "Fix media permissions..."
+mkdir -p "$ROOT/backend/media/lottery/cars" "$ROOT/backend/media/lottery/receipts"
+chmod -R a+rX "$ROOT/backend/media" || true
 echo "Done. Hard-refresh admin (Ctrl+Shift+R) and reopen the Telegram mini-app."
+echo "If receipt/car images still 403: update nginx so /media/ proxies to gunicorn (see nginx/nginx.conf), then:"
+echo "  sudo nginx -t && sudo systemctl reload nginx"

@@ -486,6 +486,11 @@ export async function getLotteryMe() {
   return response.data
 }
 
+export async function setLotteryLanguage(language) {
+  const response = await api.post('/lottery/language/', { language })
+  return response.data
+}
+
 export async function getLotteryTickets(phone) {
   const response = await api.get('/lottery/tickets/', { params: { phone } })
   return response.data

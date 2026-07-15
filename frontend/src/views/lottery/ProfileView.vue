@@ -14,9 +14,9 @@
           {{ displayPhone }}
         </p>
         <p v-if="!store.phone" class="text-xs text-white/40 mt-1">
-          Open the app from Telegram after sharing your phone with the bot.
+          {{ t.sharePhoneHint }}
         </p>
-        <p v-else class="text-xs text-emerald-300/80 mt-1">Registered account</p>
+        <p v-else class="text-xs text-emerald-300/80 mt-1">{{ t.registeredAccount }}</p>
       </div>
     </div>
 

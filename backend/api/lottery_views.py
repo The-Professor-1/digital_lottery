@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from datetime import timedelta
 from decimal import Decimal
 
@@ -78,7 +79,26 @@ def lottery_me(request):
         'phone': user.phone_number or '',
         'first_name': user.first_name or '',
         'username': user.username or '',
+        'preferred_language': (user.preferred_language or 'am')[:5],
     })
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_set_language(request):
+    user = _bearer_user(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+    lang = (body.get('language') or body.get('preferred_language') or '').strip().lower()
+    if lang not in ('am', 'en', 'om'):
+        return JsonResponse({'error': 'Invalid language'}, status=400)
+    user.preferred_language = lang
+    user.save(update_fields=['preferred_language'])
+    return JsonResponse({'success': True, 'preferred_language': lang})
 
 
 @require_http_methods(['GET'])
@@ -171,7 +191,8 @@ def lottery_submit_purchase(request):
     )
     return JsonResponse({
         'success': True,
-        'message': 'We will let you know when we have verified your receipt.',
+        'message_key': 'receiptPendingHint',
+        'message': '',
         'purchase': purchase.to_dict(request),
     })
 
@@ -278,6 +299,24 @@ def lottery_settings_admin(request):
 
         force_reset = str(data.get('reset_timer', '')).lower() in ('1', 'true', 'yes', 'on')
         settings_obj.save(reset_timer=timer_touched or force_reset)
+
+        # Ensure uploaded media files are world-readable (nginx/alias safety)
+        try:
+            from django.conf import settings as dj_settings
+            root = getattr(dj_settings, 'MEDIA_ROOT', None)
+            if root and os.path.isdir(root):
+                for dirpath, _dirnames, filenames in os.walk(root):
+                    try:
+                        os.chmod(dirpath, 0o755)
+                    except OSError:
+                        pass
+                    for name in filenames:
+                        try:
+                            os.chmod(os.path.join(dirpath, name), 0o644)
+                        except OSError:
+                            pass
+        except Exception:
+            pass
 
         out = settings_obj.to_public_dict(request)
         out['car_image_url_raw'] = settings_obj.car_image_url or ''

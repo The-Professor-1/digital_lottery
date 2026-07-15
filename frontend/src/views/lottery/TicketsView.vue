@@ -56,7 +56,7 @@
                 : 'bg-gold/20 text-gold'
             "
           >
-            {{ ticket.status === 'active' ? 'verified' : ticket.status }}
+            {{ ticket.status === 'active' ? t.verified : ticket.status === 'pending' ? t.pending : ticket.status }}
           </span>
         </div>
         <div class="flex flex-wrap gap-1.5 mt-3">

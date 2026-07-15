@@ -123,7 +123,14 @@ Also verify GitHub secret **`EC2_HOST`** is the current **Elastic IP** (not an o
 
 Usually means the **backend on EC2 is older than the frontend** (Actions deploy failed, only `npm run build` was run). Run `bash scripts/rebuild_frontend.sh` on EC2 — it pulls code, migrates, rebuilds, and restarts gunicorn.
 
-Ensure nginx serves media from `backend/media/` (see `nginx/nginx.conf`).
+**Media 403 (receipts / car images):** nginx must **proxy** `/media/` to gunicorn (see `nginx/nginx.conf`), not use a wrong `alias` path:
+
+```bash
+sudo cp ~/apps/CarLottery/nginx/nginx.conf /etc/nginx/sites-available/carlottery
+# replace YOUR_DOMAIN with markosgo.online (http + https blocks)
+sudo nginx -t && sudo systemctl reload nginx
+chmod -R a+rX ~/apps/CarLottery/backend/media
+```
 
 ---
 

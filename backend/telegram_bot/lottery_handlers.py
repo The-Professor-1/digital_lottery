@@ -33,14 +33,14 @@ except ImportError:
 
 BOT_DESCRIPTION = (
     "🚗 Getachew Fikadu Jirata\n\n"
-    "Baga gara Bot keenyaa dhuftan.\n"
-    "ወደ Botችን እንኳን በደህና መጡ።\n"
+    "Baga gara bootii keenyaa dhuftan.\n"
+    "ወደ መተግበሪያችን እንኳን በደህና መጡ።\n"
     "Welcome to our Bot."
 )
 
 LANG_PROMPT = (
     "🚗 Getachew Fikadu Jirata\n\n"
-    "Maaloo Afaan filadhaa.\n"
+    "Maaloo afaan filadhu.\n"
     "እባክዎ ቋንቋ ይምረጡ።\n"
     "Please select your language."
 )
@@ -48,13 +48,13 @@ LANG_PROMPT = (
 SHARE_PHONE = {
     'am': 'ለመቀጠል የስልክ ቁጥርዎን ያጋሩ።',
     'en': 'To continue, please share your phone number.',
-    'om': 'Itti fufuuf lakkoofsa bilbilaa kee hiriiri.',
+    'om': 'Itti fufuuf lakkoofsa bilbilaa kee maxxansi.',
 }
 
 SHARE_PHONE_BUTTON = {
     'am': '📱 ስልክ ቁጥር ያጋሩ',
     'en': '📱 Share phone number',
-    'om': '📱 Lakkoofsa bilbilaa hiriiri',
+    'om': '📱 Lakkoofsa bilbilaa maxxansi',
 }
 
 PHONE_RECEIVED = {
@@ -66,13 +66,13 @@ PHONE_RECEIVED = {
 OPEN_APP_HINT = {
     'am': 'መተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
     'en': 'To open the application, press the button below.',
-    'om': 'Appilaikeshanii banuuf qabduu armaan gadii tuqi.',
+    'om': 'Appii banuuf qabduu armaan gadii tuqi.',
 }
 
 OWN_CONTACT_ONLY = {
     'am': 'እባክዎ የእርስዎን ስልክ ቁጥር ያጋሩ።',
     'en': 'Please share your own phone number.',
-    'om': 'Maaloo lakkoofsa bilbilaa kee qofa hiriiri.',
+    'om': 'Maaloo lakkoofsa bilbilaa kee qofa maxxansi.',
 }
 
 

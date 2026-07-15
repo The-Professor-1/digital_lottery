@@ -71,13 +71,16 @@ const { locale, t, setLocale } = useI18n()
 const langOpen = ref(false)
 
 const langOptions = [
-  { code: 'am', label: 'Amharic' },
+  { code: 'am', label: 'አማርኛ' },
   { code: 'en', label: 'English' },
-  { code: 'om', label: 'Afan Oromo' },
+  { code: 'om', label: 'Afaan Oromoo' },
 ]
 
 function pickLang(code) {
   setLocale(code)
   langOpen.value = false
+  import('../../services/api')
+    .then(({ setLotteryLanguage }) => setLotteryLanguage(code))
+    .catch(() => {})
 }
 </script>

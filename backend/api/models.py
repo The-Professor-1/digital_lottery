@@ -948,6 +948,31 @@ def default_payment_accounts():
     ]
 
 
+def _force_https_url(url: str) -> str:
+    if not url:
+        return url
+    from django.conf import settings as dj_settings
+    use_https = getattr(dj_settings, 'SESSION_COOKIE_SECURE', False) or (
+        str(os.getenv('USE_HTTPS', '')).lower() in ('1', 'true', 'yes')
+    )
+    if use_https and url.startswith('http://'):
+        return 'https://' + url[len('http://'):]
+    return url
+
+
+def _absolute_file_url(file_field, request=None, cache_bust=None):
+    if not file_field:
+        return ''
+    url = file_field.url
+    if request is not None:
+        url = request.build_absolute_uri(url)
+    url = _force_https_url(url)
+    if cache_bust:
+        sep = '&' if '?' in url else '?'
+        url = f'{url}{sep}v={int(cache_bust)}'
+    return url
+
+
 class LotterySettings(models.Model):
     """Singleton settings for the car lottery mini-app (admin-configurable)."""
     brand_name = models.CharField(max_length=120, default='Getachew Fikadu')
@@ -1007,22 +1032,10 @@ class LotterySettings(models.Model):
         super().save(*args, **kwargs)
 
     def resolved_image_url(self, request=None):
+        # Prefer uploaded car photo over external URL placeholder
         if self.car_image:
-            url = self.car_image.url
-            if request is not None:
-                url = request.build_absolute_uri(url)
-            # Telegram WebView blocks mixed content — force https when configured
-            from django.conf import settings as dj_settings
-            use_https = getattr(dj_settings, 'SESSION_COOKIE_SECURE', False) or (
-                str(os.getenv('USE_HTTPS', '')).lower() in ('1', 'true', 'yes')
-            )
-            if use_https and url.startswith('http://'):
-                url = 'https://' + url[len('http://'):]
-            # Cache-bust so clients see newly uploaded cars
-            if self.updated_at:
-                sep = '&' if '?' in url else '?'
-                url = f'{url}{sep}v={int(self.updated_at.timestamp())}'
-            return url
+            bust = int(self.updated_at.timestamp()) if self.updated_at else None
+            return _absolute_file_url(self.car_image, request, cache_bust=bust)
         url = self.car_image_url or ''
         if url and self.updated_at:
             sep = '&' if '?' in url else '?'
@@ -1122,9 +1135,7 @@ class LotteryPurchase(models.Model):
     def to_dict(self, request=None):
         img = ''
         if self.receipt_image:
-            img = self.receipt_image.url
-            if request is not None:
-                img = request.build_absolute_uri(img)
+            img = _absolute_file_url(self.receipt_image, request)
         return {
             'id': self.id,
             'full_name': self.full_name,
