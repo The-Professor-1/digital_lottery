@@ -46,15 +46,17 @@ _csrf = os.getenv(
 )
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf.split(',') if o.strip()]
 
-# Session and CSRF Cookie settings for HTTPS
-if not DEBUG:
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
-    CSRF_COOKIE_HTTPONLY = True
-else:
-    SESSION_COOKIE_SECURE = False
-    CSRF_COOKIE_SECURE = False
+# Session / CSRF cookies:
+# Secure cookies require HTTPS. On plain HTTP (EC2 IP), Secure cookies are dropped by the browser
+# which makes admin login "flash" then kick you out.
+_use_https = os.getenv('USE_HTTPS', 'False').strip().lower() in ('1', 'true', 'yes')
+SESSION_COOKIE_SECURE = _use_https
+CSRF_COOKIE_SECURE = _use_https
+SESSION_COOKIE_HTTPONLY = True
+# Must be False so the Vue admin can read csrftoken from document.cookie
+CSRF_COOKIE_HTTPONLY = False
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
 
 # Custom CSRF failure handler for JSON responses
 CSRF_FAILURE_VIEW = 'api.csrf_handler.csrf_failure'
