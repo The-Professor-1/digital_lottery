@@ -63,10 +63,19 @@ jobs:
               "$VENV_PY" -m pip install -r requirements.txt
             fi
 
+            # Clear both possible Vite output folders so Django never serves a stale build
+            rm -rf frontend_dist backend/frontend_dist
+
             cd frontend
             npm ci
             npm run build
             cd ..
+
+            if [ ! -f backend/frontend_dist/index.html ]; then
+              echo "ERROR: frontend build missing at backend/frontend_dist/index.html"
+              exit 1
+            fi
+            echo "Frontend build OK: $(ls -la backend/frontend_dist/index.html)"
 
             cd backend
             "$VENV_PY" manage.py migrate --noinput
@@ -81,3 +90,4 @@ jobs:
             sudo systemctl restart carlottery-telegram-bot || true
 
             echo "Deployment completed successfully"
+            echo "Active frontend_dist tip: ensure nginx proxies /media/ to gunicorn"

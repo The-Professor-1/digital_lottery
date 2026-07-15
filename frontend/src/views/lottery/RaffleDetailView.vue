@@ -85,7 +85,7 @@
         type="button"
         class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white/50 text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
         :disabled="!canSelect"
-        :class="canSelect ? 'btn-gold-outline !text-gold' : ''"
+        :class="canSelect ? 'btn-green !border-transparent' : ''"
         @click="openCheckoutFromSelect"
       >
         <Shield :size="16" />
@@ -96,7 +96,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeft, Star, Target, Zap, Shield } from 'lucide-vue-next'
 import CountdownTimer from '../../components/lottery/CountdownTimer.vue'
@@ -109,12 +109,17 @@ import {
   openPicker,
   quickPick,
   openCheckoutFromSelect,
+  loadPublicSettings,
 } from '../../stores/lottery'
 
 const router = useRouter()
 const { t } = useI18n()
 const raffle = computed(() => store.raffle)
 const canSelect = computed(() => store.selectedNumbers.length === store.quantity)
+
+onMounted(() => {
+  loadPublicSettings()
+})
 
 function onQuickPick() {
   quickPick()

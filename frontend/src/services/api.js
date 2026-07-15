@@ -52,6 +52,15 @@ adminApi.interceptors.request.use((config) => {
   if (csrfToken) {
     config.headers['X-CSRFToken'] = csrfToken
   }
+  // Let the browser set multipart boundary for FormData (default JSON Content-Type breaks save/uploads)
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (config.headers && typeof config.headers.delete === 'function') {
+      config.headers.delete('Content-Type')
+    } else if (config.headers) {
+      delete config.headers['Content-Type']
+      delete config.headers['content-type']
+    }
+  }
   return config
 })
 adminApi.interceptors.response.use(
@@ -82,6 +91,14 @@ api.interceptors.request.use((config) => {
     ?.split('=')[1]
   if (csrfToken) {
     config.headers['X-CSRFToken'] = csrfToken
+  }
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (config.headers && typeof config.headers.delete === 'function') {
+      config.headers.delete('Content-Type')
+    } else if (config.headers) {
+      delete config.headers['Content-Type']
+      delete config.headers['content-type']
+    }
   }
   return config
 })
@@ -459,28 +476,75 @@ export async function getLotterySettings() {
   return response.data
 }
 
+export async function getLotteryMe() {
+  const response = await api.get('/lottery/me/')
+  return response.data
+}
+
+export async function getLotteryTickets(phone) {
+  const response = await api.get('/lottery/tickets/', { params: { phone } })
+  return response.data
+}
+
+export async function submitLotteryPurchase(formData) {
+  const response = await api.post('/lottery/purchase/', formData, {
+    transformRequest: [(data, headers) => {
+      if (headers) {
+        if (typeof headers.delete === 'function') headers.delete('Content-Type')
+        else {
+          delete headers['Content-Type']
+          delete headers['content-type']
+        }
+      }
+      return data
+    }],
+  })
+  return response.data
+}
+
 export async function getLotterySettingsAdmin() {
   const response = await adminApi.get('/admin-dashboard/lottery-settings/')
   return response.data
 }
 
 export async function updateLotterySettingsAdmin(payload, file = null) {
+  // Always use FormData so file + nested JSON fields save reliably with session auth
+  const form = new FormData()
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    if (key === 'payment_accounts' || key === 'admin_blocked_numbers') {
+      form.append(key, JSON.stringify(value))
+    } else if (typeof value === 'boolean') {
+      form.append(key, value ? 'true' : 'false')
+    } else {
+      form.append(key, String(value))
+    }
+  })
   if (file) {
-    const form = new FormData()
-    Object.entries(payload).forEach(([key, value]) => {
-      if (key === 'payment_accounts') {
-        form.append(key, JSON.stringify(value))
-      } else if (value !== undefined && value !== null) {
-        form.append(key, value)
-      }
-    })
     form.append('car_image', file)
-    const response = await adminApi.post('/admin-dashboard/lottery-settings/', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return response.data
   }
-  const response = await adminApi.post('/admin-dashboard/lottery-settings/', payload)
+  const response = await adminApi.post('/admin-dashboard/lottery-settings/', form)
+  return response.data
+}
+
+export async function getLotteryPurchasesAdmin(params = {}) {
+  const response = await adminApi.get('/admin-dashboard/lottery-purchases/', { params })
+  return response.data
+}
+
+export async function lotteryPurchaseAction(id, action, note = '') {
+  const response = await adminApi.post(`/admin-dashboard/lottery-purchases/${id}/action/`, {
+    action,
+    note,
+  })
+  return response.data
+}
+
+export async function announceLotteryWinner(winner_number, message) {
+  const response = await adminApi.post('/admin-dashboard/lottery-announce-winner/', {
+    winner_number,
+    message,
+  })
   return response.data
 }
 

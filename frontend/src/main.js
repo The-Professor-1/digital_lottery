@@ -46,6 +46,10 @@ if (isTelegramApp) {
     registerTelegram(initData)
       .then(async (data) => {
         console.log('Telegram authentication successful:', data.user_id)
+        const { store, loadUserProfile } = await import('./stores/lottery')
+        if (data.user?.phone_number) {
+          store.phone = String(data.user.phone_number).replace(/\D/g, '')
+        }
         if (data.user && !data.user.phone_number) {
           try {
             const { getInitDataRaw } = await import('./services/telegram')
@@ -53,11 +57,13 @@ if (isTelegramApp) {
             if (initDataRaw?.user?.phone_number) {
               const { updateUserPhone } = await import('./services/api')
               await updateUserPhone(initDataRaw.user.phone_number)
+              store.phone = String(initDataRaw.user.phone_number).replace(/\D/g, '')
             }
           } catch (error) {
             console.warn('Phone number retrieval failed:', error)
           }
         }
+        await loadUserProfile()
       })
       .catch((error) => {
         console.error('Telegram authentication failed:', error)

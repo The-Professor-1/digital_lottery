@@ -16,10 +16,12 @@ import AppHeader from '../../components/lottery/AppHeader.vue'
 import BottomNav from '../../components/lottery/BottomNav.vue'
 import NumberPickerModal from '../../components/lottery/NumberPickerModal.vue'
 import CheckoutModal from '../../components/lottery/CheckoutModal.vue'
-import { store, loadPublicSettings } from '../../stores/lottery'
+import { store, loadPublicSettings, loadUserProfile, loadTicketsForPhone } from '../../stores/lottery'
 
-onMounted(() => {
-  loadPublicSettings()
+onMounted(async () => {
+  await loadPublicSettings()
+  await loadUserProfile()
+  if (store.phone) await loadTicketsForPhone(store.phone)
 })
 </script>
 

@@ -6,8 +6,10 @@ export default defineConfig({
   plugins: [vue()],
   base: '/',  // Base path for assets
   build: {
-    outDir: resolve(__dirname, '../frontend_dist'),  // Output to frontend_dist for Django
+    // Must match Django BASE_DIR/frontend_dist (backend/frontend_dist)
+    outDir: resolve(__dirname, '../backend/frontend_dist'),
     assetsDir: 'assets',
+    emptyOutDir: true,
     rollupOptions: {
       output: {
         manualChunks: undefined

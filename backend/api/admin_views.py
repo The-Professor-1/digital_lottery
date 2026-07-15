@@ -141,7 +141,8 @@ def admin_dashboard_login(request):
         except (User.DoesNotExist, User.MultipleObjectsReturned):
             pass
     if user is not None and (user.is_staff or user.is_superuser):
-        login(request, user)
+        # Explicit backend required when user was resolved via password fallback
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
         return JsonResponse({'success': True, 'message': 'Logged in'})
     return JsonResponse({'error': 'Invalid credentials or not a staff user'}, status=401)
 

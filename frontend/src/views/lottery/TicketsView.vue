@@ -15,7 +15,7 @@
       <button
         type="button"
         class="btn-gold px-4 py-3 text-sm inline-flex items-center gap-1.5 shrink-0"
-        @click="searched = true"
+        @click="search"
       >
         <Search :size="16" />
         {{ t.search }}
@@ -24,22 +24,22 @@
 
     <div class="grid grid-cols-3 gap-2">
       <div class="rounded-2xl bg-forest-deep/80 border border-forest/30 p-3 text-center">
-        <p class="text-2xl font-bold text-emerald-400">{{ stats.active }}</p>
+        <p class="text-2xl font-bold text-emerald-400">{{ store.ticketStats.active }}</p>
         <p class="text-xs text-white/60 mt-0.5">{{ t.active }}</p>
       </div>
       <div class="rounded-2xl bg-amber-950/50 border border-gold/20 p-3 text-center">
-        <p class="text-2xl font-bold text-gold">{{ stats.pending }}</p>
+        <p class="text-2xl font-bold text-gold">{{ store.ticketStats.pending }}</p>
         <p class="text-xs text-white/60 mt-0.5">{{ t.pending }}</p>
       </div>
       <div class="rounded-2xl bg-amber-950/50 border border-gold/20 p-3 text-center">
-        <p class="text-2xl font-bold text-gold">{{ stats.total }}</p>
+        <p class="text-2xl font-bold text-gold">{{ store.ticketStats.total }}</p>
         <p class="text-xs text-white/60 mt-0.5">{{ t.total }}</p>
       </div>
     </div>
 
-    <div v-if="results.length" class="space-y-2">
+    <div v-if="store.tickets.length" class="space-y-2">
       <article
-        v-for="ticket in results"
+        v-for="ticket in store.tickets"
         :key="ticket.id"
         class="rounded-2xl bg-ink-200 border border-white/5 p-4"
       >
@@ -56,7 +56,7 @@
                 : 'bg-gold/20 text-gold'
             "
           >
-            {{ ticket.status }}
+            {{ ticket.status === 'active' ? 'verified' : ticket.status }}
           </span>
         </div>
         <div class="flex flex-wrap gap-1.5 mt-3">
@@ -85,29 +85,28 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Search, Ticket } from 'lucide-vue-next'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr } from '../../data/mock'
-import { store } from '../../stores/lottery'
+import { store, loadTicketsForPhone } from '../../stores/lottery'
 
 const { t } = useI18n()
-const query = ref(store.phone)
-const searched = ref(true)
+const query = ref(store.phone || '')
 
-const results = computed(() => {
-  if (!searched.value && !query.value) return []
-  const q = (searched.value ? query.value : store.phone).replace(/\D/g, '')
-  if (!q) return []
-  return store.tickets.filter((tk) => tk.phone.replace(/\D/g, '').includes(q))
-})
-
-const stats = computed(() => {
-  const list = results.value
-  return {
-    active: list.filter((t) => t.status === 'active').length,
-    pending: list.filter((t) => t.status === 'pending').length,
-    total: list.length,
+watch(
+  () => store.phone,
+  (p) => {
+    if (p && !query.value) query.value = p
   }
-})
+)
+
+async function search() {
+  store.phone = query.value.replace(/\D/g, '')
+  await loadTicketsForPhone(store.phone)
+}
+
+if (store.phone) {
+  loadTicketsForPhone(store.phone)
+}
 </script>

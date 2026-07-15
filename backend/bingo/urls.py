@@ -27,22 +27,47 @@ import os
 
 
 def serve_spa_index(request):
-    """Serve the SPA index.html from frontend_dist (tries backend/frontend_dist and repo root frontend_dist)."""
-    base = getattr(settings, 'BASE_DIR', None)
-    if base is None:
+    """Serve the SPA index.html from the resolved FRONTEND_DIST (newest build)."""
+    dist = getattr(settings, 'FRONTEND_DIST', None)
+    if not dist:
         raise Http404('Frontend not configured')
-    # Path can be Path or str
-    base = str(base)
-    candidates = [
-        os.path.join(base, 'frontend_dist', 'index.html'),
-        os.path.join(base, '..', 'frontend_dist', 'index.html'),
-    ]
-    for path in candidates:
-        abs_path = os.path.abspath(path)
-        if os.path.isfile(abs_path):
-            with open(abs_path, 'r', encoding='utf-8') as f:
-                return HttpResponse(f.read(), content_type='text/html')
-    raise Http404('index.html not found')
+    abs_path = os.path.join(str(dist), 'index.html')
+    if not os.path.isfile(abs_path):
+        # Fallback search
+        base = str(getattr(settings, 'BASE_DIR', ''))
+        for path in (
+            os.path.join(base, 'frontend_dist', 'index.html'),
+            os.path.join(base, '..', 'frontend_dist', 'index.html'),
+        ):
+            if os.path.isfile(os.path.abspath(path)):
+                abs_path = os.path.abspath(path)
+                break
+        else:
+            raise Http404('index.html not found')
+    with open(abs_path, 'r', encoding='utf-8') as f:
+        response = HttpResponse(f.read(), content_type='text/html')
+    # Always revalidate HTML so Telegram WebView picks up new hashed JS after rebuild
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response['Pragma'] = 'no-cache'
+    return response
+
+
+def _frontend_assets_root():
+    dist = getattr(settings, 'FRONTEND_DIST', None)
+    if dist:
+        assets = os.path.join(str(dist), 'assets')
+        if os.path.isdir(assets):
+            return assets
+    base = str(getattr(settings, 'BASE_DIR', ''))
+    for candidate in (
+        os.path.join(base, 'frontend_dist', 'assets'),
+        os.path.join(base, '..', 'frontend_dist', 'assets'),
+    ):
+        abs_c = os.path.abspath(candidate)
+        if os.path.isdir(abs_c):
+            return abs_c
+    return os.path.join(base, 'frontend_dist', 'assets')
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -67,6 +92,9 @@ urlpatterns = [
     path('admin-dashboard/withdraws/<int:withdraw_id>/delete/', admin_views.delete_withdraw_request_api, name='delete-withdraw'),
     path('admin-dashboard/settings/', admin_views.game_settings_api, name='game-settings'),
     path('admin-dashboard/lottery-settings/', lottery_views.lottery_settings_admin, name='lottery-settings-admin'),
+    path('admin-dashboard/lottery-purchases/', lottery_views.lottery_purchases_admin, name='lottery-purchases-admin'),
+    path('admin-dashboard/lottery-purchases/<int:purchase_id>/action/', lottery_views.lottery_purchase_action, name='lottery-purchase-action'),
+    path('admin-dashboard/lottery-announce-winner/', lottery_views.lottery_announce_winner, name='lottery-announce-winner'),
     path('admin-dashboard/second-admin-credentials/', admin_views.second_admin_credentials_api, name='second-admin-credentials'),
     path('admin-dashboard/login/', admin_views.admin_dashboard_login, name='admin-dashboard-login'),
     path('admin-dashboard/api/', admin_views.admin_dashboard_api, name='admin-dashboard-api'),
@@ -97,6 +125,9 @@ urlpatterns = [
     path('api/admin-dashboard/withdraws/<int:withdraw_id>/delete/', admin_views.delete_withdraw_request_api, name='delete-withdraw-api'),
     path('api/admin-dashboard/settings/', admin_views.game_settings_api, name='game-settings-api'),
     path('api/admin-dashboard/lottery-settings/', lottery_views.lottery_settings_admin, name='lottery-settings-admin-api'),
+    path('api/admin-dashboard/lottery-purchases/', lottery_views.lottery_purchases_admin, name='lottery-purchases-admin-api'),
+    path('api/admin-dashboard/lottery-purchases/<int:purchase_id>/action/', lottery_views.lottery_purchase_action, name='lottery-purchase-action-api'),
+    path('api/admin-dashboard/lottery-announce-winner/', lottery_views.lottery_announce_winner, name='lottery-announce-winner-api'),
     path('api/admin-dashboard/second-admin-credentials/', admin_views.second_admin_credentials_api, name='second-admin-credentials-api'),
     path('api/admin-dashboard/login/', admin_views.admin_dashboard_login, name='admin-dashboard-login-api'),
     path('api/admin-dashboard/api/', admin_views.admin_dashboard_api, name='admin-dashboard-api-alt'),
@@ -106,14 +137,15 @@ urlpatterns = [
     path('api/secondadmin/api/', admin_views.second_admin_dashboard_api, name='second-admin-dashboard-api-alt'),
     path('api/secondadmin/api/refresh-deposits-withdrawals/', admin_views.refresh_deposits_withdrawals_api, name='refresh-deposits-withdrawals-api-second-alt'),
     path('api/', include('api.urls')),
-    # Serve frontend assets (JS, CSS, etc.) as static files
-    re_path(r'^assets/.*$', serve, {
-        'document_root': os.path.join(settings.BASE_DIR, 'frontend_dist', 'assets'),
+    # Serve frontend assets (JS, CSS, etc.) from the active Vite build
+    re_path(r'^assets/(?P<path>.*)$', serve, {
+        'document_root': _frontend_assets_root(),
         'show_indexes': False
     }),
-    # Uploaded car photos etc.
+    # Uploaded car photos / receipts (must work in production, not only DEBUG)
     re_path(r'^media/(?P<path>.*)$', serve, {
         'document_root': settings.MEDIA_ROOT,
+        'show_indexes': False
     }),
     # Serve frontend for all non-API routes (SPA routing)
     # Use serve_spa_index so index.html is loaded from filesystem (works when frontend_dist is beside backend on EC2)

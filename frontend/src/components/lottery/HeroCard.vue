@@ -5,6 +5,7 @@
     <button type="button" class="block w-full text-left" @click="$emit('open')">
       <div class="relative aspect-[16/10] bg-gradient-to-b from-zinc-200 to-zinc-400">
         <img
+          :key="raffle.image"
           :src="raffle.image"
           :alt="raffle.name"
           class="w-full h-full object-cover object-center"

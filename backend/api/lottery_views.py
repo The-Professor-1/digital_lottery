@@ -1,8 +1,16 @@
+import hashlib
 import json
+from datetime import timedelta
+from decimal import Decimal
+
+from django.db.models import Sum, Q
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from .models import LotterySettings
+
+from .auth_utils import get_user_from_token
+from .models import LotterySettings, LotteryPurchase
 
 
 def _is_admin(request):
@@ -13,17 +21,154 @@ def _is_admin(request):
     return False
 
 
+def _bearer_user(request):
+    auth = request.META.get('HTTP_AUTHORIZATION') or ''
+    if auth.lower().startswith('bearer '):
+        return get_user_from_token(auth[7:].strip())
+    token = request.GET.get('token') or request.POST.get('token')
+    if token:
+        return get_user_from_token(token)
+    return None
+
+
+def _file_sha256(uploaded):
+    h = hashlib.sha256()
+    for chunk in uploaded.chunks():
+        h.update(chunk)
+    uploaded.seek(0)
+    return h.hexdigest()
+
+
+def _period_filter(qs, period):
+    now = timezone.now()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if period == 'today':
+        return qs.filter(created_at__gte=today)
+    if period == 'week':
+        return qs.filter(created_at__gte=today - timedelta(days=7))
+    if period == 'month':
+        return qs.filter(created_at__gte=today - timedelta(days=30))
+    return qs
+
+
 @require_http_methods(['GET'])
 def lottery_settings_public(request):
-    """Public settings for the mini-app (no auth)."""
     settings_obj = LotterySettings.get_settings()
     return JsonResponse(settings_obj.to_public_dict(request))
+
+
+@require_http_methods(['GET'])
+def lottery_me(request):
+    user = _bearer_user(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    return JsonResponse({
+        'user_id': user.id,
+        'telegram_id': user.telegram_id,
+        'phone': user.phone_number or '',
+        'first_name': user.first_name or '',
+        'username': user.username or '',
+    })
+
+
+@require_http_methods(['GET'])
+def lottery_tickets(request):
+    phone = (request.GET.get('phone') or '').strip()
+    digits = ''.join(c for c in phone if c.isdigit())
+    if len(digits) < 9:
+        return JsonResponse({'tickets': [], 'active': 0, 'pending': 0, 'total': 0})
+
+    qs = LotteryPurchase.objects.filter(
+        Q(phone__icontains=digits[-9:]) | Q(phone__icontains=digits)
+    ).exclude(status='rejected')
+    tickets = [p.to_dict(request) for p in qs[:100]]
+    active = sum(1 for t in tickets if t['status'] == 'verified')
+    pending = sum(1 for t in tickets if t['status'] == 'pending')
+    return JsonResponse({
+        'tickets': tickets,
+        'active': active,
+        'pending': pending,
+        'total': len(tickets),
+    })
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_submit_purchase(request):
+    user = _bearer_user(request)
+
+    full_name = (request.POST.get('full_name') or '').strip()
+    phone = (request.POST.get('phone') or '').strip()
+    paid_from = (request.POST.get('paid_from_account') or '').strip()
+    bank_name = (request.POST.get('bank_name') or '').strip()
+    bank_holder = (request.POST.get('bank_holder') or '').strip()
+    bank_account = (request.POST.get('bank_account') or '').strip()
+
+    try:
+        numbers = json.loads(request.POST.get('numbers') or '[]')
+    except (json.JSONDecodeError, TypeError):
+        numbers = []
+    numbers = [int(n) for n in numbers if str(n).isdigit() or isinstance(n, int)]
+
+    if not full_name or not phone:
+        return JsonResponse({'error': 'Name and phone are required'}, status=400)
+    if not numbers:
+        return JsonResponse({'error': 'Select at least one number'}, status=400)
+
+    receipt = request.FILES.get('receipt') or request.FILES.get('receipt_image')
+    if not receipt:
+        return JsonResponse({'error': 'Payment receipt image is required'}, status=400)
+
+    settings_obj = LotterySettings.get_settings()
+    taken = settings_obj.taken_numbers_set()
+    conflict = [n for n in numbers if n in taken]
+    if conflict:
+        return JsonResponse({
+            'error': 'Some numbers are no longer available',
+            'taken': conflict,
+        }, status=409)
+
+    receipt_hash = _file_sha256(receipt)
+    if LotteryPurchase.objects.filter(receipt_hash=receipt_hash).exists():
+        return JsonResponse({
+            'error': 'This receipt image was already submitted. Use a different receipt for another ticket.',
+        }, status=409)
+
+    amount = Decimal(settings_obj.ticket_price) * len(numbers)
+    if user and user.phone_number and not phone:
+        phone = user.phone_number
+
+    if not user:
+        from .models import User
+        digits = ''.join(c for c in phone if c.isdigit())
+        if digits:
+            user = User.objects.filter(phone_number__icontains=digits[-9:]).order_by('-id').first()
+
+    purchase = LotteryPurchase.objects.create(
+        user=user,
+        full_name=full_name,
+        phone=phone,
+        numbers=numbers,
+        quantity=len(numbers),
+        amount=amount,
+        bank_name=bank_name,
+        bank_holder=bank_holder,
+        bank_account=bank_account,
+        paid_from_account=paid_from,
+        receipt_image=receipt,
+        receipt_hash=receipt_hash,
+        status='pending',
+    )
+    return JsonResponse({
+        'success': True,
+        'message': 'We will let you know when we have verified your receipt.',
+        'purchase': purchase.to_dict(request),
+    })
 
 
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def lottery_settings_admin(request):
-    """Admin GET/POST for lottery settings. Staff or second-admin session."""
     if not _is_admin(request):
         return JsonResponse({'error': 'Unauthorized'}, status=401)
 
@@ -32,78 +177,266 @@ def lottery_settings_admin(request):
     if request.method == 'GET':
         data = settings_obj.to_public_dict(request)
         data['car_image_url_raw'] = settings_obj.car_image_url or ''
+        data['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
         return JsonResponse(data)
 
-    # POST — JSON and/or multipart (image upload)
-    content_type = (request.content_type or '').lower()
-    if 'multipart/form-data' in content_type:
-        data = request.POST.dict()
-        accounts_raw = data.get('payment_accounts')
-    else:
-        try:
-            data = json.loads(request.body) if request.body else {}
-        except (json.JSONDecodeError, ValueError):
-            data = {}
-        accounts_raw = data.get('payment_accounts')
-
-    str_fields = ['brand_name', 'car_name', 'car_color', 'car_image_url', 'display_name']
-    int_fields = [
-        'ticket_price', 'total_tickets', 'sold_count',
-        'countdown_days', 'countdown_hours', 'countdown_minutes', 'countdown_seconds',
-    ]
-
-    old_timer = (
-        settings_obj.countdown_days,
-        settings_obj.countdown_hours,
-        settings_obj.countdown_minutes,
-        settings_obj.countdown_seconds,
-    )
-
-    for field in str_fields:
-        if field in data and data[field] is not None:
-            setattr(settings_obj, field, str(data[field]).strip())
-
-    for field in int_fields:
-        if field in data and data[field] is not None and data[field] != '':
+    try:
+        content_type = (request.content_type or '').lower()
+        if 'multipart/form-data' in content_type:
+            data = request.POST.dict()
+            accounts_raw = data.get('payment_accounts')
+            blocked_raw = data.get('admin_blocked_numbers')
+        else:
             try:
-                setattr(settings_obj, field, max(0, int(data[field])))
+                data = json.loads(request.body) if request.body else {}
+            except (json.JSONDecodeError, ValueError):
+                data = {}
+            accounts_raw = data.get('payment_accounts')
+            blocked_raw = data.get('admin_blocked_numbers')
+
+        str_fields = ['brand_name', 'car_name', 'car_color', 'car_image_url', 'display_name']
+        int_fields = [
+            'ticket_price', 'total_tickets', 'sold_count',
+            'countdown_days', 'countdown_hours', 'countdown_minutes', 'countdown_seconds',
+        ]
+
+        old_timer = (
+            settings_obj.countdown_days,
+            settings_obj.countdown_hours,
+            settings_obj.countdown_minutes,
+            settings_obj.countdown_seconds,
+        )
+
+        for field in str_fields:
+            if field in data and data[field] is not None:
+                setattr(settings_obj, field, str(data[field]).strip())
+
+        for field in int_fields:
+            if field in data and data[field] is not None and data[field] != '':
+                try:
+                    setattr(settings_obj, field, max(0, int(float(data[field]))))
+                except (TypeError, ValueError):
+                    pass
+
+        timer_touched = old_timer != (
+            settings_obj.countdown_days,
+            settings_obj.countdown_hours,
+            settings_obj.countdown_minutes,
+            settings_obj.countdown_seconds,
+        )
+
+        if accounts_raw is not None:
+            if isinstance(accounts_raw, str):
+                try:
+                    accounts_raw = json.loads(accounts_raw)
+                except (json.JSONDecodeError, ValueError):
+                    accounts_raw = None
+            if isinstance(accounts_raw, list):
+                cleaned = []
+                for i, acc in enumerate(accounts_raw):
+                    if not isinstance(acc, dict):
+                        continue
+                    cleaned.append({
+                        'id': str(acc.get('id') or f'acc-{i+1}'),
+                        'name': str(acc.get('name') or '').strip(),
+                        'holder': str(acc.get('holder') or '').strip(),
+                        'account': str(acc.get('account') or '').strip(),
+                    })
+                settings_obj.payment_accounts = cleaned
+
+        if blocked_raw is not None:
+            if isinstance(blocked_raw, str):
+                try:
+                    blocked_raw = json.loads(blocked_raw)
+                except (json.JSONDecodeError, ValueError):
+                    blocked_raw = []
+            if isinstance(blocked_raw, list):
+                nums = []
+                for n in blocked_raw:
+                    try:
+                        nums.append(int(n))
+                    except (TypeError, ValueError):
+                        pass
+                settings_obj.admin_blocked_numbers = sorted(set(nums))
+
+        if request.FILES.get('car_image'):
+            settings_obj.car_image = request.FILES['car_image']
+        elif str(data.get('clear_car_image', '')).lower() in ('1', 'true', 'yes'):
+            if settings_obj.car_image:
+                settings_obj.car_image.delete(save=False)
+            settings_obj.car_image = None
+
+        force_reset = str(data.get('reset_timer', '')).lower() in ('1', 'true', 'yes', 'on')
+        settings_obj.save(reset_timer=timer_touched or force_reset)
+
+        out = settings_obj.to_public_dict(request)
+        out['car_image_url_raw'] = settings_obj.car_image_url or ''
+        out['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
+        return JsonResponse({'success': True, 'settings': out})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e) or 'Could not save settings'}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def lottery_purchases_admin(request):
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    status = (request.GET.get('status') or 'pending').strip()
+    period = (request.GET.get('period') or 'all').strip()
+    qs = LotteryPurchase.objects.all().select_related('user')
+    if status in ('pending', 'verified', 'rejected'):
+        qs = qs.filter(status=status)
+    qs = _period_filter(qs, period)
+
+    today = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    verified_today = LotteryPurchase.objects.filter(status='verified', verified_at__gte=today)
+    revenue_today = verified_today.aggregate(total=Sum('amount'))['total'] or 0
+
+    return JsonResponse({
+        'purchases': [p.to_dict(request) for p in qs[:200]],
+        'revenue_today': float(revenue_today),
+        'verified_today_count': verified_today.count(),
+        'pending_count': LotteryPurchase.objects.filter(status='pending').count(),
+        'verified_count': LotteryPurchase.objects.filter(status='verified').count(),
+    })
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_purchase_action(request, purchase_id):
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+
+    action = (body.get('action') or '').strip()
+    note = (body.get('note') or '').strip()
+
+    try:
+        purchase = LotteryPurchase.objects.select_related('user').get(id=purchase_id)
+    except LotteryPurchase.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    if action == 'verify':
+        if purchase.status == 'verified':
+            return JsonResponse({'error': 'Already verified'}, status=400)
+        settings_obj = LotterySettings.get_settings()
+        others = set()
+        for n in settings_obj.admin_blocked_numbers or []:
+            try:
+                others.add(int(n))
             except (TypeError, ValueError):
                 pass
+        for p in LotteryPurchase.objects.filter(status='verified').exclude(id=purchase.id):
+            for n in p.numbers or []:
+                try:
+                    others.add(int(n))
+                except (TypeError, ValueError):
+                    pass
+        conflict = [n for n in (purchase.numbers or []) if int(n) in others]
+        if conflict:
+            return JsonResponse({'error': f'Numbers already taken: {conflict}'}, status=409)
 
-    new_timer = (
-        settings_obj.countdown_days,
-        settings_obj.countdown_hours,
-        settings_obj.countdown_minutes,
-        settings_obj.countdown_seconds,
-    )
-    timer_touched = old_timer != new_timer
+        purchase.status = 'verified'
+        purchase.verified_at = timezone.now()
+        purchase.admin_note = note
+        if getattr(request.user, 'is_authenticated', False) and request.user.is_authenticated:
+            purchase.verified_by = request.user
+        purchase.save()
 
-    if accounts_raw is not None:
-        if isinstance(accounts_raw, str):
+        if purchase.user_id and purchase.user and purchase.user.telegram_id:
+            nums = ', '.join(str(n).zfill(3) for n in (purchase.numbers or []))
+            msg = (
+                f'✅ Receipt verified!\n\n'
+                f'Your lottery numbers: {nums}\n'
+                f'Amount: {purchase.amount} Birr\n\n'
+                f'Open the app → Tickets to view them.'
+            )
             try:
-                accounts_raw = json.loads(accounts_raw)
-            except (json.JSONDecodeError, ValueError):
-                accounts_raw = None
-        if isinstance(accounts_raw, list):
-            cleaned = []
-            for i, acc in enumerate(accounts_raw):
-                if not isinstance(acc, dict):
-                    continue
-                cleaned.append({
-                    'id': str(acc.get('id') or f'acc-{i+1}'),
-                    'name': str(acc.get('name') or '').strip(),
-                    'holder': str(acc.get('holder') or '').strip(),
-                    'account': str(acc.get('account') or '').strip(),
-                })
-            settings_obj.payment_accounts = cleaned
+                from telegram_bot.notifications import send_notification_sync
+                send_notification_sync(purchase.user.telegram_id, msg)
+            except Exception:
+                pass
 
-    if request.FILES.get('car_image'):
-        settings_obj.car_image = request.FILES['car_image']
+        return JsonResponse({'success': True, 'purchase': purchase.to_dict(request)})
 
-    force_reset = str(data.get('reset_timer', '')).lower() in ('1', 'true', 'yes', 'on')
-    settings_obj.save(reset_timer=timer_touched or force_reset)
+    if action == 'reject':
+        purchase.status = 'rejected'
+        purchase.admin_note = note
+        purchase.save()
+        if purchase.user_id and purchase.user and purchase.user.telegram_id:
+            msg = '❌ Your payment receipt was not approved. Please contact support or submit again with a clearer receipt.'
+            if note:
+                msg += f'\n\nNote: {note}'
+            try:
+                from telegram_bot.notifications import send_notification_sync
+                send_notification_sync(purchase.user.telegram_id, msg)
+            except Exception:
+                pass
+        return JsonResponse({'success': True, 'purchase': purchase.to_dict(request)})
+
+    return JsonResponse({'error': 'Unknown action'}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_announce_winner(request):
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+
+    winner_number = str(body.get('winner_number') or '').strip()
+    message = (body.get('message') or '').strip()
+    if not winner_number:
+        return JsonResponse({'error': 'Winner number is required'}, status=400)
+
+    settings_obj = LotterySettings.get_settings()
+    settings_obj.winner_number = winner_number
+    settings_obj.winner_message = message
+    settings_obj.winner_announced_at = timezone.now()
+    settings_obj.save(reset_timer=False)
+
+    announce = message or f'🎉 Winner announced! Winning number: {winner_number}'
+    full_msg = f'{announce}\n\nWinning number: {str(winner_number).zfill(3)}'
+
+    notified = 0
+    try:
+        from telegram_bot.notifications import send_notification_sync
+        try:
+            win_int = int(winner_number)
+        except ValueError:
+            win_int = None
+        for p in LotteryPurchase.objects.filter(status='verified').select_related('user'):
+            if not (p.user and p.user.telegram_id):
+                continue
+            nums = []
+            for n in p.numbers or []:
+                try:
+                    nums.append(int(n))
+                except (TypeError, ValueError):
+                    pass
+            if win_int is not None and win_int in nums:
+                send_notification_sync(p.user.telegram_id, f'🏆 Congratulations!\n\n{full_msg}')
+            else:
+                send_notification_sync(p.user.telegram_id, full_msg)
+            notified += 1
+    except Exception:
+        pass
 
     return JsonResponse({
         'success': True,
+        'winner_number': winner_number,
+        'notified': notified,
         'settings': settings_obj.to_public_dict(request),
     })

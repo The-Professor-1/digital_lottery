@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator
 import json
-
+import os
 
 class User(AbstractUser):
     """Custom User model for Telegram users"""
@@ -954,7 +954,8 @@ class LotterySettings(models.Model):
     car_name = models.CharField(max_length=120, default='BYD Yuan UP')
     car_color = models.CharField(max_length=80, default='Time Grey')
     car_image = models.ImageField(upload_to='lottery/cars/', blank=True, null=True)
-    car_image_url = models.URLField(
+    car_image_url = models.CharField(
+        max_length=500,
         blank=True,
         default='https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=900&q=80',
         help_text='Used when no uploaded image is set',
@@ -966,13 +967,18 @@ class LotterySettings(models.Model):
     )
     ticket_price = models.PositiveIntegerField(default=3000)
     total_tickets = models.PositiveIntegerField(default=3500)
-    sold_count = models.PositiveIntegerField(default=397)
+    sold_count = models.PositiveIntegerField(default=0)
     countdown_days = models.PositiveIntegerField(default=12)
     countdown_hours = models.PositiveIntegerField(default=10)
     countdown_minutes = models.PositiveIntegerField(default=24)
     countdown_seconds = models.PositiveIntegerField(default=45)
     ends_at = models.DateTimeField(null=True, blank=True)
     payment_accounts = models.JSONField(default=default_payment_accounts)
+    # Numbers force-marked taken by admin (ints). Verified user tickets also count as taken.
+    admin_blocked_numbers = models.JSONField(default=list, blank=True)
+    winner_number = models.CharField(max_length=16, blank=True, default='')
+    winner_message = models.TextField(blank=True, default='')
+    winner_announced_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1004,14 +1010,47 @@ class LotterySettings(models.Model):
         if self.car_image:
             url = self.car_image.url
             if request is not None:
-                return request.build_absolute_uri(url)
+                url = request.build_absolute_uri(url)
+            # Telegram WebView blocks mixed content — force https when configured
+            from django.conf import settings as dj_settings
+            use_https = getattr(dj_settings, 'SESSION_COOKIE_SECURE', False) or (
+                str(os.getenv('USE_HTTPS', '')).lower() in ('1', 'true', 'yes')
+            )
+            if use_https and url.startswith('http://'):
+                url = 'https://' + url[len('http://'):]
+            # Cache-bust so clients see newly uploaded cars
+            if self.updated_at:
+                sep = '&' if '?' in url else '?'
+                url = f'{url}{sep}v={int(self.updated_at.timestamp())}'
             return url
-        return self.car_image_url or ''
+        url = self.car_image_url or ''
+        if url and self.updated_at:
+            sep = '&' if '?' in url else '?'
+            url = f'{url}{sep}v={int(self.updated_at.timestamp())}'
+        return url
+
+    def taken_numbers_set(self):
+        """Admin-blocked + pending/verified purchase numbers."""
+        taken = set()
+        for n in self.admin_blocked_numbers or []:
+            try:
+                taken.add(int(n))
+            except (TypeError, ValueError):
+                pass
+        for purchase in LotteryPurchase.objects.filter(status__in=['pending', 'verified']).only('numbers'):
+            for n in purchase.numbers or []:
+                try:
+                    taken.add(int(n))
+                except (TypeError, ValueError):
+                    pass
+        return taken
 
     def to_public_dict(self, request=None):
         ends = self.ends_at
         if ends is None:
             ends = self.compute_ends_at()
+        taken = sorted(self.taken_numbers_set())
+        sold = len(taken)
         return {
             'brand_name': self.brand_name,
             'car_name': self.car_name,
@@ -1020,7 +1059,8 @@ class LotterySettings(models.Model):
             'display_name': self.display_name,
             'ticket_price': self.ticket_price,
             'total_tickets': self.total_tickets,
-            'sold_count': self.sold_count,
+            'sold_count': sold,
+            'taken_numbers': taken,
             'countdown_days': self.countdown_days,
             'countdown_hours': self.countdown_hours,
             'countdown_minutes': self.countdown_minutes,
@@ -1028,6 +1068,9 @@ class LotterySettings(models.Model):
             'ends_at': ends.isoformat() if ends else None,
             'ends_at_ms': int(ends.timestamp() * 1000) if ends else None,
             'payment_accounts': self.payment_accounts or [],
+            'winner_number': self.winner_number or '',
+            'winner_message': self.winner_message or '',
+            'winner_announced_at': self.winner_announced_at.isoformat() if self.winner_announced_at else None,
         }
 
     @classmethod
@@ -1037,3 +1080,66 @@ class LotterySettings(models.Model):
             obj.save(reset_timer=True)
             obj.refresh_from_db()
         return obj
+
+
+class LotteryPurchase(models.Model):
+    """Ticket purchase / receipt verification request."""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    ]
+
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='lottery_purchases'
+    )
+    full_name = models.CharField(max_length=160)
+    phone = models.CharField(max_length=32, db_index=True)
+    numbers = models.JSONField(default=list, help_text='Selected lottery numbers as ints')
+    quantity = models.PositiveIntegerField(default=1)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    bank_name = models.CharField(max_length=120, blank=True, default='')
+    bank_holder = models.CharField(max_length=160, blank=True, default='')
+    bank_account = models.CharField(max_length=64, blank=True, default='')
+    paid_from_account = models.CharField(max_length=64, blank=True, default='')
+    receipt_image = models.ImageField(upload_to='lottery/receipts/')
+    receipt_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    admin_note = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='lottery_verifications'
+    )
+
+    class Meta:
+        db_table = 'lottery_purchases'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'LotteryPurchase {self.id} {self.phone} {self.status}'
+
+    def to_dict(self, request=None):
+        img = ''
+        if self.receipt_image:
+            img = self.receipt_image.url
+            if request is not None:
+                img = request.build_absolute_uri(img)
+        return {
+            'id': self.id,
+            'full_name': self.full_name,
+            'phone': self.phone,
+            'numbers': self.numbers or [],
+            'quantity': self.quantity,
+            'amount': float(self.amount or 0),
+            'bank_name': self.bank_name,
+            'bank_holder': self.bank_holder,
+            'bank_account': self.bank_account,
+            'paid_from_account': self.paid_from_account,
+            'receipt_image_url': img,
+            'status': self.status,
+            'admin_note': self.admin_note,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'verified_at': self.verified_at.isoformat() if self.verified_at else None,
+            'telegram_id': self.user.telegram_id if self.user_id and self.user else None,
+        }

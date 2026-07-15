@@ -53,7 +53,7 @@
               type="button"
               class="aspect-square rounded-lg text-[11px] font-semibold tabular-nums transition-colors"
               :class="tileClass(n)"
-              :disabled="soldNumbers.has(n)"
+              :disabled="isTaken(n)"
               @click="toggleNumber(n)"
             >
               {{ padNumber(n) }}
@@ -67,7 +67,7 @@
             class="w-full py-3.5 rounded-2xl font-bold text-sm transition-all"
             :class="
               complete
-                ? 'btn-gold'
+                ? 'btn-green'
                 : 'bg-ink-300 text-white/40 cursor-not-allowed'
             "
             :disabled="!complete"
@@ -89,13 +89,14 @@
 import { computed } from 'vue'
 import { Shuffle, X } from 'lucide-vue-next'
 import { useI18n } from '../../composables/useI18n'
-import { soldNumbers, padNumber } from '../../data/mock'
+import { padNumber } from '../../data/mock'
 import {
   store,
   closePicker,
   toggleNumber,
   quickPick,
   confirmPicker,
+  isTaken,
 } from '../../stores/lottery'
 
 const { t } = useI18n()
@@ -103,7 +104,7 @@ const total = computed(() => store.raffle.totalTickets)
 const complete = computed(() => store.selectedNumbers.length === store.quantity)
 
 function tileClass(n) {
-  if (soldNumbers.has(n)) return 'bg-sold text-red-200/80 cursor-not-allowed'
+  if (isTaken(n)) return 'bg-sold text-red-200/80 cursor-not-allowed'
   if (store.selectedNumbers.includes(n)) return 'bg-gold text-black shadow-glow-sm'
   return 'bg-ink-300 text-white/90 hover:bg-ink-200'
 }

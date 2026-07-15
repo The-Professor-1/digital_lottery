@@ -96,11 +96,33 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'bingo.urls'
 
-# Frontend build may live inside backend/ or at repo root (e.g. on EC2)
+# Frontend build: Vite writes to backend/frontend_dist (see frontend/vite.config.js)
+# Keep parent path as fallback for older deployments
 FRONTEND_DIST_DIRS = [
     os.path.join(BASE_DIR, 'frontend_dist'),
     os.path.join(BASE_DIR, '..', 'frontend_dist'),
 ]
+
+# Prefer the newest frontend_dist if both exist (avoids serving a stale copy)
+def _pick_frontend_dist():
+    candidates = []
+    for d in FRONTEND_DIST_DIRS:
+        abs_d = os.path.abspath(d)
+        index = os.path.join(abs_d, 'index.html')
+        if os.path.isfile(index):
+            candidates.append((os.path.getmtime(index), abs_d))
+    if candidates:
+        candidates.sort(reverse=True)
+        return candidates[0][1]
+    return os.path.abspath(os.path.join(BASE_DIR, 'frontend_dist'))
+
+FRONTEND_DIST = _pick_frontend_dist()
+
+# Behind nginx/HTTPS terminator: build absolute media URLs as https://
+if _use_https:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    USE_X_FORWARDED_HOST = True
+    SECURE_SSL_REDIRECT = False  # nginx handles redirect; avoid double-redirect loops
 
 TEMPLATES = [
     {
@@ -185,8 +207,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# Frontend static files (from Vite build) - use first existing location (backend/ or repo root)
-FRONTEND_DIST = next((os.path.abspath(d) for d in FRONTEND_DIST_DIRS if os.path.exists(d)), os.path.join(BASE_DIR, 'frontend_dist'))
+# FRONTEND_DIST is resolved earlier via _pick_frontend_dist() (newest index.html wins)
 if os.path.exists(FRONTEND_DIST):
     # Add frontend_dist to static files directories
     # This includes index.html and all assets

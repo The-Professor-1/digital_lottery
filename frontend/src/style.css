@@ -45,6 +45,12 @@ body {
     disabled:shadow-none disabled:cursor-not-allowed;
 }
 
+.btn-green {
+  @apply bg-gradient-to-r from-forest to-emerald-400 text-white font-bold rounded-2xl
+    shadow-[0_0_20px_rgba(30,142,90,0.4)] active:scale-[0.98] transition-transform
+    disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed;
+}
+
 .btn-gold-outline {
   @apply border-2 border-gold text-gold font-semibold rounded-2xl
     bg-transparent active:scale-[0.98] transition-transform;

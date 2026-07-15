@@ -10,7 +10,13 @@
       </div>
       <div class="min-w-0">
         <p class="text-sm text-white/70">{{ t.userPhone }}</p>
-        <p class="text-xl font-bold text-white tracking-wide truncate">{{ store.phone }}</p>
+        <p class="text-xl font-bold text-white tracking-wide truncate">
+          {{ displayPhone }}
+        </p>
+        <p v-if="!store.phone" class="text-xs text-white/40 mt-1">
+          Open the app from Telegram after sharing your phone with the bot.
+        </p>
+        <p v-else class="text-xs text-emerald-300/80 mt-1">Registered account</p>
       </div>
     </div>
 
@@ -24,9 +30,26 @@
 </template>
 
 <script setup>
+import { computed, onMounted } from 'vue'
 import { Phone } from 'lucide-vue-next'
 import { useI18n } from '../../composables/useI18n'
-import { store } from '../../stores/lottery'
+import { store, loadUserProfile } from '../../stores/lottery'
 
 const { t } = useI18n()
+
+const displayPhone = computed(() => {
+  const raw = String(store.phone || '').replace(/\D/g, '')
+  if (!raw) return '—'
+  if (raw.startsWith('251') && raw.length >= 12) {
+    return `+${raw.slice(0, 3)} ${raw.slice(3, 5)} ${raw.slice(5, 8)} ${raw.slice(8)}`
+  }
+  if (raw.length === 10 && raw.startsWith('0')) {
+    return `${raw.slice(0, 4)} ${raw.slice(4, 7)} ${raw.slice(7)}`
+  }
+  return raw.startsWith('251') ? `+${raw}` : raw
+})
+
+onMounted(() => {
+  loadUserProfile()
+})
 </script>

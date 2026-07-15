@@ -133,6 +133,7 @@
                 class="mt-1.5 w-full rounded-xl bg-ink-200 border border-white/10 px-3 py-3 text-sm text-white outline-none"
               />
             </label>
+            <p v-if="store.submitError" class="text-sm text-red-300">{{ store.submitError }}</p>
           </template>
 
           <!-- Step 3 -->
@@ -143,8 +144,13 @@
               >
                 <Check :size="32" class="text-forest" />
               </div>
-              <h3 class="text-xl font-bold">{{ t.orderSubmitted }}</h3>
-              <p class="text-sm text-white/55 px-4">{{ t.orderSubmittedHint }}</p>
+              <h3 class="text-xl font-bold">Receipt received</h3>
+              <p class="text-sm text-white/80 px-4 leading-relaxed">
+                {{
+                  store.submitMessage ||
+                  'We will let you know when we have verified your receipt.'
+                }}
+              </p>
             </div>
           </template>
         </div>
@@ -170,14 +176,15 @@
             </button>
             <button
               type="button"
-              class="btn-gold flex-[1.4] py-3.5 text-sm"
-              @click="submitOrder"
+              class="btn-green flex-[1.4] py-3.5 text-sm"
+              :disabled="store.submitting || !store.paymentProofFile"
+              @click="onSubmit"
             >
-              {{ t.continue }} &gt;
+              {{ store.submitting ? '…' : t.continue + ' >' }}
             </button>
           </template>
           <template v-else>
-            <button type="button" class="btn-gold flex-1 py-3.5 text-sm" @click="onDone">
+            <button type="button" class="btn-green flex-1 py-3.5 text-sm" @click="onDone">
               {{ t.done }}
             </button>
           </template>
@@ -198,8 +205,14 @@ const { t } = useI18n()
 const router = useRouter()
 
 function onFile(e) {
-  const file = e.target.files?.[0]
+  const file = e.target.files?.[0] || null
+  store.paymentProofFile = file
   store.paymentProofName = file ? file.name : ''
+  store.submitError = ''
+}
+
+async function onSubmit() {
+  await submitOrder()
 }
 
 function onDone() {
