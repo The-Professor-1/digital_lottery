@@ -557,6 +557,80 @@ def lottery_users_admin(request):
 
 @csrf_exempt
 @require_http_methods(['POST'])
+def lottery_user_delete(request):
+    """Delete a registered user (and their lottery purchases) or guest purchases by phone."""
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+
+    user_id = body.get('user_id')
+    phone = (body.get('phone') or '').strip()
+
+    from .models import User
+
+    deleted_purchases = 0
+    deleted_user = False
+
+    if user_id:
+        try:
+            u = User.objects.get(id=int(user_id))
+        except (User.DoesNotExist, TypeError, ValueError):
+            return JsonResponse({'error': 'User not found'}, status=404)
+        # Free numbers: remove purchases tied to this user / phone
+        phone_digits = ''.join(c for c in (u.phone_number or '') if c.isdigit())
+        qs = LotteryPurchase.objects.filter(user=u)
+        if len(phone_digits) >= 9:
+            qs = LotteryPurchase.objects.filter(
+                Q(user=u) | Q(phone__icontains=phone_digits[-9:])
+            )
+        # Delete receipt files then rows
+        for p in qs:
+            try:
+                if p.receipt_image:
+                    p.receipt_image.delete(save=False)
+            except Exception:
+                pass
+        deleted_purchases = qs.count()
+        qs.delete()
+        # Soft-clear phone/telegram to avoid nuking if they rejoin... user asked delete
+        u.delete()
+        deleted_user = True
+        return JsonResponse({
+            'success': True,
+            'deleted_user': deleted_user,
+            'deleted_purchases': deleted_purchases,
+        })
+
+    if phone:
+        digits = ''.join(c for c in phone if c.isdigit())
+        if len(digits) < 9:
+            return JsonResponse({'error': 'Phone too short'}, status=400)
+        qs = LotteryPurchase.objects.filter(
+            Q(phone__icontains=digits[-9:]) | Q(phone__icontains=digits)
+        )
+        for p in qs:
+            try:
+                if p.receipt_image:
+                    p.receipt_image.delete(save=False)
+            except Exception:
+                pass
+        deleted_purchases = qs.count()
+        qs.delete()
+        return JsonResponse({
+            'success': True,
+            'deleted_user': False,
+            'deleted_purchases': deleted_purchases,
+        })
+
+    return JsonResponse({'error': 'user_id or phone required'}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
 def lottery_announce_winner(request):
     if not _is_admin(request):
         return JsonResponse({'error': 'Unauthorized'}, status=401)

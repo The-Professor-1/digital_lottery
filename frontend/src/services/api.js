@@ -470,6 +470,11 @@ export async function getLotteryUsersAdmin(params = {}) {
   return response.data
 }
 
+export async function deleteLotteryUser({ user_id = null, phone = null } = {}) {
+  const response = await api.post('/admin-dashboard/lottery-users/delete/', { user_id, phone })
+  return response.data
+}
+
 export async function getSecondAdminDashboardData() {
   const response = await adminApi.get('/secondadmin/api/')
   return response.data

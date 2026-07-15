@@ -143,13 +143,13 @@
     <div v-if="loggedIn && activeTab === 'users'" class="panel">
       <div class="row-between">
         <h2>Users</h2>
-        <span class="hint">{{ users.length }} listed</span>
+        <span class="hint">Showing {{ visibleUsers.length }} of {{ users.length }}</span>
       </div>
       <div class="filters">
         <input v-model="usersQuery" type="text" placeholder="Search phone / name / telegram id" @keyup.enter="loadUsers" />
         <button type="button" class="btn ghost" @click="loadUsers">{{ usersLoading ? '…' : 'Search' }}</button>
       </div>
-      <article v-for="(u, idx) in users" :key="u.id || ('g-' + idx)" class="receipt-card">
+      <article v-for="(u, idx) in visibleUsers" :key="u.id || ('g-' + idx)" class="receipt-card">
         <div class="row-between">
           <div>
             <strong>{{ u.first_name || u.username || 'User' }}</strong>
@@ -171,8 +171,16 @@
           <span v-for="n in u.pending_numbers" :key="'p'+n" class="num-chip pending-chip">{{ String(n).padStart(3,'0') }}</span>
         </div>
         <p v-if="!u.verified_numbers?.length && !u.pending_numbers?.length" class="hint">No ticket numbers this round.</p>
+        <div class="actions">
+          <button type="button" class="btn ghost danger" @click="deleteUser(u)">Delete user</button>
+        </div>
       </article>
       <p v-if="!users.length && !usersLoading" class="hint">No users found.</p>
+      <div v-if="usersVisibleCount < users.length" class="actions">
+        <button type="button" class="btn primary" @click="showMoreUsers">
+          Show more ({{ Math.min(10, users.length - usersVisibleCount) }} more)
+        </button>
+      </div>
     </div>
 
     <!-- WINNER -->
@@ -254,6 +262,7 @@ import {
   secondAdminLogin,
   secondAdminLogout,
   getLotteryUsersAdmin,
+  deleteLotteryUser,
 } from '../services/api'
 
 export default {
@@ -317,6 +326,7 @@ export default {
       users: [],
       usersQuery: '',
       usersLoading: false,
+      usersVisibleCount: 10,
     }
   },
   computed: {
@@ -341,6 +351,9 @@ export default {
       ]
       if (this.isMain) base.push({ id: 'access', label: 'Access' })
       return base
+    },
+    visibleUsers() {
+      return (this.users || []).slice(0, this.usersVisibleCount)
     },
     previewUrl() {
       if (this.file) return URL.createObjectURL(this.file)
@@ -557,6 +570,7 @@ export default {
     },
     async loadUsers() {
       this.usersLoading = true
+      this.usersVisibleCount = 10
       try {
         const data = await getLotteryUsersAdmin({ q: this.usersQuery || undefined })
         this.users = data.users || []
@@ -569,6 +583,23 @@ export default {
         }
       } finally {
         this.usersLoading = false
+      }
+    },
+    showMoreUsers() {
+      this.usersVisibleCount = Math.min(this.users.length, this.usersVisibleCount + 10)
+    },
+    async deleteUser(u) {
+      const label = u.first_name || u.username || u.phone || 'this user'
+      if (!confirm(`Delete ${label}? Their lottery purchases will be removed and numbers freed.`)) return
+      this.error = ''
+      try {
+        const payload = u.id ? { user_id: u.id } : { phone: u.phone }
+        const res = await deleteLotteryUser(payload)
+        this.message = `Deleted. Purchases removed: ${res.deleted_purchases || 0}`
+        await this.loadUsers()
+        await this.load()
+      } catch (e) {
+        this.error = e.response?.data?.error || 'Could not delete user'
       }
     },
     async loadAccess() {
