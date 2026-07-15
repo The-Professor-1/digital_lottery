@@ -5,25 +5,24 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Deploy to EC2 over SSH
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 30m
           script: |
-            set -e
+            set -euo pipefail
             echo "Starting CarLottery deployment..."
-            cd /home/ubuntu/apps/CarLottery
+            cd "$HOME/apps/CarLottery"
 
             git fetch origin
             if git show-ref --quiet refs/remotes/origin/main; then
@@ -36,10 +35,14 @@ jobs:
             fi
 
             echo "Using branch: $BRANCH"
-            git reset --hard origin/$BRANCH
+            git reset --hard "origin/$BRANCH"
             git log -1 --oneline
 
-            source venv/bin/activate
+            if [ -f venv/bin/activate ]; then
+              # shellcheck disable=SC1091
+              source venv/bin/activate
+            fi
+
             pip install -r requirements.txt
 
             cd frontend
@@ -53,8 +56,8 @@ jobs:
             cd ..
 
             sudo systemctl daemon-reload
-            sudo systemctl restart carlottery-gunicorn || sudo systemctl restart gunicorn
-            sudo systemctl restart redis || true
+            sudo systemctl restart carlottery-gunicorn || sudo systemctl restart gunicorn || true
+            sudo systemctl restart redis-server || sudo systemctl restart redis || true
             sudo systemctl restart celery || true
             sudo systemctl restart celery-beat || true
             sudo systemctl restart carlottery-telegram-bot || true
