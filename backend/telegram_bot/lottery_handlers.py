@@ -7,6 +7,7 @@ import logging
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
+from django.db import IntegrityError
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -99,29 +100,58 @@ def _normalize_phone(phone_number: str) -> str:
         return '251' + digits[1:]
     if len(digits) == 9:
         return '251' + digits
-    return digits or phone_number
+    return digits or (phone_number or '')
 
 
 def _mini_app_url(user: User) -> str:
     token = generate_jwt_token(user)
-    base = getattr(settings, 'TELEGRAM_WEB_APP_URL', '') or ''
+    base = (getattr(settings, 'TELEGRAM_WEB_APP_URL', '') or '').strip()
+    if not base:
+        base = 'https://example.com'
     sep = '&' if '?' in base else '?'
     return f'{base}{sep}token={token}'
 
 
 async def _get_or_create_tg_user(tg_user):
     def _go():
-        obj, _ = User.objects.get_or_create(
-            telegram_id=tg_user.id,
-            defaults={
-                'username': tg_user.username or f'user_{tg_user.id}',
-                'first_name': tg_user.first_name or '',
-                'last_name': tg_user.last_name or '',
-                'password': make_password(None),
-            },
-        )
-        return obj
+        try:
+            obj, _ = User.objects.get_or_create(
+                telegram_id=tg_user.id,
+                defaults={
+                    'username': (tg_user.username or f'user_{tg_user.id}')[:150],
+                    'first_name': (tg_user.first_name or '')[:150],
+                    'last_name': (tg_user.last_name or '')[:150],
+                    'password': make_password(None),
+                },
+            )
+            return obj
+        except IntegrityError:
+            # Username collision — force unique telegram-based username
+            obj, _ = User.objects.get_or_create(
+                telegram_id=tg_user.id,
+                defaults={
+                    'username': f'tg_{tg_user.id}',
+                    'first_name': (tg_user.first_name or '')[:150],
+                    'last_name': (tg_user.last_name or '')[:150],
+                    'password': make_password(None),
+                },
+            )
+            return obj
+
     return await sync_to_async(_go)()
+
+
+def _open_app_markup(url: str, label: str):
+    """HTTPS → Mini App button. HTTP → normal URL button (Telegram WebApp needs HTTPS)."""
+    if url.startswith('https://'):
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton(label, web_app=WebAppInfo(url=url))]
+        ])
+    if url.startswith('http://'):
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton(label, url=url)]
+        ])
+    return None
 
 
 async def send_open_app(update: Update, user: User, lang: str, include_received: bool = False):
@@ -134,13 +164,9 @@ async def send_open_app(update: Update, user: User, lang: str, include_received:
 
     url = await sync_to_async(_mini_app_url)(user)
     label = await sync_to_async(_brand_app_label)()
+    markup = _open_app_markup(url, label)
 
-    if url.startswith('https://'):
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton(label, web_app=WebAppInfo(url=url))]
-        ])
-    else:
-        markup = None
+    if markup is None:
         text = f'{text}\n\n{url}'
 
     target = update.effective_message
@@ -171,8 +197,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if user.phone_number:
             lang = user.preferred_language or 'am'
-            if update.message:
-                await update.message.reply_text('\u200b', reply_markup=ReplyKeyboardRemove())
             await send_open_app(update, user, lang)
             return
 
@@ -224,27 +248,32 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = context.user_data.get('lang')
         user = await _get_or_create_tg_user(tg)
         if not lang:
-            lang = user.preferred_language or 'am'
+            lang = getattr(user, 'preferred_language', None) or 'am'
 
-        if contact.user_id != tg.id:
+        # request_contact shares usually include user_id; if missing, still accept
+        if contact.user_id is not None and int(contact.user_id) != int(tg.id):
             await update.message.reply_text(OWN_CONTACT_ONLY.get(lang, OWN_CONTACT_ONLY['am']))
             return
 
         normalized = _normalize_phone(contact.phone_number)
+        if not normalized:
+            await update.message.reply_text(OWN_CONTACT_ONLY.get(lang, OWN_CONTACT_ONLY['am']))
+            return
 
         def _save_phone():
             user.phone_number = normalized
-            if not user.preferred_language:
-                user.preferred_language = lang
-            else:
-                user.preferred_language = lang
+            user.preferred_language = lang
             user.save(update_fields=['phone_number', 'preferred_language'])
             return user
 
         user = await sync_to_async(_save_phone)()
 
-        await update.message.reply_text('\u200b', reply_markup=ReplyKeyboardRemove())
-        await send_open_app(update, user, lang, include_received=True)
+        # Real visible text (Telegram rejects empty / zero-width-only messages)
+        await update.message.reply_text(
+            PHONE_RECEIVED.get(lang, PHONE_RECEIVED['am']),
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await send_open_app(update, user, lang, include_received=False)
     except Exception as e:
         logger.error(f'Error in lottery handle_contact: {e}', exc_info=True)
         if update.message:
