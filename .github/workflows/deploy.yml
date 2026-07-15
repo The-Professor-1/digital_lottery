@@ -19,10 +19,24 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           command_timeout: 30m
+          script_stop: true
+          shell: bash
           script: |
             set -euo pipefail
+            APP_DIR="$HOME/apps/CarLottery"
+            VENV_PY="$APP_DIR/venv/bin/python"
+            VENV_PIP="$APP_DIR/venv/bin/pip"
+
             echo "Starting CarLottery deployment..."
-            cd "$HOME/apps/CarLottery"
+            cd "$APP_DIR"
+
+            if [ ! -x "$VENV_PY" ]; then
+              echo "ERROR: venv python missing at $VENV_PY"
+              echo "Create it once on EC2: uv venv --python 3.12 venv && source venv/bin/activate && pip install -r requirements.txt"
+              exit 1
+            fi
+
+            echo "Using Python: $($VENV_PY --version)"
 
             git fetch origin
             if git show-ref --quiet refs/remotes/origin/main; then
@@ -38,12 +52,7 @@ jobs:
             git reset --hard "origin/$BRANCH"
             git log -1 --oneline
 
-            if [ -f venv/bin/activate ]; then
-              # shellcheck disable=SC1091
-              source venv/bin/activate
-            fi
-
-            pip install -r requirements.txt
+            "$VENV_PIP" install -r requirements.txt
 
             cd frontend
             npm ci
@@ -51,12 +60,12 @@ jobs:
             cd ..
 
             cd backend
-            python manage.py migrate --noinput
-            python manage.py collectstatic --noinput
+            "$VENV_PY" manage.py migrate --noinput
+            "$VENV_PY" manage.py collectstatic --noinput
             cd ..
 
             sudo systemctl daemon-reload
-            sudo systemctl restart carlottery-gunicorn || sudo systemctl restart gunicorn || true
+            sudo systemctl restart carlottery-gunicorn || true
             sudo systemctl restart redis-server || sudo systemctl restart redis || true
             sudo systemctl restart celery || true
             sudo systemctl restart celery-beat || true
