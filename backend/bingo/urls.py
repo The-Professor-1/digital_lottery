@@ -104,6 +104,11 @@ urlpatterns = [
     path('secondadmin/logout/', admin_views.second_admin_logout, name='second-admin-logout'),
     path('secondadmin/api/', admin_views.second_admin_dashboard_api, name='second-admin-dashboard-api'),
     path('secondadmin/api/refresh-deposits-withdrawals/', admin_views.refresh_deposits_withdrawals_api, name='refresh-deposits-withdrawals-api-second'),
+    # Prefer Admin View path names (same handlers)
+    path('admin-view/login/', admin_views.second_admin_login, name='admin-view-login'),
+    path('admin-view/logout/', admin_views.second_admin_logout, name='admin-view-logout'),
+    path('admin-view/api/', admin_views.second_admin_dashboard_api, name='admin-view-dashboard-api'),
+    path('admin-dashboard/lottery-users/', lottery_views.lottery_users_admin, name='lottery-users-admin'),
     # secondadmin/ page route removed so SPA serves /secondadmin
     # Duplicate admin/secondadmin API routes under /api/ so requests to /api/admin-dashboard/api/ etc. work (e.g. if frontend uses api baseURL)
     path('api/admin-dashboard/search-user/', admin_views.search_user, name='search-user-api'),
@@ -130,6 +135,7 @@ urlpatterns = [
     path('api/admin-dashboard/lottery-purchases/<int:purchase_id>/action/', lottery_views.lottery_purchase_action, name='lottery-purchase-action-api'),
     path('api/admin-dashboard/lottery-announce-winner/', lottery_views.lottery_announce_winner, name='lottery-announce-winner-api'),
     path('api/admin-dashboard/lottery-bootstrap/', lottery_views.lottery_admin_bootstrap, name='lottery-admin-bootstrap-api'),
+    path('api/admin-dashboard/lottery-users/', lottery_views.lottery_users_admin, name='lottery-users-admin-api'),
     path('api/admin-dashboard/second-admin-credentials/', admin_views.second_admin_credentials_api, name='second-admin-credentials-api'),
     path('api/admin-dashboard/login/', admin_views.admin_dashboard_login, name='admin-dashboard-login-api'),
     path('api/admin-dashboard/api/', admin_views.admin_dashboard_api, name='admin-dashboard-api-alt'),
@@ -138,6 +144,9 @@ urlpatterns = [
     path('api/secondadmin/logout/', admin_views.second_admin_logout, name='second-admin-logout-api'),
     path('api/secondadmin/api/', admin_views.second_admin_dashboard_api, name='second-admin-dashboard-api-alt'),
     path('api/secondadmin/api/refresh-deposits-withdrawals/', admin_views.refresh_deposits_withdrawals_api, name='refresh-deposits-withdrawals-api-second-alt'),
+    path('api/admin-view/login/', admin_views.second_admin_login, name='admin-view-login-api'),
+    path('api/admin-view/logout/', admin_views.second_admin_logout, name='admin-view-logout-api'),
+    path('api/admin-view/api/', admin_views.second_admin_dashboard_api, name='admin-view-dashboard-api-alt'),
     path('api/', include('api.urls')),
     # Serve frontend assets (JS, CSS, etc.) from the active Vite build
     re_path(r'^assets/(?P<path>.*)$', serve, {

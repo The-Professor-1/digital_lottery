@@ -1492,7 +1492,7 @@ def game_settings_api(request):
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def second_admin_credentials_api(request):
-    """API endpoint to get and set Admin View (/secondadmin) credentials — main staff only."""
+    """API endpoint to get and set Admin View (/admin-view) credentials — main staff only."""
     if not getattr(request.user, 'is_staff', False) and not getattr(request.user, 'is_superuser', False):
         return JsonResponse({'error': 'Unauthorized'}, status=401)
 
@@ -1502,11 +1502,12 @@ def second_admin_credentials_api(request):
             if second_admin:
                 return JsonResponse({
                     'username': second_admin.username,
+                    'password': getattr(second_admin, 'password_plain', '') or '',
                     'has_password': bool(second_admin.password),
                 })
         except Exception:
             pass
-        return JsonResponse({'username': '', 'has_password': False})
+        return JsonResponse({'username': '', 'password': '', 'has_password': False})
 
     try:
         data = json.loads(request.body) if request.body else {}
@@ -1520,6 +1521,7 @@ def second_admin_credentials_api(request):
         second_admin.username = username
         if password:
             second_admin.password = make_password(password)
+            second_admin.password_plain = password
         elif not second_admin.password:
             return JsonResponse({'error': 'Password is required for a new account'}, status=400)
         second_admin.save()
@@ -1528,6 +1530,7 @@ def second_admin_credentials_api(request):
             'success': True,
             'message': 'Admin View credentials updated successfully',
             'username': second_admin.username,
+            'password': second_admin.password_plain or '',
             'has_password': bool(second_admin.password),
         })
     except json.JSONDecodeError:
@@ -1556,7 +1559,7 @@ def second_admin_login(request):
                     request.session['second_admin_username'] = username
                     request.session.set_expiry(86400)
                     request.session.save()
-                    return JsonResponse({'success': True, 'redirect': '/secondadmin'})
+                    return JsonResponse({'success': True, 'redirect': '/admin-view'})
                 return JsonResponse({'error': 'Invalid credentials'}, status=401)
             except SecondAdmin.DoesNotExist:
                 return JsonResponse({'error': 'Invalid credentials'}, status=401)
@@ -1572,10 +1575,10 @@ def second_admin_login(request):
 @csrf_exempt
 @require_http_methods(["POST", "GET"])
 def second_admin_logout(request):
-    """Logout view for Admin View"""
+    """Logout for Admin View"""
     request.session.pop('second_admin_authenticated', None)
     request.session.pop('second_admin_username', None)
-    return JsonResponse({'success': True, 'redirect': '/secondadmin/login'})
+    return JsonResponse({'success': True, 'redirect': '/admin-view/login'})
 
 
 def second_admin_dashboard(request):

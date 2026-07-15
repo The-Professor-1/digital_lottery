@@ -431,7 +431,128 @@ def lottery_purchase_action(request, purchase_id):
                 pass
         return JsonResponse({'success': True, 'purchase': purchase.to_dict(request)})
 
+    if action == 'delete':
+        # Allow deleting verified/rejected/pending to free numbers after test purchases
+        if purchase.status not in ('verified', 'rejected', 'pending'):
+            return JsonResponse({'error': 'Cannot delete this status'}, status=400)
+        deleted_id = purchase.id
+        try:
+            if purchase.receipt_image:
+                purchase.receipt_image.delete(save=False)
+        except Exception:
+            pass
+        purchase.delete()
+        return JsonResponse({'success': True, 'deleted': deleted_id})
+
     return JsonResponse({'error': 'Unknown action'}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def lottery_users_admin(request):
+    """List registered lottery users with current-round ticket holdings."""
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    q = (request.GET.get('q') or '').strip()
+
+    # Users who registered via Telegram OR submitted a purchase
+    from .models import User
+    user_qs = User.objects.filter(
+        Q(telegram_id__isnull=False) | Q(lottery_purchases__isnull=False)
+    ).distinct().order_by('-id')
+
+    if q:
+        user_qs = user_qs.filter(
+            Q(phone_number__icontains=q)
+            | Q(first_name__icontains=q)
+            | Q(username__icontains=q)
+            | Q(telegram_id__icontains=q if q.isdigit() else '___none___')
+        )
+
+    users_out = []
+    for u in user_qs[:300]:
+        purchases = list(
+            LotteryPurchase.objects.filter(user=u).order_by('-created_at')[:50]
+        )
+        # Also match by phone if user not linked on older rows
+        phone = (u.phone_number or '').strip()
+        if phone:
+            digits = ''.join(c for c in phone if c.isdigit())
+            if len(digits) >= 9:
+                extra = LotteryPurchase.objects.filter(
+                    Q(phone__icontains=digits[-9:]) | Q(phone__icontains=digits)
+                ).exclude(user=u).order_by('-created_at')[:50]
+                purchases = purchases + list(extra)
+
+        verified_nums = []
+        pending_nums = []
+        verified_count = 0
+        pending_count = 0
+        total_spent = 0.0
+        for p in purchases:
+            nums = [int(n) for n in (p.numbers or []) if str(n).isdigit() or isinstance(n, int)]
+            if p.status == 'verified':
+                verified_nums.extend(nums)
+                verified_count += 1
+                total_spent += float(p.amount or 0)
+            elif p.status == 'pending':
+                pending_nums.extend(nums)
+                pending_count += 1
+
+        users_out.append({
+            'id': u.id,
+            'telegram_id': u.telegram_id,
+            'phone': u.phone_number or '',
+            'first_name': u.first_name or '',
+            'username': u.username or '',
+            'preferred_language': u.preferred_language or '',
+            'verified_numbers': sorted(set(verified_nums)),
+            'pending_numbers': sorted(set(pending_nums)),
+            'verified_purchases': verified_count,
+            'pending_purchases': pending_count,
+            'total_spent_verified': total_spent,
+            'date_joined': u.date_joined.isoformat() if getattr(u, 'date_joined', None) else None,
+        })
+
+    # Guests: purchases with no user link
+    guest_qs = LotteryPurchase.objects.filter(user__isnull=True).order_by('-created_at')
+    guests = {}
+    for p in guest_qs[:200]:
+        key = (p.phone or '').strip() or f'guest-{p.id}'
+        bucket = guests.setdefault(key, {
+            'id': None,
+            'telegram_id': None,
+            'phone': p.phone,
+            'first_name': p.full_name,
+            'username': '',
+            'preferred_language': '',
+            'verified_numbers': [],
+            'pending_numbers': [],
+            'verified_purchases': 0,
+            'pending_purchases': 0,
+            'total_spent_verified': 0.0,
+            'date_joined': None,
+            'is_guest': True,
+        })
+        nums = [int(n) for n in (p.numbers or []) if str(n).isdigit() or isinstance(n, int)]
+        if p.status == 'verified':
+            bucket['verified_numbers'].extend(nums)
+            bucket['verified_purchases'] += 1
+            bucket['total_spent_verified'] += float(p.amount or 0)
+        elif p.status == 'pending':
+            bucket['pending_numbers'].extend(nums)
+            bucket['pending_purchases'] += 1
+
+    for g in guests.values():
+        g['verified_numbers'] = sorted(set(g['verified_numbers']))
+        g['pending_numbers'] = sorted(set(g['pending_numbers']))
+        users_out.append(g)
+
+    return JsonResponse({
+        'users': users_out,
+        'count': len(users_out),
+    })
 
 
 @csrf_exempt

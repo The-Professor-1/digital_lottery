@@ -59,7 +59,7 @@ export default {
       this.error = null
       try {
         await secondAdminLogin(this.username, this.password)
-        this.$router.push('/secondadmin')
+        this.$router.push('/admin-view')
       } catch (error) {
         this.error = error.response?.data?.error || 'Login failed. Please check your credentials.'
       } finally {

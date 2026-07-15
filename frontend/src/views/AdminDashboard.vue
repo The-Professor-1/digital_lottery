@@ -128,9 +128,51 @@
         <div v-if="p.status === 'pending'" class="actions">
           <button type="button" class="btn primary" @click="act(p.id, 'verify')">Verify</button>
           <button type="button" class="btn ghost danger" @click="act(p.id, 'reject')">Reject</button>
+          <button type="button" class="btn ghost danger" @click="act(p.id, 'delete')">Delete</button>
+        </div>
+        <div v-else-if="p.status === 'verified' || p.status === 'rejected'" class="actions">
+          <button type="button" class="btn ghost danger" @click="act(p.id, 'delete')">
+            Delete (free numbers)
+          </button>
         </div>
       </article>
       <p v-if="!purchases.length" class="hint">No receipts in this filter.</p>
+    </div>
+
+    <!-- USERS -->
+    <div v-if="loggedIn && activeTab === 'users'" class="panel">
+      <div class="row-between">
+        <h2>Users</h2>
+        <span class="hint">{{ users.length }} listed</span>
+      </div>
+      <div class="filters">
+        <input v-model="usersQuery" type="text" placeholder="Search phone / name / telegram id" @keyup.enter="loadUsers" />
+        <button type="button" class="btn ghost" @click="loadUsers">{{ usersLoading ? '…' : 'Search' }}</button>
+      </div>
+      <article v-for="(u, idx) in users" :key="u.id || ('g-' + idx)" class="receipt-card">
+        <div class="row-between">
+          <div>
+            <strong>{{ u.first_name || u.username || 'User' }}</strong>
+            <span v-if="u.is_guest" class="badge pending" style="margin-left:6px">guest</span>
+            <div class="muted">{{ u.phone || '—' }} · tg: {{ u.telegram_id || '—' }} · {{ u.preferred_language || '—' }}</div>
+            <div class="muted">Joined: {{ u.date_joined || '—' }}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="rev">{{ formatMoney(u.total_spent_verified) }} Birr</div>
+            <div class="muted">{{ u.verified_purchases }} verified · {{ u.pending_purchases }} pending</div>
+          </div>
+        </div>
+        <div v-if="u.verified_numbers?.length" class="nums-row">
+          <span class="muted">Verified #:</span>
+          <span v-for="n in u.verified_numbers" :key="'v'+n" class="num-chip">{{ String(n).padStart(3,'0') }}</span>
+        </div>
+        <div v-if="u.pending_numbers?.length" class="nums-row">
+          <span class="muted">Pending #:</span>
+          <span v-for="n in u.pending_numbers" :key="'p'+n" class="num-chip pending-chip">{{ String(n).padStart(3,'0') }}</span>
+        </div>
+        <p v-if="!u.verified_numbers?.length && !u.pending_numbers?.length" class="hint">No ticket numbers this round.</p>
+      </article>
+      <p v-if="!users.length && !usersLoading" class="hint">No users found.</p>
     </div>
 
     <!-- WINNER -->
@@ -143,20 +185,34 @@
       <button type="button" class="btn primary" @click="announce">Announce winner</button>
     </div>
 
-    <!-- ACCESS (main admin only) — create credentials for /secondadmin -->
+    <!-- ACCESS (main admin only) — create credentials for /admin-view -->
     <div v-if="loggedIn && isMain && activeTab === 'access'" class="panel">
       <h2>Admin View login</h2>
       <p class="hint">
-        Create a username and password for
-        <a class="receipt-link" :href="adminViewUrl" target="_blank">{{ adminViewUrl }}</a>
-        (shown as “Admin View”, not as second admin).
+        Credentials for
+        <a class="receipt-link" :href="adminViewLoginUrl" target="_blank">{{ adminViewLoginUrl }}</a>
       </p>
+
+      <div v-if="accessUser" class="account-card">
+        <h2 style="margin-top:0">Stored credentials</h2>
+        <p><span class="muted">Username:</span> <strong>{{ accessUser }}</strong></p>
+        <p>
+          <span class="muted">Password:</span>
+          <strong>{{ accessStoredPassword || (accessHasPassword ? '(set — enter a new password below to replace)' : 'not set') }}</strong>
+        </p>
+        <p class="hint">Open: <a class="receipt-link" :href="adminViewUrl" target="_blank">{{ adminViewUrl }}</a></p>
+      </div>
+
       <label>Username <input v-model="accessUser" type="text" autocomplete="off" /></label>
       <label>
         Password
-        <input v-model="accessPass" type="password" autocomplete="new-password" :placeholder="accessHasPassword ? 'Leave blank to keep current password' : 'Set a password'" />
+        <input
+          v-model="accessPass"
+          type="text"
+          autocomplete="off"
+          :placeholder="accessHasPassword ? 'Leave blank to keep current password' : 'Set a password'"
+        />
       </label>
-      <p v-if="accessHasPassword" class="hint">A password is already set. Enter a new one only if you want to change it.</p>
       <div class="actions">
         <button type="button" class="btn primary" :disabled="accessSaving || !accessUser.trim()" @click="saveAccess">
           {{ accessSaving ? 'Saving…' : 'Save credentials' }}
@@ -197,12 +253,13 @@ import {
   saveSecondAdminCredentials,
   secondAdminLogin,
   secondAdminLogout,
+  getLotteryUsersAdmin,
 } from '../services/api'
 
 export default {
   name: 'AdminDashboard',
   props: {
-    /** 'main' = /admin-dashboard ; 'view' = /secondadmin (branded Admin View) */
+    /** 'main' = /admin-dashboard ; 'view' = /admin-view */
     variant: {
       type: String,
       default: 'main',
@@ -254,8 +311,12 @@ export default {
       winnerMessage: '',
       accessUser: '',
       accessPass: '',
+      accessStoredPassword: '',
       accessHasPassword: false,
       accessSaving: false,
+      users: [],
+      usersQuery: '',
+      usersLoading: false,
     }
   },
   computed: {
@@ -267,14 +328,15 @@ export default {
     },
     pageSubtitle() {
       return this.isMain
-        ? 'Settings · receipts · numbers · winner · access'
-        : 'Settings · receipts · numbers · winner'
+        ? 'Settings · receipts · numbers · users · winner · access'
+        : 'Settings · receipts · numbers · users · winner'
     },
     tabs() {
       const base = [
         { id: 'settings', label: 'Settings' },
         { id: 'numbers', label: 'Numbers' },
         { id: 'receipts', label: 'Receipts' },
+        { id: 'users', label: 'Users' },
         { id: 'winner', label: 'Winner' },
       ]
       if (this.isMain) base.push({ id: 'access', label: 'Access' })
@@ -285,8 +347,11 @@ export default {
       return this.form.car_image_url || this.form.car_image_url_raw || ''
     },
     adminViewUrl() {
-      if (typeof window === 'undefined') return '/secondadmin'
-      return `${window.location.origin}/secondadmin`
+      if (typeof window === 'undefined') return '/admin-view'
+      return `${window.location.origin}/admin-view`
+    },
+    adminViewLoginUrl() {
+      return `${this.adminViewUrl}/login`
     },
   },
   mounted() {
@@ -309,6 +374,7 @@ export default {
       this.activeTab = id
       if (id === 'receipts') this.loadPurchases()
       if (id === 'access') this.loadAccess()
+      if (id === 'users') this.loadUsers()
     },
     async doLogin() {
       this.error = ''
@@ -462,9 +528,17 @@ export default {
     },
     async act(id, action) {
       this.error = ''
+      if (action === 'delete') {
+        if (!confirm('Delete this receipt request? Numbers will become free again.')) return
+      }
       try {
         await lotteryPurchaseAction(id, action)
-        this.message = action === 'verify' ? 'Verified — user notified.' : 'Rejected.'
+        this.message =
+          action === 'verify'
+            ? 'Verified — user notified.'
+            : action === 'reject'
+              ? 'Rejected.'
+              : 'Deleted — numbers freed.'
         await this.loadPurchases()
         await this.load()
       } catch (e) {
@@ -481,11 +555,28 @@ export default {
         this.error = e.response?.data?.error || 'Announce failed'
       }
     },
+    async loadUsers() {
+      this.usersLoading = true
+      try {
+        const data = await getLotteryUsersAdmin({ q: this.usersQuery || undefined })
+        this.users = data.users || []
+      } catch (e) {
+        if (e.response?.status === 401) {
+          this.unauthorized = true
+          this.loggedIn = false
+        } else {
+          this.error = e.response?.data?.error || 'Could not load users'
+        }
+      } finally {
+        this.usersLoading = false
+      }
+    },
     async loadAccess() {
       if (!this.isMain) return
       try {
         const data = await getSecondAdminCredentials()
         this.accessUser = data.username || ''
+        this.accessStoredPassword = data.password || ''
         this.accessHasPassword = !!data.has_password
         this.accessPass = ''
       } catch (e) {
@@ -498,8 +589,11 @@ export default {
       this.message = ''
       this.error = ''
       try {
-        await saveSecondAdminCredentials(this.accessUser.trim(), this.accessPass)
-        this.message = 'Admin View credentials saved. They can log in at /secondadmin'
+        const res = await saveSecondAdminCredentials(this.accessUser.trim(), this.accessPass)
+        this.message = 'Admin View credentials saved. Login at /admin-view'
+        this.accessUser = res.username || this.accessUser
+        this.accessStoredPassword = res.password || this.accessPass || this.accessStoredPassword
+        this.accessHasPassword = !!res.has_password || !!this.accessStoredPassword
         this.accessPass = ''
         await this.loadAccess()
       } catch (e) {
@@ -581,4 +675,10 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 .badge.verified { background: #064e3b; color: #6ee7b7; }
 .badge.rejected { background: #7f1d1d; color: #fecaca; }
 .receipt-link { color: #f5a623; font-size: 0.85rem; }
+.nums-row { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.5rem; }
+.num-chip {
+  background: #064e3b; color: #6ee7b7; font-size: 0.75rem; font-weight: 700;
+  padding: 0.2rem 0.45rem; border-radius: 6px;
+}
+.num-chip.pending-chip { background: #78350f; color: #fcd34d; }
 </style>

@@ -454,14 +454,19 @@ export async function saveSecondAdminCredentials(username, password) {
   return response.data
 }
 
-// Admin View (/secondadmin) APIs
+// Admin View (/admin-view) APIs
 export async function secondAdminLogin(username, password) {
-  const response = await api.post('/secondadmin/login/', { username, password })
+  const response = await api.post('/admin-view/login/', { username, password })
   return response.data
 }
 
 export async function secondAdminLogout() {
-  const response = await api.post('/secondadmin/logout/')
+  const response = await api.post('/admin-view/logout/')
+  return response.data
+}
+
+export async function getLotteryUsersAdmin(params = {}) {
+  const response = await api.get('/admin-dashboard/lottery-users/', { params })
   return response.data
 }
 

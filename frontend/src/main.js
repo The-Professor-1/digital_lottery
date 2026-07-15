@@ -26,8 +26,11 @@ const routes = [
     ],
   },
   { path: '/admin-dashboard', name: 'admin-dashboard', component: AdminDashboard, props: { variant: 'main' } },
-  { path: '/secondadmin', name: 'second-admin-dashboard', component: AdminDashboard, props: { variant: 'view' } },
-  { path: '/secondadmin/login', name: 'second-admin-login', component: SecondAdminLogin },
+  { path: '/admin-view', name: 'admin-view', component: AdminDashboard, props: { variant: 'view' } },
+  { path: '/admin-view/login', name: 'admin-view-login', component: SecondAdminLogin },
+  // Legacy redirects
+  { path: '/secondadmin', redirect: '/admin-view' },
+  { path: '/secondadmin/login', redirect: '/admin-view/login' },
 ]
 
 const router = createRouter({

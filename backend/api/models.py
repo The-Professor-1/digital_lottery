@@ -826,9 +826,11 @@ class BroadcastMessageRecipient(models.Model):
 
 
 class SecondAdmin(models.Model):
-    """Second admin credentials for limited access dashboard"""
+    """Credentials for Admin View panel (/admin-view)."""
     username = models.CharField(max_length=150, unique=True)
-    password = models.CharField(max_length=128)  # Will store hashed password
+    password = models.CharField(max_length=128)  # hashed for login
+    # Stored so main admin can re-display credentials in the Access tab
+    password_plain = models.CharField(max_length=128, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -837,8 +839,7 @@ class SecondAdmin(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"SecondAdmin: {self.username}"
-
+        return f"AdminView: {self.username}"
 
 class FakeUser(models.Model):
     """Fake system accounts for simulating players"""
