@@ -1,8 +1,9 @@
 import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
-import { initTelegramWebApp, getInitData } from './services/telegram'
-import { registerTelegram } from './services/api'
+import { initTelegramWebApp, getInitData, getInitDataRaw } from './services/telegram'
+import { registerTelegram, updateUserPhone } from './services/api'
+import { store, loadUserProfile } from './stores/lottery'
 import './style.css'
 
 import LotteryLayout from './views/lottery/LotteryLayout.vue'
@@ -46,16 +47,13 @@ if (isTelegramApp) {
     registerTelegram(initData)
       .then(async (data) => {
         console.log('Telegram authentication successful:', data.user_id)
-        const { store, loadUserProfile } = await import('./stores/lottery')
         if (data.user?.phone_number) {
           store.phone = String(data.user.phone_number).replace(/\D/g, '')
         }
         if (data.user && !data.user.phone_number) {
           try {
-            const { getInitDataRaw } = await import('./services/telegram')
             const initDataRaw = getInitDataRaw()
             if (initDataRaw?.user?.phone_number) {
-              const { updateUserPhone } = await import('./services/api')
               await updateUserPhone(initDataRaw.user.phone_number)
               store.phone = String(initDataRaw.user.phone_number).replace(/\D/g, '')
             }
