@@ -6,7 +6,7 @@ from decimal import Decimal
 from django.db.models import Sum, Q
 from django.http import JsonResponse
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from .auth_utils import get_user_from_token
@@ -49,6 +49,16 @@ def _period_filter(qs, period):
     if period == 'month':
         return qs.filter(created_at__gte=today - timedelta(days=30))
     return qs
+
+
+@ensure_csrf_cookie
+@require_http_methods(['GET'])
+def lottery_admin_bootstrap(request):
+    """Set csrftoken cookie for the Vue admin SPA (session auth)."""
+    return JsonResponse({
+        'ok': True,
+        'authenticated': _is_admin(request),
+    })
 
 
 @require_http_methods(['GET'])

@@ -1,5 +1,8 @@
 name: Deploy Car Lottery
 
+# If this job fails with "dial tcp :22: i/o timeout", AWS Security Group must allow
+# SSH (port 22) from 0.0.0.0/0 (or use scripts/rebuild_frontend.sh on EC2 manually).
+
 on:
   push:
     branches:
@@ -18,6 +21,8 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          timeout: 60s
           command_timeout: 30m
           script_stop: true
           script: |
@@ -49,7 +54,6 @@ jobs:
             git reset --hard "origin/$BRANCH"
             git log -1 --oneline
 
-            # uv venv often has no pip binary — prefer uv, else python -m pip
             export PATH="$HOME/.local/bin:$PATH"
             if command -v uv >/dev/null 2>&1; then
               echo "Installing deps with uv pip..."
@@ -63,31 +67,11 @@ jobs:
               "$VENV_PY" -m pip install -r requirements.txt
             fi
 
-            # Clear both possible Vite output folders so Django never serves a stale build
-            rm -rf frontend_dist backend/frontend_dist
+            bash scripts/rebuild_frontend.sh
 
-            cd frontend
-            npm ci
-            npm run build
-            cd ..
-
-            if [ ! -f backend/frontend_dist/index.html ]; then
-              echo "ERROR: frontend build missing at backend/frontend_dist/index.html"
-              exit 1
-            fi
-            echo "Frontend build OK: $(ls -la backend/frontend_dist/index.html)"
-
-            cd backend
-            "$VENV_PY" manage.py migrate --noinput
-            "$VENV_PY" manage.py collectstatic --noinput
-            cd ..
-
-            sudo systemctl daemon-reload
-            sudo systemctl restart carlottery-gunicorn || true
             sudo systemctl restart redis-server || sudo systemctl restart redis || true
             sudo systemctl restart celery || true
             sudo systemctl restart celery-beat || true
             sudo systemctl restart carlottery-telegram-bot || true
 
             echo "Deployment completed successfully"
-            echo "Active frontend_dist tip: ensure nginx proxies /media/ to gunicorn"

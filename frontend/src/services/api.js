@@ -308,9 +308,14 @@ export async function deleteAdminUsers(userIds) {
   return response.data
 }
 
-// Admin Dashboard APIs (use adminApi - these routes are at site root, not under /api/)
+// Admin Dashboard APIs — lottery admin uses /api/ prefix so nginx + JSON errors work reliably
 export async function adminDashboardLogin(username, password) {
-  const response = await adminApi.post('/admin-dashboard/login/', { username, password })
+  const response = await api.post('/admin-dashboard/login/', { username, password })
+  return response.data
+}
+
+export async function lotteryAdminBootstrap() {
+  const response = await api.get('/admin-dashboard/lottery-bootstrap/')
   return response.data
 }
 
@@ -503,7 +508,7 @@ export async function submitLotteryPurchase(formData) {
 }
 
 export async function getLotterySettingsAdmin() {
-  const response = await adminApi.get('/admin-dashboard/lottery-settings/')
+  const response = await api.get('/admin-dashboard/lottery-settings/')
   return response.data
 }
 
@@ -523,17 +528,17 @@ export async function updateLotterySettingsAdmin(payload, file = null) {
   if (file) {
     form.append('car_image', file)
   }
-  const response = await adminApi.post('/admin-dashboard/lottery-settings/', form)
+  const response = await api.post('/admin-dashboard/lottery-settings/', form)
   return response.data
 }
 
 export async function getLotteryPurchasesAdmin(params = {}) {
-  const response = await adminApi.get('/admin-dashboard/lottery-purchases/', { params })
+  const response = await api.get('/admin-dashboard/lottery-purchases/', { params })
   return response.data
 }
 
 export async function lotteryPurchaseAction(id, action, note = '') {
-  const response = await adminApi.post(`/admin-dashboard/lottery-purchases/${id}/action/`, {
+  const response = await api.post(`/admin-dashboard/lottery-purchases/${id}/action/`, {
     action,
     note,
   })
@@ -541,7 +546,7 @@ export async function lotteryPurchaseAction(id, action, note = '') {
 }
 
 export async function announceLotteryWinner(winner_number, message) {
-  const response = await adminApi.post('/admin-dashboard/lottery-announce-winner/', {
+  const response = await api.post('/admin-dashboard/lottery-announce-winner/', {
     winner_number,
     message,
   })

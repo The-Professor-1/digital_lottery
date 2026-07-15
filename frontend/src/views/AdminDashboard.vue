@@ -165,6 +165,7 @@
 <script>
 import {
   adminDashboardLogin,
+  lotteryAdminBootstrap,
   getLotterySettingsAdmin,
   updateLotterySettingsAdmin,
   getLotteryPurchasesAdmin,
@@ -232,9 +233,17 @@ export default {
     },
   },
   mounted() {
-    this.load()
+    this.init()
   },
   methods: {
+    async init() {
+      try {
+        await lotteryAdminBootstrap()
+      } catch (e) {
+        console.warn('CSRF bootstrap failed', e)
+      }
+      await this.load()
+    },
     formatMoney(n) {
       return Number(n || 0).toLocaleString('en-US')
     },
@@ -306,7 +315,10 @@ export default {
           this.unauthorized = true
           this.loggedIn = false
         } else {
-          this.error = e.response?.data?.error || 'Could not load settings'
+          const msg = e.response?.data?.error || e.response?.data?.message || 'Could not load settings'
+          this.error = msg.includes('Not found')
+            ? `${msg} Run on EC2: git pull && bash scripts/rebuild_frontend.sh`
+            : msg
         }
       } finally {
         this.loading = false
@@ -372,6 +384,8 @@ export default {
         if (e.response?.status === 401) {
           this.unauthorized = true
           this.loggedIn = false
+        } else if (e.response?.status === 404) {
+          this.error = (e.response?.data?.error || 'Receipts API not found') + ' — deploy backend on EC2 first.'
         }
       }
     },

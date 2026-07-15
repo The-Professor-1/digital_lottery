@@ -100,6 +100,33 @@ After each push to `main`/`master`, GitHub Actions SSHs in and pulls this path: 
 
 ---
 
+## GitHub Actions SSH timeout (`dial tcp :22: i/o timeout`)
+
+GitHub runners use **dynamic IPs**. If EC2 Security Group SSH is limited to **My IP**, Actions will always fail.
+
+**Fix:** EC2 → Security groups → Inbound → add **SSH 22** from `0.0.0.0/0` (or deploy manually below).
+
+**Manual deploy** (from your PC, while SSH works for you):
+
+```bash
+ssh -i your.pem ubuntu@YOUR_EC2_IP
+cd ~/apps/CarLottery
+git fetch origin && git reset --hard origin/master
+bash scripts/rebuild_frontend.sh
+```
+
+Also verify GitHub secret **`EC2_HOST`** is the current **Elastic IP** (not an old IP).
+
+---
+
+## Admin panel “HTML instead of JSON”
+
+Usually means the **backend on EC2 is older than the frontend** (Actions deploy failed, only `npm run build` was run). Run `bash scripts/rebuild_frontend.sh` on EC2 — it pulls code, migrates, rebuilds, and restarts gunicorn.
+
+Ensure nginx serves media from `backend/media/` (see `nginx/nginx.conf`).
+
+---
+
 ## Kept vs removed
 
 **Kept:** payment verify (`telebirr_verify`, CBE receipt APIs), Telegram bot + lottery handlers, gunicorn/bot systemd units, nginx, celery scripts, admin/second-admin APIs.

@@ -13,9 +13,9 @@ class JsonErrorMiddleware(MiddlewareMixin):
     """
     
     def process_exception(self, request, exception):
-        # Only handle API requests
-        if not request.path.startswith('/api/'):
-            return None  # Let Django handle non-API errors normally
+        path = request.path or ''
+        if not (path.startswith('/api/') or path.startswith('/admin-dashboard/')):
+            return None
         
         # Return JSON error response for API requests
         error_data = {

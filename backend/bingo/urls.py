@@ -95,6 +95,7 @@ urlpatterns = [
     path('admin-dashboard/lottery-purchases/', lottery_views.lottery_purchases_admin, name='lottery-purchases-admin'),
     path('admin-dashboard/lottery-purchases/<int:purchase_id>/action/', lottery_views.lottery_purchase_action, name='lottery-purchase-action'),
     path('admin-dashboard/lottery-announce-winner/', lottery_views.lottery_announce_winner, name='lottery-announce-winner'),
+    path('admin-dashboard/lottery-bootstrap/', lottery_views.lottery_admin_bootstrap, name='lottery-admin-bootstrap'),
     path('admin-dashboard/second-admin-credentials/', admin_views.second_admin_credentials_api, name='second-admin-credentials'),
     path('admin-dashboard/login/', admin_views.admin_dashboard_login, name='admin-dashboard-login'),
     path('admin-dashboard/api/', admin_views.admin_dashboard_api, name='admin-dashboard-api'),
@@ -128,6 +129,7 @@ urlpatterns = [
     path('api/admin-dashboard/lottery-purchases/', lottery_views.lottery_purchases_admin, name='lottery-purchases-admin-api'),
     path('api/admin-dashboard/lottery-purchases/<int:purchase_id>/action/', lottery_views.lottery_purchase_action, name='lottery-purchase-action-api'),
     path('api/admin-dashboard/lottery-announce-winner/', lottery_views.lottery_announce_winner, name='lottery-announce-winner-api'),
+    path('api/admin-dashboard/lottery-bootstrap/', lottery_views.lottery_admin_bootstrap, name='lottery-admin-bootstrap-api'),
     path('api/admin-dashboard/second-admin-credentials/', admin_views.second_admin_credentials_api, name='second-admin-credentials-api'),
     path('api/admin-dashboard/login/', admin_views.admin_dashboard_login, name='admin-dashboard-login-api'),
     path('api/admin-dashboard/api/', admin_views.admin_dashboard_api, name='admin-dashboard-api-alt'),
@@ -149,8 +151,10 @@ urlpatterns = [
     }),
     # Serve frontend for all non-API routes (SPA routing)
     # Use serve_spa_index so index.html is loaded from filesystem (works when frontend_dist is beside backend on EC2)
-    re_path(r'^(?!admin/|api/|static/|assets/|media/).*$', serve_spa_index, name='frontend'),
+    re_path(r'^(?!admin/|api/|static/|assets/|media/|admin-dashboard/(?:lottery-|login|api|search-user|users|deposits|failed-deposits|withdraws|settings|second-admin)).*$', serve_spa_index, name='frontend'),
 ]
+
+handler404 = 'api.error_handlers.json_404'
 
 # Serve static / media files in development
 if settings.DEBUG:

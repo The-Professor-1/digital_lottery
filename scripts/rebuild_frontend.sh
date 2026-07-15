@@ -1,11 +1,36 @@
 #!/usr/bin/env bash
-# Rebuild frontend on EC2 and make gunicorn serve the new files.
-# Usage (from repo root on EC2):  bash scripts/rebuild_frontend.sh
+# Full deploy on EC2 when GitHub Actions SSH fails.
+# Usage:  bash scripts/rebuild_frontend.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "Cleaning old builds..."
+VENV_PY="$ROOT/venv/bin/python"
+if [ ! -x "$VENV_PY" ]; then
+  echo "ERROR: venv missing at $VENV_PY"
+  exit 1
+fi
+
+echo "Pulling latest code..."
+git fetch origin
+if git show-ref --quiet refs/remotes/origin/master; then
+  git reset --hard origin/master
+elif git show-ref --quiet refs/remotes/origin/main; then
+  git reset --hard origin/main
+else
+  echo "WARN: could not detect main/master — using current checkout"
+fi
+git log -1 --oneline
+
+echo "Installing Python deps..."
+export PATH="$HOME/.local/bin:$PATH"
+if command -v uv >/dev/null 2>&1; then
+  uv pip install --python "$VENV_PY" -r requirements.txt
+else
+  "$VENV_PY" -m pip install -r requirements.txt
+fi
+
+echo "Cleaning old frontend builds..."
 rm -rf frontend_dist backend/frontend_dist
 
 echo "Building Vue app → backend/frontend_dist ..."
@@ -19,13 +44,10 @@ if [ ! -f backend/frontend_dist/index.html ]; then
   exit 1
 fi
 
-echo "collectstatic + restart gunicorn..."
+echo "Running migrations..."
 cd backend
-if [ -x ../venv/bin/python ]; then
-  ../venv/bin/python manage.py collectstatic --noinput
-else
-  python3 manage.py collectstatic --noinput || true
-fi
+"$VENV_PY" manage.py migrate --noinput
+"$VENV_PY" manage.py collectstatic --noinput
 cd "$ROOT"
 
 sudo systemctl restart carlottery-gunicorn
