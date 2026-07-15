@@ -41,6 +41,18 @@ yarn-error.log*
 # Frontend build
 frontend/dist/
 frontend/.vite/
+frontend_dist/
+
+# Local secrets / keys
+.env
+.env.local
+.env.*.local
+*.pem
+*.ppk
+
+# Media uploads
+backend/media/
+media/
 
 # OS
 .DS_Store

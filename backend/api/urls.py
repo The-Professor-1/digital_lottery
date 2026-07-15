@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
+from . import lottery_views
 
 router = DefaultRouter()
 router.register(r'users', views.UserViewSet, basename='user')
@@ -10,6 +11,7 @@ router.register(r'cards', views.GameCardViewSet, basename='card')
 urlpatterns = [
     path('', include(router.urls)),
     path('health/', views.health_check, name='health-check'),
+    path('lottery/settings/', lottery_views.lottery_settings_public, name='lottery-settings-public'),
     path('auth/telegram/', views.authenticate_telegram, name='authenticate-telegram'),
     path('auth/telegram-register/', views.telegram_register, name='telegram-register'),
     path('wallet/', views.wallet_info, name='wallet-info'),

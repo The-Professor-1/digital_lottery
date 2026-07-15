@@ -2474,46 +2474,34 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def setup_bot():
-    """Setup and return bot application"""
+    """Setup lottery bot: /start → language → contact → mini-app only."""
     token = settings.TELEGRAM_BOT_TOKEN
-    
+
     if not token:
         logger.warning("TELEGRAM_BOT_TOKEN not set. Bot will not start.")
         return None
-    
+
     try:
-        application = Application.builder().token(token).build()
-        
-        # Set bot commands menu
-        application.post_init = set_bot_commands
-        
-        # Add error handler (must be added first)
-        application.add_error_handler(error_handler)
-        
-        # Add command handlers
-        application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(CommandHandler("register", register_command))
-        application.add_handler(CommandHandler("play", play_command))
-        application.add_handler(CommandHandler("deposit", deposit_command))
-        application.add_handler(CommandHandler("withdraw", withdraw_command))
-        application.add_handler(CommandHandler("balance", balance_command))
-        # application.add_handler(CommandHandler("transfer", transfer_command))  # Commented: hide from users for now
-        application.add_handler(CommandHandler("instruction", instruction_command))
-        application.add_handler(CommandHandler("support", support_command))
-        application.add_handler(CommandHandler("invite", invite_command))
-        
-        # Add message handler (including photos for deposit screenshots and contacts for phone numbers)
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-        application.add_handler(MessageHandler(filters.CONTACT, handle_contact))
-        
-        # Add callback query handler
         from telegram.ext import CallbackQueryHandler
-        application.add_handler(CallbackQueryHandler(button_callback))
-        
-        logger.info("Bot application setup completed successfully")
+        from .lottery_handlers import (
+            start_command as lottery_start,
+            handle_contact as lottery_contact,
+            language_callback,
+            configure_bot_profile,
+        )
+
+        application = Application.builder().token(token).build()
+        application.post_init = configure_bot_profile
+        application.add_error_handler(error_handler)
+
+        # Car lottery onboarding only — no bingo menus
+        application.add_handler(CommandHandler("start", lottery_start))
+        application.add_handler(CallbackQueryHandler(language_callback, pattern=r'^lang_'))
+        application.add_handler(MessageHandler(filters.CONTACT, lottery_contact))
+
+        logger.info("Lottery bot application setup completed successfully")
         return application
-        
+
     except Exception as e:
         logger.error(f"Error setting up bot: {e}", exc_info=True)
         return None

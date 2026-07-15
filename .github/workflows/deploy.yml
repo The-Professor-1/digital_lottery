@@ -1,8 +1,9 @@
-name: Deploy Bingo App
+name: Deploy Car Lottery
 
 on:
   push:
     branches:
+      - main
       - master
 
 jobs:
@@ -11,61 +12,51 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Deploy to EC2
-        uses: appleboy/ssh-action@v0.1.6
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
+            echo "Starting CarLottery deployment..."
+            cd /home/ubuntu/apps/CarLottery
 
-                echo "🚀 Starting deployment..."
+            git fetch origin
+            if git show-ref --quiet refs/remotes/origin/main; then
+              BRANCH=main
+            elif git show-ref --quiet refs/remotes/origin/master; then
+              BRANCH=master
+            else
+              echo "Neither origin/main nor origin/master exists"
+              exit 1
+            fi
 
-                cd /home/***/apps/arif_bingo
+            echo "Using branch: $BRANCH"
+            git reset --hard origin/$BRANCH
+            git log -1 --oneline
 
-                echo "📥 Fetching repository..."
-                git fetch origin
+            source venv/bin/activate
+            pip install -r requirements.txt
 
-                # 🔍 Auto-detect default branch (main or master)
-                if git show-ref --quiet refs/remotes/origin/main; then
-                    BRANCH=main
-                elif git show-ref --quiet refs/remotes/origin/master; then
-                    BRANCH=master
-                else
-                    echo "❌ Neither origin/main nor origin/master exists"
-                    exit 1
-                fi
+            cd frontend
+            npm ci
+            npm run build
+            cd ..
 
-                echo "✅ Using branch: $BRANCH"
+            cd backend
+            python manage.py migrate --noinput
+            python manage.py collectstatic --noinput
+            cd ..
 
-                git reset --hard origin/$BRANCH
+            sudo systemctl daemon-reload
+            sudo systemctl restart carlottery-gunicorn || sudo systemctl restart gunicorn
+            sudo systemctl restart redis || true
+            sudo systemctl restart celery || true
+            sudo systemctl restart celery-beat || true
+            sudo systemctl restart carlottery-telegram-bot || true
 
-                echo "✅ Deployed commit:"
-                git log -1 --oneline
-
-                echo "🐍 Activating virtual environment..."
-                source backend/venv/bin/activate
-
-                echo "📦 Installing backend dependencies..."
-                pip install -r requirements.txt
-
-                echo "🗃 Running Django migrations & collectstatic..."
-                cd backend
-                python manage.py migrate --noinput
-                python manage.py collectstatic --noinput
-                cd ..
-
-                echo "🔄 Reloading systemd..."
-                sudo systemctl daemon-reload
-
-                echo "🔄 Restarting services..."
-                sudo systemctl restart gunicorn
-                sudo systemctl restart redis
-                sudo systemctl restart celery
-                sudo systemctl restart celery-beat || true
-                sudo systemctl restart bingo-telegram-bot || true
-
-                echo "✅ Deployment completed successfully!"
+            echo "Deployment completed successfully"

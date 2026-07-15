@@ -14,17 +14,20 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# backend/.env then repo-root/.env (EC2: /home/ubuntu/apps/CarLottery/.env)
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(_BACKEND_DIR / '.env')
+load_dotenv(_BACKEND_DIR.parent / '.env')
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = _BACKEND_DIR
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-c&=^k9$3zduu5&cp#da%mt3o#q$46l_rz_xejv48^_rfz!q^s*')
+SECRET_KEY = os.getenv('SECRET_KEY') or os.getenv('DJANGO_SECRET_KEY') or 'django-insecure-change-me'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
@@ -33,22 +36,15 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
 # Get allowed hosts from environment or use default
-ALLOWED_HOSTS = [
-    'goodbingo.shop',
-    'www.goodbingo.shop',
-    '127.0.0.1',
-    'localhost',
-]
+_allowed = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 
 # CSRF Configuration - Required for admin panel
-CSRF_TRUSTED_ORIGINS = [
-    'https://goodbingo.shop',
-    'https://www.goodbingo.shop',
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
-    'http://www.localhost:8000',
-    'http://www.127.0.0.1:8000',
-]
+_csrf = os.getenv(
+    'CSRF_TRUSTED_ORIGINS',
+    'http://localhost:8000,http://127.0.0.1:8000',
+)
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf.split(',') if o.strip()]
 
 # Session and CSRF Cookie settings for HTTPS
 if not DEBUG:
@@ -183,6 +179,9 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Frontend static files (from Vite build) - use first existing location (backend/ or repo root)
 FRONTEND_DIST = next((os.path.abspath(d) for d in FRONTEND_DIST_DIRS if os.path.exists(d)), os.path.join(BASE_DIR, 'frontend_dist'))

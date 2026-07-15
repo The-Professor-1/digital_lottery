@@ -8,6 +8,12 @@ class User(AbstractUser):
     """Custom User model for Telegram users"""
     telegram_id = models.BigIntegerField(unique=True, null=True, blank=True)
     phone_number = models.CharField(max_length=20, null=True, blank=True)
+    preferred_language = models.CharField(
+        max_length=5,
+        default='am',
+        blank=True,
+        help_text="User preferred language: am, en, om",
+    )
     # Two-balance system: unwithdrawable (bonus/play-only), withdrawable (after deposit >= min_withdraw)
     unwithdrawable_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)], help_text='Balance for gameplay only (bonus, registration reward, wins before deposit)')
     withdrawable_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)], help_text='Balance that can be withdrawn (deposits + wins after deposit >= min)')
@@ -922,4 +928,112 @@ class DailyStats(models.Model):
     @classmethod
     def get_or_create_for_date(cls, d):
         obj, _ = cls.objects.get_or_create(date=d, defaults={'games_count': 0, 'revenue': 0, 'deposits': 0, 'withdrawals': 0})
+        return obj
+
+
+def default_payment_accounts():
+    return [
+        {
+            'id': 'telebirr',
+            'name': 'Telebirr',
+            'holder': 'Getachew',
+            'account': '0924242419',
+        },
+        {
+            'id': 'cbe',
+            'name': 'Commercial Bank of Ethiopia',
+            'holder': 'Getachew Fikadu Jirata',
+            'account': '1000528139489',
+        },
+    ]
+
+
+class LotterySettings(models.Model):
+    """Singleton settings for the car lottery mini-app (admin-configurable)."""
+    brand_name = models.CharField(max_length=120, default='Getachew Fikadu')
+    car_name = models.CharField(max_length=120, default='BYD Yuan UP')
+    car_color = models.CharField(max_length=80, default='Time Grey')
+    car_image = models.ImageField(upload_to='lottery/cars/', blank=True, null=True)
+    car_image_url = models.URLField(
+        blank=True,
+        default='https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=900&q=80',
+        help_text='Used when no uploaded image is set',
+    )
+    display_name = models.CharField(
+        max_length=160,
+        default='Gech EV Makina Ekub',
+        help_text='Name shown on checkout / tickets',
+    )
+    ticket_price = models.PositiveIntegerField(default=3000)
+    total_tickets = models.PositiveIntegerField(default=3500)
+    sold_count = models.PositiveIntegerField(default=397)
+    countdown_days = models.PositiveIntegerField(default=12)
+    countdown_hours = models.PositiveIntegerField(default=10)
+    countdown_minutes = models.PositiveIntegerField(default=24)
+    countdown_seconds = models.PositiveIntegerField(default=45)
+    ends_at = models.DateTimeField(null=True, blank=True)
+    payment_accounts = models.JSONField(default=default_payment_accounts)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'lottery_settings'
+        verbose_name = 'Lottery Settings'
+        verbose_name_plural = 'Lottery Settings'
+
+    def __str__(self):
+        return 'Lottery Settings'
+
+    def compute_ends_at(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        return timezone.now() + timedelta(
+            days=int(self.countdown_days or 0),
+            hours=int(self.countdown_hours or 0),
+            minutes=int(self.countdown_minutes or 0),
+            seconds=int(self.countdown_seconds or 0),
+        )
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        reset_timer = kwargs.pop('reset_timer', False)
+        if reset_timer or not self.ends_at:
+            self.ends_at = self.compute_ends_at()
+        super().save(*args, **kwargs)
+
+    def resolved_image_url(self, request=None):
+        if self.car_image:
+            url = self.car_image.url
+            if request is not None:
+                return request.build_absolute_uri(url)
+            return url
+        return self.car_image_url or ''
+
+    def to_public_dict(self, request=None):
+        ends = self.ends_at
+        if ends is None:
+            ends = self.compute_ends_at()
+        return {
+            'brand_name': self.brand_name,
+            'car_name': self.car_name,
+            'car_color': self.car_color,
+            'car_image_url': self.resolved_image_url(request),
+            'display_name': self.display_name,
+            'ticket_price': self.ticket_price,
+            'total_tickets': self.total_tickets,
+            'sold_count': self.sold_count,
+            'countdown_days': self.countdown_days,
+            'countdown_hours': self.countdown_hours,
+            'countdown_minutes': self.countdown_minutes,
+            'countdown_seconds': self.countdown_seconds,
+            'ends_at': ends.isoformat() if ends else None,
+            'ends_at_ms': int(ends.timestamp() * 1000) if ends else None,
+            'payment_accounts': self.payment_accounts or [],
+        }
+
+    @classmethod
+    def get_settings(cls):
+        obj, created = cls.objects.get_or_create(pk=1)
+        if created or not obj.ends_at:
+            obj.save(reset_timer=True)
+            obj.refresh_from_db()
         return obj

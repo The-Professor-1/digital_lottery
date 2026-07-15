@@ -453,5 +453,36 @@ export async function refreshSecondAdminDepositsWithdrawals() {
   return response.data
 }
 
+/** Public lottery settings for the mini-app */
+export async function getLotterySettings() {
+  const response = await api.get('/lottery/settings/')
+  return response.data
+}
+
+export async function getLotterySettingsAdmin() {
+  const response = await adminApi.get('/admin-dashboard/lottery-settings/')
+  return response.data
+}
+
+export async function updateLotterySettingsAdmin(payload, file = null) {
+  if (file) {
+    const form = new FormData()
+    Object.entries(payload).forEach(([key, value]) => {
+      if (key === 'payment_accounts') {
+        form.append(key, JSON.stringify(value))
+      } else if (value !== undefined && value !== null) {
+        form.append(key, value)
+      }
+    })
+    form.append('car_image', file)
+    const response = await adminApi.post('/admin-dashboard/lottery-settings/', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data
+  }
+  const response = await adminApi.post('/admin-dashboard/lottery-settings/', payload)
+  return response.data
+}
+
 export default api
 

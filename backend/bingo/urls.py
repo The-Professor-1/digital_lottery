@@ -22,6 +22,7 @@ from django.conf.urls.static import static
 from django.views.static import serve
 from django.http import HttpResponse, Http404
 from api import admin_views
+from api import lottery_views
 import os
 
 
@@ -65,6 +66,7 @@ urlpatterns = [
     path('admin-dashboard/withdraws/<int:withdraw_id>/reject/', admin_views.reject_withdraw_request_api, name='reject-withdraw'),
     path('admin-dashboard/withdraws/<int:withdraw_id>/delete/', admin_views.delete_withdraw_request_api, name='delete-withdraw'),
     path('admin-dashboard/settings/', admin_views.game_settings_api, name='game-settings'),
+    path('admin-dashboard/lottery-settings/', lottery_views.lottery_settings_admin, name='lottery-settings-admin'),
     path('admin-dashboard/second-admin-credentials/', admin_views.second_admin_credentials_api, name='second-admin-credentials'),
     path('admin-dashboard/login/', admin_views.admin_dashboard_login, name='admin-dashboard-login'),
     path('admin-dashboard/api/', admin_views.admin_dashboard_api, name='admin-dashboard-api'),
@@ -94,6 +96,7 @@ urlpatterns = [
     path('api/admin-dashboard/withdraws/<int:withdraw_id>/reject/', admin_views.reject_withdraw_request_api, name='reject-withdraw-api'),
     path('api/admin-dashboard/withdraws/<int:withdraw_id>/delete/', admin_views.delete_withdraw_request_api, name='delete-withdraw-api'),
     path('api/admin-dashboard/settings/', admin_views.game_settings_api, name='game-settings-api'),
+    path('api/admin-dashboard/lottery-settings/', lottery_views.lottery_settings_admin, name='lottery-settings-admin-api'),
     path('api/admin-dashboard/second-admin-credentials/', admin_views.second_admin_credentials_api, name='second-admin-credentials-api'),
     path('api/admin-dashboard/login/', admin_views.admin_dashboard_login, name='admin-dashboard-login-api'),
     path('api/admin-dashboard/api/', admin_views.admin_dashboard_api, name='admin-dashboard-api-alt'),
@@ -108,11 +111,16 @@ urlpatterns = [
         'document_root': os.path.join(settings.BASE_DIR, 'frontend_dist', 'assets'),
         'show_indexes': False
     }),
+    # Uploaded car photos etc.
+    re_path(r'^media/(?P<path>.*)$', serve, {
+        'document_root': settings.MEDIA_ROOT,
+    }),
     # Serve frontend for all non-API routes (SPA routing)
     # Use serve_spa_index so index.html is loaded from filesystem (works when frontend_dist is beside backend on EC2)
-    re_path(r'^(?!admin/|api/|static/|assets/).*$', serve_spa_index, name='frontend'),
+    re_path(r'^(?!admin/|api/|static/|assets/|media/).*$', serve_spa_index, name='frontend'),
 ]
 
-# Serve static files in development
+# Serve static / media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

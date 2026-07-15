@@ -1,35 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0d0d0d;
+  --gold: #f5a623;
+  --gold-light: #ffb84d;
+  --forest: #1e8e5a;
+}
+
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: #fff;
+  font-family: 'Segoe UI', 'Noto Sans Ethiopic', system-ui, sans-serif;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background: linear-gradient(135deg, #00b4d8 0%, #0077b6 50%, #0096c7 100%);
+  overflow-x: hidden;
+}
+
+/* Mobile shell on desktop */
+.app-shell {
+  max-width: 420px;
+  margin: 0 auto;
   min-height: 100vh;
-  color: #1a1a1a;
+  min-height: 100dvh;
+  background: #0d0d0d;
+  position: relative;
+  box-shadow: 0 0 0 1px #1a1a1a;
 }
 
-#app {
-  min-height: 100vh;
-  width: 100%;
+.btn-gold {
+  @apply bg-gradient-to-r from-gold to-gold-light text-black font-bold rounded-2xl
+    shadow-glow active:scale-[0.98] transition-transform disabled:opacity-40
+    disabled:shadow-none disabled:cursor-not-allowed;
 }
 
-/* Modern Teal/Cyan theme colors */
-:root {
-  --primary-light:#eca8e3;
-  --primary-medium: #e994de;
-  --primary-dark: #94137e;
-  --accent-coral:rgb(253, 39, 39);
-  --accent-coral-dark:rgb(99, 0, 82);
-  --success-green: #10b981;
-  --success-green-dark: #059669;
-  --white: #ffffff;
-  --gray-light: #f1f5f9;
-  --gray-medium: #94a3b8;
-  --gray-dark: #475569;
-  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --card-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+.btn-gold-outline {
+  @apply border-2 border-gold text-gold font-semibold rounded-2xl
+    bg-transparent active:scale-[0.98] transition-transform;
 }
 
+.sheet-enter-active,
+.sheet-leave-active {
+  transition: all 0.28s ease;
+}
+
+.sheet-enter-from,
+.sheet-leave-to {
+  opacity: 0;
+}
+
+.sheet-enter-from .sheet-panel,
+.sheet-leave-to .sheet-panel {
+  transform: translateY(100%);
+}
+
+.sheet-enter-active .sheet-panel,
+.sheet-leave-active .sheet-panel {
+  transition: transform 0.28s ease;
+}
+
+/* Hide scrollbars in number grid but keep scroll */
+.no-scrollbar::-webkit-scrollbar {
+  width: 3px;
+}
+.no-scrollbar::-webkit-scrollbar-thumb {
+  background: #f5a62366;
+  border-radius: 4px;
+}
