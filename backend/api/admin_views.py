@@ -1489,96 +1489,90 @@ def game_settings_api(request):
             return JsonResponse({'error': str(e)}, status=500)
 
 
-@staff_member_required
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def second_admin_credentials_api(request):
-    """API endpoint to get and set second admin credentials"""
-    if not request.user.is_staff:
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
-    
+    """API endpoint to get and set Admin View (/secondadmin) credentials — main staff only."""
+    if not getattr(request.user, 'is_staff', False) and not getattr(request.user, 'is_superuser', False):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
     if request.method == 'GET':
         try:
             second_admin = SecondAdmin.objects.first()
             if second_admin:
                 return JsonResponse({
                     'username': second_admin.username,
-                    'has_password': bool(second_admin.password)
+                    'has_password': bool(second_admin.password),
                 })
         except Exception:
             pass
         return JsonResponse({'username': '', 'has_password': False})
-    
-    elif request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            username = data.get('username', '').strip()
-            password = data.get('password', '').strip()
-            
-            if not username:
-                return JsonResponse({'error': 'Username is required'}, status=400)
-            
-            try:
-                second_admin, created = SecondAdmin.objects.get_or_create(pk=1)
-                second_admin.username = username
-                
-                if password:
-                    second_admin.password = make_password(password)
-                
-                second_admin.save()
-                
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Second admin credentials updated successfully'
-                })
-            except Exception as db_error:
-                # Handle case where SecondAdmin table doesn't exist
-                return JsonResponse({
-                    'error': 'Database table not ready. Please run migrations first.'
-                }, status=500)
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+
+    try:
+        data = json.loads(request.body) if request.body else {}
+        username = (data.get('username') or '').strip()
+        password = (data.get('password') or '').strip()
+
+        if not username:
+            return JsonResponse({'error': 'Username is required'}, status=400)
+
+        second_admin, _created = SecondAdmin.objects.get_or_create(pk=1)
+        second_admin.username = username
+        if password:
+            second_admin.password = make_password(password)
+        elif not second_admin.password:
+            return JsonResponse({'error': 'Password is required for a new account'}, status=400)
+        second_admin.save()
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Admin View credentials updated successfully',
+            'username': second_admin.username,
+            'has_password': bool(second_admin.password),
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
 def second_admin_login(request):
-    """Login view for second admin"""
+    """Login for Admin View (/secondadmin) — session flag second_admin_authenticated."""
     if request.method == 'POST':
         try:
-            data = json.loads(request.body)
-            username = data.get('username', '').strip()
-            password = data.get('password', '').strip()
-            
+            data = json.loads(request.body) if request.body else {}
+            username = (data.get('username') or '').strip()
+            password = (data.get('password') or '').strip()
+
             if not username or not password:
                 return JsonResponse({'error': 'Username and password are required'}, status=400)
-            
+
             try:
                 second_admin = SecondAdmin.objects.get(username=username)
                 if check_password(password, second_admin.password):
-                    # Set session and save explicitly
                     request.session['second_admin_authenticated'] = True
                     request.session['second_admin_username'] = username
-                    request.session.set_expiry(86400)  # 24 hours
-                    request.session.save()  # Explicitly save session
+                    request.session.set_expiry(86400)
+                    request.session.save()
                     return JsonResponse({'success': True, 'redirect': '/secondadmin'})
-                else:
-                    return JsonResponse({'error': 'Invalid credentials'}, status=401)
+                return JsonResponse({'error': 'Invalid credentials'}, status=401)
             except SecondAdmin.DoesNotExist:
                 return JsonResponse({'error': 'Invalid credentials'}, status=401)
-            except Exception as db_error:
-                # Handle case where SecondAdmin table doesn't exist
+            except Exception:
                 return JsonResponse({
-                    'error': 'Database table not ready. Please run migrations first.'
+                    'error': 'Database table not ready. Please run migrations first.',
                 }, status=500)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
-    
-    # GET request - show login page
-    return render(request, 'admin/second_admin_login.html')
 
+    return JsonResponse({'error': 'Use the Admin View login page'}, status=405)
 
+@csrf_exempt
+@require_http_methods(["POST", "GET"])
 def second_admin_logout(request):
-    """Logout view for second admin"""
+    """Logout view for Admin View"""
     request.session.pop('second_admin_authenticated', None)
     request.session.pop('second_admin_username', None)
     return JsonResponse({'success': True, 'redirect': '/secondadmin/login'})

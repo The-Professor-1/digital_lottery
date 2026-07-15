@@ -2,20 +2,20 @@
   <div class="admin-root">
     <header class="admin-header">
       <div>
-        <h1>Lottery Admin</h1>
-        <p class="sub">Settings · receipts · numbers · winner</p>
+        <h1>{{ pageTitle }}</h1>
+        <p class="sub">{{ pageSubtitle }}</p>
       </div>
       <div class="header-actions">
         <button v-if="!loggedIn" type="button" class="btn" @click="showLogin = true">Login</button>
         <template v-else>
           <span class="rev">Today revenue: <strong>{{ formatMoney(revenueToday) }} Birr</strong></span>
-          <button type="button" class="btn ghost" @click="logout">Logout UI</button>
+          <button type="button" class="btn ghost" @click="logout">Logout</button>
         </template>
       </div>
     </header>
 
     <div v-if="unauthorized" class="banner error">
-      Please log in with a staff account.
+      Please log in to continue.
       <button type="button" class="linkish" @click="showLogin = true">Login</button>
     </div>
     <div v-if="message" class="banner ok">{{ message }}</div>
@@ -143,6 +143,28 @@
       <button type="button" class="btn primary" @click="announce">Announce winner</button>
     </div>
 
+    <!-- ACCESS (main admin only) — create credentials for /secondadmin -->
+    <div v-if="loggedIn && isMain && activeTab === 'access'" class="panel">
+      <h2>Admin View login</h2>
+      <p class="hint">
+        Create a username and password for
+        <a class="receipt-link" :href="adminViewUrl" target="_blank">{{ adminViewUrl }}</a>
+        (shown as “Admin View”, not as second admin).
+      </p>
+      <label>Username <input v-model="accessUser" type="text" autocomplete="off" /></label>
+      <label>
+        Password
+        <input v-model="accessPass" type="password" autocomplete="new-password" :placeholder="accessHasPassword ? 'Leave blank to keep current password' : 'Set a password'" />
+      </label>
+      <p v-if="accessHasPassword" class="hint">A password is already set. Enter a new one only if you want to change it.</p>
+      <div class="actions">
+        <button type="button" class="btn primary" :disabled="accessSaving || !accessUser.trim()" @click="saveAccess">
+          {{ accessSaving ? 'Saving…' : 'Save credentials' }}
+        </button>
+        <button type="button" class="btn ghost" @click="loadAccess">Reload</button>
+      </div>
+    </div>
+
     <div v-if="!loggedIn" class="panel empty">
       <p>Log in to manage the lottery.</p>
       <button type="button" class="btn primary" @click="showLogin = true">Admin login</button>
@@ -150,7 +172,7 @@
 
     <div v-if="showLogin" class="modal" @click.self="showLogin = false">
       <form class="modal-card" @submit.prevent="doLogin">
-        <h3>Staff login</h3>
+        <h3>{{ isMain ? 'Staff login' : 'Admin login' }}</h3>
         <label>Username <input v-model="loginUser" type="text" autocomplete="username" /></label>
         <label>Password <input v-model="loginPass" type="password" autocomplete="current-password" /></label>
         <div class="actions">
@@ -171,10 +193,22 @@ import {
   getLotteryPurchasesAdmin,
   lotteryPurchaseAction,
   announceLotteryWinner,
+  getSecondAdminCredentials,
+  saveSecondAdminCredentials,
+  secondAdminLogin,
+  secondAdminLogout,
 } from '../services/api'
 
 export default {
   name: 'AdminDashboard',
+  props: {
+    /** 'main' = /admin-dashboard ; 'view' = /secondadmin (branded Admin View) */
+    variant: {
+      type: String,
+      default: 'main',
+      validator: (v) => ['main', 'view'].includes(v),
+    },
+  },
   data() {
     return {
       loggedIn: false,
@@ -189,12 +223,6 @@ export default {
       resetTimer: false,
       file: null,
       activeTab: 'settings',
-      tabs: [
-        { id: 'settings', label: 'Settings' },
-        { id: 'numbers', label: 'Numbers' },
-        { id: 'receipts', label: 'Receipts' },
-        { id: 'winner', label: 'Winner' },
-      ],
       form: {
         brand_name: 'Getachew Fikadu',
         display_name: '',
@@ -224,15 +252,45 @@ export default {
       verifiedCount: 0,
       winnerNumber: '',
       winnerMessage: '',
+      accessUser: '',
+      accessPass: '',
+      accessHasPassword: false,
+      accessSaving: false,
     }
   },
   computed: {
+    isMain() {
+      return this.variant !== 'view'
+    },
+    pageTitle() {
+      return this.isMain ? 'Lottery Admin' : 'Admin View'
+    },
+    pageSubtitle() {
+      return this.isMain
+        ? 'Settings · receipts · numbers · winner · access'
+        : 'Settings · receipts · numbers · winner'
+    },
+    tabs() {
+      const base = [
+        { id: 'settings', label: 'Settings' },
+        { id: 'numbers', label: 'Numbers' },
+        { id: 'receipts', label: 'Receipts' },
+        { id: 'winner', label: 'Winner' },
+      ]
+      if (this.isMain) base.push({ id: 'access', label: 'Access' })
+      return base
+    },
     previewUrl() {
       if (this.file) return URL.createObjectURL(this.file)
       return this.form.car_image_url || this.form.car_image_url_raw || ''
     },
+    adminViewUrl() {
+      if (typeof window === 'undefined') return '/secondadmin'
+      return `${window.location.origin}/secondadmin`
+    },
   },
   mounted() {
+    document.title = this.isMain ? 'Lottery Admin' : 'Admin View'
     this.init()
   },
   methods: {
@@ -250,11 +308,16 @@ export default {
     switchTab(id) {
       this.activeTab = id
       if (id === 'receipts') this.loadPurchases()
+      if (id === 'access') this.loadAccess()
     },
     async doLogin() {
       this.error = ''
       try {
-        await adminDashboardLogin(this.loginUser, this.loginPass)
+        if (this.isMain) {
+          await adminDashboardLogin(this.loginUser, this.loginPass)
+        } else {
+          await secondAdminLogin(this.loginUser, this.loginPass)
+        }
         this.loggedIn = true
         this.unauthorized = false
         this.showLogin = false
@@ -263,8 +326,16 @@ export default {
         this.error = e.response?.data?.error || 'Login failed'
       }
     },
-    logout() {
+    async logout() {
+      if (!this.isMain) {
+        try {
+          await secondAdminLogout()
+        } catch (e) {
+          /* still clear UI */
+        }
+      }
       this.loggedIn = false
+      this.unauthorized = true
     },
     onFile(e) {
       this.file = e.target.files?.[0] || null
@@ -408,6 +479,33 @@ export default {
         await this.load()
       } catch (e) {
         this.error = e.response?.data?.error || 'Announce failed'
+      }
+    },
+    async loadAccess() {
+      if (!this.isMain) return
+      try {
+        const data = await getSecondAdminCredentials()
+        this.accessUser = data.username || ''
+        this.accessHasPassword = !!data.has_password
+        this.accessPass = ''
+      } catch (e) {
+        this.error = e.response?.data?.error || 'Could not load Admin View credentials'
+      }
+    },
+    async saveAccess() {
+      if (!this.isMain) return
+      this.accessSaving = true
+      this.message = ''
+      this.error = ''
+      try {
+        await saveSecondAdminCredentials(this.accessUser.trim(), this.accessPass)
+        this.message = 'Admin View credentials saved. They can log in at /secondadmin'
+        this.accessPass = ''
+        await this.loadAccess()
+      } catch (e) {
+        this.error = e.response?.data?.error || 'Could not save credentials'
+      } finally {
+        this.accessSaving = false
       }
     },
   },

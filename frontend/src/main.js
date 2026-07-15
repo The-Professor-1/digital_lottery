@@ -12,7 +12,6 @@ import RaffleDetailView from './views/lottery/RaffleDetailView.vue'
 import TicketsView from './views/lottery/TicketsView.vue'
 import ProfileView from './views/lottery/ProfileView.vue'
 import AdminDashboard from './views/AdminDashboard.vue'
-import SecondAdminDashboard from './views/SecondAdminDashboard.vue'
 import SecondAdminLogin from './views/SecondAdminLogin.vue'
 
 const routes = [
@@ -26,8 +25,8 @@ const routes = [
       { path: 'profile', name: 'profile', component: ProfileView },
     ],
   },
-  { path: '/admin-dashboard', name: 'admin-dashboard', component: AdminDashboard },
-  { path: '/secondadmin', name: 'second-admin-dashboard', component: SecondAdminDashboard },
+  { path: '/admin-dashboard', name: 'admin-dashboard', component: AdminDashboard, props: { variant: 'main' } },
+  { path: '/secondadmin', name: 'second-admin-dashboard', component: AdminDashboard, props: { variant: 'view' } },
   { path: '/secondadmin/login', name: 'second-admin-login', component: SecondAdminLogin },
 ]
 

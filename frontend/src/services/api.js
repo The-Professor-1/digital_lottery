@@ -445,23 +445,23 @@ export async function updateGameSettings(settings) {
 }
 
 export async function getSecondAdminCredentials() {
-  const response = await adminApi.get('/admin-dashboard/second-admin-credentials/')
+  const response = await api.get('/admin-dashboard/second-admin-credentials/')
   return response.data
 }
 
 export async function saveSecondAdminCredentials(username, password) {
-  const response = await adminApi.post('/admin-dashboard/second-admin-credentials/', { username, password })
+  const response = await api.post('/admin-dashboard/second-admin-credentials/', { username, password })
   return response.data
 }
 
-// Second Admin APIs
+// Admin View (/secondadmin) APIs
 export async function secondAdminLogin(username, password) {
-  const response = await adminApi.post('/secondadmin/login/', { username, password })
+  const response = await api.post('/secondadmin/login/', { username, password })
   return response.data
 }
 
 export async function secondAdminLogout() {
-  const response = await adminApi.post('/secondadmin/logout/')
+  const response = await api.post('/secondadmin/logout/')
   return response.data
 }
 

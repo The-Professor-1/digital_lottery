@@ -1,33 +1,36 @@
 <template>
-  <div class="second-admin-login">
+  <div class="admin-view-login">
     <div class="login-container">
-      <h1>Second Admin Login</h1>
-      <form @submit.prevent="handleLogin" class="login-form">
+      <h1>Admin View</h1>
+      <p class="sub">Sign in to manage the lottery</p>
+      <form class="login-form" @submit.prevent="handleLogin">
         <div class="form-group">
           <label for="username">Username</label>
-          <input 
+          <input
             id="username"
-            type="text" 
-            v-model="username" 
-            required 
+            v-model="username"
+            type="text"
+            required
             class="form-input"
-            placeholder="Enter username"
+            placeholder="Username"
+            autocomplete="username"
           />
         </div>
         <div class="form-group">
           <label for="password">Password</label>
-          <input 
+          <input
             id="password"
-            type="password" 
-            v-model="password" 
-            required 
+            v-model="password"
+            type="password"
+            required
             class="form-input"
-            placeholder="Enter password"
+            placeholder="Password"
+            autocomplete="current-password"
           />
         </div>
         <div v-if="error" class="error-message">{{ error }}</div>
-        <button type="submit" :disabled="loading" class="login-btn">
-          {{ loading ? 'Logging in...' : 'Login' }}
+        <button type="submit" class="login-btn" :disabled="loading">
+          {{ loading ? 'Signing in…' : 'Login' }}
         </button>
       </form>
     </div>
@@ -44,113 +47,97 @@ export default {
       username: '',
       password: '',
       loading: false,
-      error: null
+      error: null,
     }
+  },
+  mounted() {
+    document.title = 'Admin View'
   },
   methods: {
     async handleLogin() {
       this.loading = true
       this.error = null
-      
       try {
         await secondAdminLogin(this.username, this.password)
-        // Redirect to dashboard on success
         this.$router.push('/secondadmin')
       } catch (error) {
-        console.error('Login error:', error)
         this.error = error.response?.data?.error || 'Login failed. Please check your credentials.'
       } finally {
         this.loading = false
       }
-    }
-  }
+    },
+  },
 }
 </script>
 
 <style scoped>
-.second-admin-login {
+.admin-view-login {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--primary-light);
+  background: #0f1115;
   padding: 20px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
 }
-
 .login-container {
-  background: white;
-  padding: 40px;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
   width: 100%;
   max-width: 400px;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 16px;
+  padding: 1.75rem;
 }
-
-.login-container h1 {
-  margin: 0 0 30px 0;
-  color: var(--primary-dark);
-  text-align: center;
+h1 {
+  margin: 0;
+  color: #f5a623;
+  font-size: 1.5rem;
 }
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.sub {
+  margin: 0.35rem 0 1.25rem;
+  color: #9ca3af;
+  font-size: 0.9rem;
 }
-
 .form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  margin-bottom: 1rem;
 }
-
-.form-group label {
-  font-weight: 600;
-  color: var(--gray-dark);
-  font-size: 14px;
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #d1d5db;
+  margin-bottom: 0.35rem;
 }
-
 .form-input {
-  padding: 12px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 0.3s;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0d0d0d;
+  color: #fff;
 }
-
-.form-input:focus {
-  outline: none;
-  border-color: var(--primary-medium);
-}
-
-.error-message {
-  color: #e74c3c;
-  font-size: 14px;
-  padding: 10px;
-  background: #fee;
-  border-radius: 5px;
-  text-align: center;
-}
-
 .login-btn {
-  padding: 14px;
-  background: linear-gradient(135deg, var(--primary-medium) 0%, var(--primary-dark) 100%);
-  color: white;
+  width: 100%;
+  margin-top: 0.5rem;
   border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: transform 0.2s;
+  background: linear-gradient(90deg, #f5a623, #ffb84d);
+  color: #111;
 }
-
-.login-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-}
-
 .login-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
 }
+.error-message {
+  background: #3f1515;
+  border: 1px solid #7f1d1d;
+  color: #fecaca;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
 </style>
-
