@@ -20,19 +20,16 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           command_timeout: 30m
           script_stop: true
-          shell: bash
           script: |
             set -euo pipefail
             APP_DIR="$HOME/apps/CarLottery"
             VENV_PY="$APP_DIR/venv/bin/python"
-            VENV_PIP="$APP_DIR/venv/bin/pip"
 
             echo "Starting CarLottery deployment..."
             cd "$APP_DIR"
 
             if [ ! -x "$VENV_PY" ]; then
               echo "ERROR: venv python missing at $VENV_PY"
-              echo "Create it once on EC2: uv venv --python 3.12 venv && source venv/bin/activate && pip install -r requirements.txt"
               exit 1
             fi
 
@@ -52,7 +49,19 @@ jobs:
             git reset --hard "origin/$BRANCH"
             git log -1 --oneline
 
-            "$VENV_PIP" install -r requirements.txt
+            # uv venv often has no pip binary — prefer uv, else python -m pip
+            export PATH="$HOME/.local/bin:$PATH"
+            if command -v uv >/dev/null 2>&1; then
+              echo "Installing deps with uv pip..."
+              uv pip install --python "$VENV_PY" -r requirements.txt
+            elif "$VENV_PY" -m pip --version >/dev/null 2>&1; then
+              echo "Installing deps with python -m pip..."
+              "$VENV_PY" -m pip install -r requirements.txt
+            else
+              echo "Bootstrapping pip into venv..."
+              "$VENV_PY" -m ensurepip --upgrade
+              "$VENV_PY" -m pip install -r requirements.txt
+            fi
 
             cd frontend
             npm ci
