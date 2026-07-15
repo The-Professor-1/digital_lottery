@@ -146,7 +146,7 @@
               </div>
               <h3 class="text-xl font-bold">{{ t.receiptReceived }}</h3>
               <p class="text-sm text-white/80 px-4 leading-relaxed">
-                {{ store.submitMessage || t.receiptPendingHint }}
+                {{ t.receiptPendingHint }}
               </p>
             </div>
           </template>

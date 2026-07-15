@@ -187,11 +187,7 @@ export function closePicker() {
 export function confirmPicker() {
   if (store.selectedNumbers.length !== store.quantity) return
   store.showPicker = false
-  store.checkoutStep = 1
-  store.orderDone = false
-  store.submitError = ''
-  store.submitMessage = ''
-  store.showCheckout = true
+  // Stay on raffle detail — checkout opens only via Buy Ticket button
 }
 
 export function openCheckoutFromSelect() {

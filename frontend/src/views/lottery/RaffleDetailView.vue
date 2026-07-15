@@ -5,7 +5,7 @@
       class="inline-flex items-center gap-1 text-sm text-white/60 -mt-1"
       @click="router.back()"
     >
-      <ChevronLeft :size="18" /> Back
+      <ChevronLeft :size="18" /> {{ t.back }}
     </button>
 
     <div class="relative rounded-card overflow-hidden aspect-[16/11] bg-zinc-300">
@@ -63,6 +63,19 @@
       </div>
     </div>
 
+    <div v-if="store.selectedNumbers.length" class="space-y-2">
+      <p class="text-sm text-white/70">{{ t.selectedNumbersLabel }}</p>
+      <div class="flex flex-wrap gap-1.5">
+        <span
+          v-for="n in store.selectedNumbers"
+          :key="n"
+          class="inline-block bg-gold text-black text-sm font-bold px-3 py-1.5 rounded-lg"
+        >
+          {{ padNumber(n) }}
+        </span>
+      </div>
+    </div>
+
     <button
       type="button"
       class="btn-gold-outline w-full py-3.5 text-sm inline-flex items-center justify-center gap-2"
@@ -84,12 +97,12 @@
       <button
         type="button"
         class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white/50 text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
-        :disabled="!canSelect"
-        :class="canSelect ? 'btn-green !border-transparent' : ''"
+        :disabled="!canBuy"
+        :class="canBuy ? 'btn-green !border-transparent' : ''"
         @click="openCheckoutFromSelect"
       >
         <Shield :size="16" />
-        {{ t.select }}
+        {{ t.buyTicket }}
       </button>
     </div>
   </div>
@@ -102,7 +115,7 @@ import { ChevronLeft, Star, Target, Zap, Shield } from 'lucide-vue-next'
 import CountdownTimer from '../../components/lottery/CountdownTimer.vue'
 import TicketProgress from '../../components/lottery/TicketProgress.vue'
 import { useI18n } from '../../composables/useI18n'
-import { formatBirr } from '../../data/mock'
+import { formatBirr, padNumber } from '../../data/mock'
 import {
   store,
   setQuantity,
@@ -115,14 +128,18 @@ import {
 const router = useRouter()
 const { t } = useI18n()
 const raffle = computed(() => store.raffle)
-const canSelect = computed(() => store.selectedNumbers.length === store.quantity)
+const canBuy = computed(
+  () =>
+    store.selectedNumbers.length > 0 &&
+    store.selectedNumbers.length === store.quantity
+)
 
 onMounted(() => {
   loadPublicSettings()
 })
 
 function onQuickPick() {
+  // Only fill numbers — user taps Buy Ticket to open checkout
   quickPick()
-  openCheckoutFromSelect()
 }
 </script>
