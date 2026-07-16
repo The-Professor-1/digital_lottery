@@ -60,9 +60,9 @@ SHARE_PHONE_BUTTON = {
 }
 
 PHONE_RECEIVED = {
-    'am': '',
-    'en': '',
-    'om': '',
+    'am': '🤝',
+    'en': '🤝',
+    'om': '🤝',
 }
 
 OPEN_APP_HINT = {
