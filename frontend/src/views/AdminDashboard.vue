@@ -208,6 +208,41 @@
       <button type="button" class="btn primary" @click="announce">Announce winner</button>
     </div>
 
+    <!-- DELETED (main admin only) — Admin View removals as redacted tombstones -->
+    <div v-if="loggedIn && isMain && activeTab === 'deleted'" class="panel">
+      <div class="row-between">
+        <h2>Deleted by Admin View</h2>
+        <button type="button" class="btn ghost" @click="loadDeleted">{{ deletedLoading ? '…' : 'Refresh' }}</button>
+      </div>
+      <p class="hint">Receipts / users removed from Admin View. Personal details are not shown.</p>
+
+      <h3 class="subhead">Deleted receipts ({{ deletedReceipts.length }})</h3>
+      <article v-for="r in deletedReceipts" :key="'dr-' + r.id" class="receipt-card tombstone">
+        <div class="row-between">
+          <div>
+            <strong>{{ r.label || 'Deleted receipt' }}</strong>
+            <div class="muted">{{ formatWhen(r.removed_at) }} · by Admin View</div>
+            <div class="muted">No remaining personal info</div>
+          </div>
+          <span class="badge" :class="r.action === 'reject' ? 'rejected' : 'deleted'">{{ r.action === 'reject' ? 'rejected' : 'deleted' }}</span>
+        </div>
+      </article>
+      <p v-if="!deletedReceipts.length && !deletedLoading" class="hint">No deleted receipts yet.</p>
+
+      <h3 class="subhead">Deleted users ({{ deletedUsers.length }})</h3>
+      <article v-for="u in deletedUsers" :key="'du-' + u.id" class="receipt-card tombstone">
+        <div class="row-between">
+          <div>
+            <strong>{{ u.label || 'Deleted user' }}</strong>
+            <div class="muted">{{ formatWhen(u.removed_at) }} · by Admin View</div>
+            <div class="muted">No remaining personal info</div>
+          </div>
+          <span class="badge deleted">deleted</span>
+        </div>
+      </article>
+      <p v-if="!deletedUsers.length && !deletedLoading" class="hint">No deleted users yet.</p>
+    </div>
+
     <!-- ACCESS (main admin only) — create credentials for /admin-view -->
     <div v-if="loggedIn && isMain && activeTab === 'access'" class="panel">
       <h2>Admin View login</h2>
@@ -278,6 +313,7 @@ import {
   secondAdminLogout,
   getLotteryUsersAdmin,
   deleteLotteryUser,
+  getLotteryDeletedAdmin,
 } from '../services/api'
 
 export default {
@@ -343,6 +379,9 @@ export default {
       usersQuery: '',
       usersLoading: false,
       usersVisibleCount: 10,
+      deletedReceipts: [],
+      deletedUsers: [],
+      deletedLoading: false,
     }
   },
   computed: {
@@ -354,7 +393,7 @@ export default {
     },
     pageSubtitle() {
       return this.isMain
-        ? 'Settings · receipts · numbers · users · winner · access'
+        ? 'Settings · receipts · numbers · users · winner · deleted · access'
         : 'Settings · receipts · numbers · users · winner'
     },
     revenuePeriodLabel() {
@@ -376,7 +415,10 @@ export default {
         { id: 'users', label: 'Users' },
         { id: 'winner', label: 'Winner' },
       ]
-      if (this.isMain) base.push({ id: 'access', label: 'Access' })
+      if (this.isMain) {
+        base.push({ id: 'deleted', label: 'Deleted' })
+        base.push({ id: 'access', label: 'Access' })
+      }
       return base
     },
     visibleUsers() {
@@ -415,6 +457,33 @@ export default {
       if (id === 'receipts') this.loadPurchases()
       if (id === 'access') this.loadAccess()
       if (id === 'users') this.loadUsers()
+      if (id === 'deleted') this.loadDeleted()
+    },
+    formatWhen(iso) {
+      if (!iso) return '—'
+      try {
+        return new Date(iso).toLocaleString()
+      } catch (e) {
+        return iso
+      }
+    },
+    async loadDeleted() {
+      if (!this.isMain) return
+      this.deletedLoading = true
+      try {
+        const data = await getLotteryDeletedAdmin()
+        this.deletedReceipts = data.deleted_receipts || []
+        this.deletedUsers = data.deleted_users || []
+      } catch (e) {
+        if (e.response?.status === 401) {
+          this.unauthorized = true
+          this.loggedIn = false
+        } else {
+          this.error = e.response?.data?.error || 'Could not load deleted list'
+        }
+      } finally {
+        this.deletedLoading = false
+      }
     },
     async doLogin() {
       this.error = ''
@@ -578,10 +647,11 @@ export default {
           action === 'verify'
             ? 'Verified — user notified.'
             : action === 'reject'
-              ? 'Rejected.'
+              ? (this.isMain ? 'Rejected.' : 'Rejected — removed (no remaining info).')
               : 'Deleted — numbers freed.'
         await this.loadPurchases()
         await this.load()
+        if (this.isMain && this.activeTab === 'deleted') await this.loadDeleted()
       } catch (e) {
         this.error = e.response?.data?.error || 'Action failed'
       }
@@ -743,6 +813,9 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 .badge.pending { background: #78350f; color: #fcd34d; }
 .badge.verified { background: #064e3b; color: #6ee7b7; }
 .badge.rejected { background: #7f1d1d; color: #fecaca; }
+.badge.deleted { background: #3f3f46; color: #d4d4d8; }
+.tombstone { opacity: 0.85; border-style: dashed; }
+.subhead { margin: 1.25rem 0 0.5rem; font-size: 1rem; color: #cbd5e1; }
 .receipt-link { color: #f5a623; font-size: 0.85rem; }
 .nums-row { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.5rem; }
 .num-chip {

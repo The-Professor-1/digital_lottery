@@ -475,6 +475,11 @@ export async function deleteLotteryUser({ user_id = null, phone = null } = {}) {
   return response.data
 }
 
+export async function getLotteryDeletedAdmin() {
+  const response = await api.get('/admin-dashboard/lottery-deleted/')
+  return response.data
+}
+
 export async function getSecondAdminDashboardData() {
   const response = await adminApi.get('/secondadmin/api/')
   return response.data

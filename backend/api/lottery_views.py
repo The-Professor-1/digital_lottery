@@ -11,7 +11,7 @@ from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from .auth_utils import get_user_from_token
-from .models import LotterySettings, LotteryPurchase
+from .models import LotterySettings, LotteryPurchase, DeletedLotteryReceipt, DeletedLotteryUser
 
 
 def _is_admin(request):
@@ -20,6 +20,89 @@ def _is_admin(request):
     if request.session.get('second_admin_authenticated'):
         return True
     return False
+
+
+def _is_main_admin(request):
+    return bool(
+        getattr(request.user, 'is_authenticated', False)
+        and request.user.is_authenticated
+        and (request.user.is_staff or request.user.is_superuser)
+    )
+
+
+def _is_second_admin_only(request):
+    """Admin View session without staff/superuser Django login."""
+    if _is_main_admin(request):
+        return False
+    return bool(request.session.get('second_admin_authenticated'))
+
+
+def _second_admin_label(request):
+    return (request.session.get('second_admin_username') or 'admin-view').strip() or 'admin-view'
+
+
+def _archive_purchase_for_second_admin(purchase, action, request):
+    """Persist receipt snapshot before Admin View removes it from live tables."""
+    telegram_id = None
+    if purchase.user_id and purchase.user:
+        telegram_id = purchase.user.telegram_id
+    DeletedLotteryReceipt.objects.create(
+        original_purchase_id=purchase.id,
+        action=action,
+        prior_status=purchase.status or '',
+        full_name=purchase.full_name or '',
+        phone=purchase.phone or '',
+        numbers=list(purchase.numbers or []),
+        quantity=purchase.quantity or 1,
+        amount=purchase.amount or 0,
+        bank_name=purchase.bank_name or '',
+        bank_holder=purchase.bank_holder or '',
+        bank_account=purchase.bank_account or '',
+        paid_from_account=purchase.paid_from_account or '',
+        receipt_hash=purchase.receipt_hash or '',
+        admin_note=purchase.admin_note or '',
+        telegram_id=telegram_id,
+        original_created_at=purchase.created_at,
+        removed_by=_second_admin_label(request),
+    )
+
+
+def _hard_delete_purchase(purchase):
+    try:
+        if purchase.receipt_image:
+            purchase.receipt_image.delete(save=False)
+    except Exception:
+        pass
+    purchase.delete()
+
+
+def _archive_user_for_second_admin(user, purchases, request, is_guest=False, guest_phone='', guest_name=''):
+    verified_numbers = []
+    pending_numbers = []
+    total_spent = Decimal('0')
+    for p in purchases:
+        nums = [int(n) for n in (p.numbers or []) if str(n).isdigit() or isinstance(n, int)]
+        if p.status == 'verified':
+            verified_numbers.extend(nums)
+            total_spent += Decimal(str(p.amount or 0))
+        elif p.status == 'pending':
+            pending_numbers.extend(nums)
+
+    DeletedLotteryUser.objects.create(
+        original_user_id=getattr(user, 'id', None),
+        telegram_id=getattr(user, 'telegram_id', None) if user else None,
+        phone=(getattr(user, 'phone_number', None) or guest_phone or ''),
+        first_name=(getattr(user, 'first_name', None) or guest_name or ''),
+        username=(getattr(user, 'username', None) or ''),
+        preferred_language=(getattr(user, 'preferred_language', None) or ''),
+        is_guest=bool(is_guest),
+        purchase_count=len(purchases),
+        verified_numbers=sorted(set(verified_numbers)),
+        pending_numbers=sorted(set(pending_numbers)),
+        total_spent_verified=total_spent,
+        date_joined=getattr(user, 'date_joined', None) if user else None,
+        removed_by=_second_admin_label(request),
+    )
 
 
 def _bearer_user(request):
@@ -476,9 +559,6 @@ def lottery_purchase_action(request, purchase_id):
         return JsonResponse({'success': True, 'purchase': purchase.to_dict(request)})
 
     if action == 'reject':
-        purchase.status = 'rejected'
-        purchase.admin_note = note
-        purchase.save()
         if purchase.user_id and purchase.user and purchase.user.telegram_id:
             msg = '❌ Your payment receipt was not approved. Please contact support or submit again with a clearer receipt.'
             if note:
@@ -488,6 +568,18 @@ def lottery_purchase_action(request, purchase_id):
                 send_notification_sync(purchase.user.telegram_id, msg)
             except Exception:
                 pass
+
+        # Admin View: archive + hard-remove so no personal info remains in their list
+        if _is_second_admin_only(request):
+            purchase.admin_note = note
+            _archive_purchase_for_second_admin(purchase, 'reject', request)
+            deleted_id = purchase.id
+            _hard_delete_purchase(purchase)
+            return JsonResponse({'success': True, 'deleted': deleted_id, 'archived': True, 'action': 'reject'})
+
+        purchase.status = 'rejected'
+        purchase.admin_note = note
+        purchase.save()
         return JsonResponse({'success': True, 'purchase': purchase.to_dict(request)})
 
     if action == 'delete':
@@ -495,13 +587,14 @@ def lottery_purchase_action(request, purchase_id):
         if purchase.status not in ('verified', 'rejected', 'pending'):
             return JsonResponse({'error': 'Cannot delete this status'}, status=400)
         deleted_id = purchase.id
-        try:
-            if purchase.receipt_image:
-                purchase.receipt_image.delete(save=False)
-        except Exception:
-            pass
-        purchase.delete()
-        return JsonResponse({'success': True, 'deleted': deleted_id})
+        if _is_second_admin_only(request):
+            _archive_purchase_for_second_admin(purchase, 'delete', request)
+        _hard_delete_purchase(purchase)
+        return JsonResponse({
+            'success': True,
+            'deleted': deleted_id,
+            'archived': _is_second_admin_only(request),
+        })
 
     return JsonResponse({'error': 'Unknown action'}, status=400)
 
@@ -646,22 +739,26 @@ def lottery_user_delete(request):
             qs = LotteryPurchase.objects.filter(
                 Q(user=u) | Q(phone__icontains=phone_digits[-9:])
             )
-        # Delete receipt files then rows
-        for p in qs:
+        purchases = list(qs)
+        if _is_second_admin_only(request):
+            _archive_user_for_second_admin(u, purchases, request, is_guest=False)
+            for p in purchases:
+                _archive_purchase_for_second_admin(p, 'delete', request)
+        for p in purchases:
             try:
                 if p.receipt_image:
                     p.receipt_image.delete(save=False)
             except Exception:
                 pass
-        deleted_purchases = qs.count()
+        deleted_purchases = len(purchases)
         qs.delete()
-        # Soft-clear phone/telegram to avoid nuking if they rejoin... user asked delete
         u.delete()
         deleted_user = True
         return JsonResponse({
             'success': True,
             'deleted_user': deleted_user,
             'deleted_purchases': deleted_purchases,
+            'archived': _is_second_admin_only(request),
         })
 
     if phone:
@@ -671,21 +768,48 @@ def lottery_user_delete(request):
         qs = LotteryPurchase.objects.filter(
             Q(phone__icontains=digits[-9:]) | Q(phone__icontains=digits)
         )
-        for p in qs:
+        purchases = list(qs)
+        if _is_second_admin_only(request):
+            guest_name = (purchases[0].full_name if purchases else '') or ''
+            _archive_user_for_second_admin(
+                None, purchases, request,
+                is_guest=True, guest_phone=phone, guest_name=guest_name,
+            )
+            for p in purchases:
+                _archive_purchase_for_second_admin(p, 'delete', request)
+        for p in purchases:
             try:
                 if p.receipt_image:
                     p.receipt_image.delete(save=False)
             except Exception:
                 pass
-        deleted_purchases = qs.count()
+        deleted_purchases = len(purchases)
         qs.delete()
         return JsonResponse({
             'success': True,
             'deleted_user': False,
             'deleted_purchases': deleted_purchases,
+            'archived': _is_second_admin_only(request),
         })
 
     return JsonResponse({'error': 'user_id or phone required'}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def lottery_deleted_admin(request):
+    """Main admin only: tombstone list of Admin View deletions (no personal details)."""
+    if not _is_main_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    receipts = [r.to_redacted_dict() for r in DeletedLotteryReceipt.objects.all()[:300]]
+    users = [u.to_redacted_dict() for u in DeletedLotteryUser.objects.all()[:300]]
+    return JsonResponse({
+        'deleted_receipts': receipts,
+        'deleted_users': users,
+        'receipt_count': len(receipts),
+        'user_count': len(users),
+    })
 
 
 @csrf_exempt

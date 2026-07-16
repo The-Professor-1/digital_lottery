@@ -1155,3 +1155,84 @@ class LotteryPurchase(models.Model):
             'verified_at': self.verified_at.isoformat() if self.verified_at else None,
             'telegram_id': self.user.telegram_id if self.user_id and self.user else None,
         }
+
+
+class DeletedLotteryReceipt(models.Model):
+    """Snapshot of a receipt removed/rejected by Admin View (second admin)."""
+    ACTION_CHOICES = [
+        ('reject', 'Rejected'),
+        ('delete', 'Deleted'),
+    ]
+
+    original_purchase_id = models.IntegerField(null=True, blank=True, db_index=True)
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES, db_index=True)
+    prior_status = models.CharField(max_length=20, blank=True, default='')
+    full_name = models.CharField(max_length=160, blank=True, default='')
+    phone = models.CharField(max_length=32, blank=True, default='')
+    numbers = models.JSONField(default=list, blank=True)
+    quantity = models.PositiveIntegerField(default=1)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    bank_name = models.CharField(max_length=120, blank=True, default='')
+    bank_holder = models.CharField(max_length=160, blank=True, default='')
+    bank_account = models.CharField(max_length=64, blank=True, default='')
+    paid_from_account = models.CharField(max_length=64, blank=True, default='')
+    receipt_hash = models.CharField(max_length=64, blank=True, default='')
+    admin_note = models.CharField(max_length=255, blank=True, default='')
+    telegram_id = models.BigIntegerField(null=True, blank=True)
+    original_created_at = models.DateTimeField(null=True, blank=True)
+    removed_by = models.CharField(max_length=120, blank=True, default='admin-view')
+    removed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'lottery_deleted_receipts'
+        ordering = ['-removed_at']
+
+    def to_redacted_dict(self):
+        """Main-admin list: tombstone only — no personal/bank/number details."""
+        return {
+            'id': self.id,
+            'kind': 'receipt',
+            'action': self.action,
+            'label': 'Deleted receipt',
+            'prior_status': self.prior_status or '',
+            'quantity': self.quantity,
+            'amount': float(self.amount or 0),
+            'removed_at': self.removed_at.isoformat() if self.removed_at else None,
+            'removed_by': self.removed_by or 'admin-view',
+        }
+
+
+class DeletedLotteryUser(models.Model):
+    """Snapshot of a user removed by Admin View (second admin)."""
+
+    original_user_id = models.IntegerField(null=True, blank=True, db_index=True)
+    telegram_id = models.BigIntegerField(null=True, blank=True)
+    phone = models.CharField(max_length=32, blank=True, default='')
+    first_name = models.CharField(max_length=150, blank=True, default='')
+    username = models.CharField(max_length=150, blank=True, default='')
+    preferred_language = models.CharField(max_length=5, blank=True, default='')
+    is_guest = models.BooleanField(default=False)
+    purchase_count = models.PositiveIntegerField(default=0)
+    verified_numbers = models.JSONField(default=list, blank=True)
+    pending_numbers = models.JSONField(default=list, blank=True)
+    total_spent_verified = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    date_joined = models.DateTimeField(null=True, blank=True)
+    removed_by = models.CharField(max_length=120, blank=True, default='admin-view')
+    removed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'lottery_deleted_users'
+        ordering = ['-removed_at']
+
+    def to_redacted_dict(self):
+        """Main-admin list: tombstone only — no name/phone/telegram/numbers."""
+        return {
+            'id': self.id,
+            'kind': 'user',
+            'action': 'delete',
+            'label': 'Deleted user',
+            'is_guest': bool(self.is_guest),
+            'purchase_count': self.purchase_count,
+            'removed_at': self.removed_at.isoformat() if self.removed_at else None,
+            'removed_by': self.removed_by or 'admin-view',
+        }
