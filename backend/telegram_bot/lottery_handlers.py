@@ -68,9 +68,9 @@ PHONE_RECEIVED = {
 }
 
 OPEN_APP_HINT = {
-    'am': 'የስልክ ቁጥር ተቀብለናል ✅ \nመተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
-    'en': 'Phone number received ✅ \nTo open the application, press the button below.',
-    'om': 'Lakkoofsi bilbilaa fudhatameera ✅ \nAppii banuuf qabduu armaan gadii tuqi.',
+    'am': 'የስልክ ቁጥር ተቀብለናል ✅ \n\nመተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
+    'en': 'Phone number received ✅ \n\nTo open the application, press the button below.',
+    'om': 'Lakkoofsi bilbilaa fudhatameera ✅ \n\nAppii banuuf qabduu armaan gadii tuqi.',
 }
 
 OWN_CONTACT_ONLY = {
