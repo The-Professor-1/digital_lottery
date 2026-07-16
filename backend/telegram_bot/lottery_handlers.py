@@ -43,7 +43,9 @@ BOT_DESCRIPTION = (
 LANG_PROMPT = (
     "🚗 Getachew Fikadu Jirata\n\n"
     "Maaloo afaan filadhu.\n"
+    "================\n"
     "እባክዎ ቋንቋ ይምረጡ።\n"
+    "================\n"
     "Please select your language."
 )
 
@@ -66,9 +68,9 @@ PHONE_RECEIVED = {
 }
 
 OPEN_APP_HINT = {
-    'am': 'የስልክ ቁጥር ተቀብለናል ✅ መተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
-    'en': 'Phone number received ✅ To open the application, press the button below.',
-    'om': 'Lakkoofsi bilbilaa fudhatameera ✅ Appii banuuf qabduu armaan gadii tuqi.',
+    'am': 'የስልክ ቁጥር ተቀብለናል ✅ \nመተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
+    'en': 'Phone number received ✅ \nTo open the application, press the button below.',
+    'om': 'Lakkoofsi bilbilaa fudhatameera ✅ \nAppii banuuf qabduu armaan gadii tuqi.',
 }
 
 OWN_CONTACT_ONLY = {
