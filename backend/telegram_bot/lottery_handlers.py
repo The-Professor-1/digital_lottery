@@ -60,15 +60,15 @@ SHARE_PHONE_BUTTON = {
 }
 
 PHONE_RECEIVED = {
-    'am': 'የስልክ ቁጥር ተቀብለናል ✅',
-    'en': 'Phone number received ✅',
-    'om': 'Lakkoofsi bilbilaa fudhatameera ✅',
+    'am': '',
+    'en': '',
+    'om': '',
 }
 
 OPEN_APP_HINT = {
-    'am': 'መተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
-    'en': 'To open the application, press the button below.',
-    'om': 'Appii banuuf qabduu armaan gadii tuqi.',
+    'am': 'የስልክ ቁጥር ተቀብለናል ✅ መተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
+    'en': 'Phone number received ✅ To open the application, press the button below.',
+    'om': 'Lakkoofsi bilbilaa fudhatameera ✅ Appii banuuf qabduu armaan gadii tuqi.',
 }
 
 OWN_CONTACT_ONLY = {
