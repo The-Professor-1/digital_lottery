@@ -208,23 +208,40 @@
       <button type="button" class="btn primary" @click="announce">Announce winner</button>
     </div>
 
-    <!-- DELETED (main admin only) — Admin View removals as redacted tombstones -->
+    <!-- DELETED (main admin only) — full archived copies from Admin View removals -->
     <div v-if="loggedIn && isMain && activeTab === 'deleted'" class="panel">
       <div class="row-between">
         <h2>Deleted by Admin View</h2>
         <button type="button" class="btn ghost" @click="loadDeleted">{{ deletedLoading ? '…' : 'Refresh' }}</button>
       </div>
-      <p class="hint">Receipts / users removed from Admin View. Personal details are not shown.</p>
+      <p class="hint">
+        Removed from live Users / Receipts for Admin View. Full copies are kept here for your analysis only.
+      </p>
 
       <h3 class="subhead">Deleted receipts ({{ deletedReceipts.length }})</h3>
       <article v-for="r in deletedReceipts" :key="'dr-' + r.id" class="receipt-card tombstone">
         <div class="row-between">
           <div>
-            <strong>{{ r.label || 'Deleted receipt' }}</strong>
-            <div class="muted">{{ formatWhen(r.removed_at) }} · by Admin View</div>
-            <div class="muted">No remaining personal info</div>
+            <strong>{{ r.full_name || 'Receipt' }}</strong>
+            <div class="muted">{{ r.phone || '—' }} · tg: {{ r.telegram_id || '—' }}</div>
+            <div class="muted">
+              Submitted: {{ formatWhen(r.original_created_at) }} · Archived: {{ formatWhen(r.removed_at) }}
+              · by {{ r.removed_by || 'Admin View' }}
+            </div>
+            <div>
+              Numbers:
+              <b>{{ (r.numbers || []).map((n) => String(n).padStart(3, '0')).join(', ') || '—' }}</b>
+              · qty {{ r.quantity || 0 }}
+            </div>
+            <div>{{ formatMoney(r.amount) }} Birr · {{ r.bank_name || '—' }} {{ r.bank_account || '' }}</div>
+            <div v-if="r.bank_holder" class="muted">Holder: {{ r.bank_holder }}</div>
+            <div v-if="r.paid_from_account" class="muted">Paid from: {{ r.paid_from_account }}</div>
+            <div v-if="r.admin_note" class="muted">Note: {{ r.admin_note }}</div>
+            <div class="muted">Prior status: {{ r.prior_status || '—' }} · original #{{ r.original_purchase_id || '—' }}</div>
           </div>
-          <span class="badge" :class="r.action === 'reject' ? 'rejected' : 'deleted'">{{ r.action === 'reject' ? 'rejected' : 'deleted' }}</span>
+          <span class="badge" :class="r.action === 'reject' ? 'rejected' : 'deleted'">
+            {{ r.action === 'reject' ? 'rejected' : 'deleted' }}
+          </span>
         </div>
       </article>
       <p v-if="!deletedReceipts.length && !deletedLoading" class="hint">No deleted receipts yet.</p>
@@ -233,11 +250,25 @@
       <article v-for="u in deletedUsers" :key="'du-' + u.id" class="receipt-card tombstone">
         <div class="row-between">
           <div>
-            <strong>{{ u.label || 'Deleted user' }}</strong>
-            <div class="muted">{{ formatWhen(u.removed_at) }} · by Admin View</div>
-            <div class="muted">No remaining personal info</div>
+            <strong>{{ u.first_name || u.username || 'User' }}</strong>
+            <span v-if="u.is_guest" class="badge pending" style="margin-left:6px">guest</span>
+            <div class="muted">{{ u.phone || '—' }} · tg: {{ u.telegram_id || '—' }} · {{ u.preferred_language || '—' }}</div>
+            <div class="muted">
+              Joined: {{ formatWhen(u.date_joined) }} · Archived: {{ formatWhen(u.removed_at) }}
+              · by {{ u.removed_by || 'Admin View' }}
+            </div>
+            <div class="muted">Purchases at delete: {{ u.purchase_count || 0 }} · spent {{ formatMoney(u.total_spent_verified) }} Birr</div>
+            <div class="muted">Original user id: {{ u.original_user_id || '—' }}</div>
           </div>
           <span class="badge deleted">deleted</span>
+        </div>
+        <div v-if="u.verified_numbers?.length" class="nums-row">
+          <span class="muted">Verified #:</span>
+          <span v-for="n in u.verified_numbers" :key="'dv'+u.id+'-'+n" class="num-chip">{{ String(n).padStart(3,'0') }}</span>
+        </div>
+        <div v-if="u.pending_numbers?.length" class="nums-row">
+          <span class="muted">Pending #:</span>
+          <span v-for="n in u.pending_numbers" :key="'dp'+u.id+'-'+n" class="num-chip pending-chip">{{ String(n).padStart(3,'0') }}</span>
         </div>
       </article>
       <p v-if="!deletedUsers.length && !deletedLoading" class="hint">No deleted users yet.</p>

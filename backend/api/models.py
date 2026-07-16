@@ -1187,16 +1187,26 @@ class DeletedLotteryReceipt(models.Model):
         db_table = 'lottery_deleted_receipts'
         ordering = ['-removed_at']
 
-    def to_redacted_dict(self):
-        """Main-admin list: tombstone only — no personal/bank/number details."""
+    def to_admin_dict(self):
+        """Full snapshot for main-admin analysis only."""
         return {
             'id': self.id,
             'kind': 'receipt',
+            'original_purchase_id': self.original_purchase_id,
             'action': self.action,
-            'label': 'Deleted receipt',
             'prior_status': self.prior_status or '',
+            'full_name': self.full_name or '',
+            'phone': self.phone or '',
+            'numbers': self.numbers or [],
             'quantity': self.quantity,
             'amount': float(self.amount or 0),
+            'bank_name': self.bank_name or '',
+            'bank_holder': self.bank_holder or '',
+            'bank_account': self.bank_account or '',
+            'paid_from_account': self.paid_from_account or '',
+            'admin_note': self.admin_note or '',
+            'telegram_id': self.telegram_id,
+            'original_created_at': self.original_created_at.isoformat() if self.original_created_at else None,
             'removed_at': self.removed_at.isoformat() if self.removed_at else None,
             'removed_by': self.removed_by or 'admin-view',
         }
@@ -1224,15 +1234,24 @@ class DeletedLotteryUser(models.Model):
         db_table = 'lottery_deleted_users'
         ordering = ['-removed_at']
 
-    def to_redacted_dict(self):
-        """Main-admin list: tombstone only — no name/phone/telegram/numbers."""
+    def to_admin_dict(self):
+        """Full snapshot for main-admin analysis only."""
         return {
             'id': self.id,
             'kind': 'user',
             'action': 'delete',
-            'label': 'Deleted user',
+            'original_user_id': self.original_user_id,
+            'telegram_id': self.telegram_id,
+            'phone': self.phone or '',
+            'first_name': self.first_name or '',
+            'username': self.username or '',
+            'preferred_language': self.preferred_language or '',
             'is_guest': bool(self.is_guest),
             'purchase_count': self.purchase_count,
+            'verified_numbers': self.verified_numbers or [],
+            'pending_numbers': self.pending_numbers or [],
+            'total_spent_verified': float(self.total_spent_verified or 0),
+            'date_joined': self.date_joined.isoformat() if self.date_joined else None,
             'removed_at': self.removed_at.isoformat() if self.removed_at else None,
             'removed_by': self.removed_by or 'admin-view',
         }

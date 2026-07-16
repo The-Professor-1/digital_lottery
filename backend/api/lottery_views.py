@@ -815,12 +815,12 @@ def lottery_user_delete(request):
 @csrf_exempt
 @require_http_methods(['GET'])
 def lottery_deleted_admin(request):
-    """Main admin only: tombstone list of Admin View deletions (no personal details)."""
+    """Main admin only: full archived snapshots from Admin View removals."""
     if not _is_main_admin(request):
         return JsonResponse({'error': 'Unauthorized'}, status=401)
 
-    receipts = [r.to_redacted_dict() for r in DeletedLotteryReceipt.objects.all()[:300]]
-    users = [u.to_redacted_dict() for u in DeletedLotteryUser.objects.all()[:300]]
+    receipts = [r.to_admin_dict() for r in DeletedLotteryReceipt.objects.all()[:300]]
+    users = [u.to_admin_dict() for u in DeletedLotteryUser.objects.all()[:300]]
     return JsonResponse({
         'deleted_receipts': receipts,
         'deleted_users': users,
