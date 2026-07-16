@@ -143,6 +143,9 @@ def admin_dashboard_login(request):
     if user is not None and (user.is_staff or user.is_superuser):
         # Explicit backend required when user was resolved via password fallback
         login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        # Keep main admin and Admin View sessions from overlapping in one browser
+        request.session.pop('second_admin_authenticated', None)
+        request.session.pop('second_admin_username', None)
         return JsonResponse({'success': True, 'message': 'Logged in'})
     return JsonResponse({'error': 'Invalid credentials or not a staff user'}, status=401)
 
@@ -1555,6 +1558,9 @@ def second_admin_login(request):
             try:
                 second_admin = SecondAdmin.objects.get(username=username)
                 if check_password(password, second_admin.password):
+                    # Drop any staff session so Admin View deletes archive correctly
+                    from django.contrib.auth import logout
+                    logout(request)
                     request.session['second_admin_authenticated'] = True
                     request.session['second_admin_username'] = username
                     request.session.set_expiry(86400)

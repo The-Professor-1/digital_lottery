@@ -37,6 +37,20 @@ def _is_second_admin_only(request):
     return bool(request.session.get('second_admin_authenticated'))
 
 
+def _should_archive_admin_view(request, body=None):
+    """
+    Archive when action comes from Admin View.
+
+    Important: main admin + Admin View often share one browser cookie jar.
+    If staff is still logged in, `_is_second_admin_only` would be False and
+    deletes would not be archived. Prefer explicit `from_admin_view` from SPA.
+    """
+    body = body or {}
+    if body.get('from_admin_view'):
+        return _is_admin(request)
+    return _is_second_admin_only(request)
+
+
 def _second_admin_label(request):
     return (request.session.get('second_admin_username') or 'admin-view').strip() or 'admin-view'
 
@@ -570,7 +584,7 @@ def lottery_purchase_action(request, purchase_id):
                 pass
 
         # Admin View: archive + hard-remove so no personal info remains in their list
-        if _is_second_admin_only(request):
+        if _should_archive_admin_view(request, body):
             purchase.admin_note = note
             _archive_purchase_for_second_admin(purchase, 'reject', request)
             deleted_id = purchase.id
@@ -587,13 +601,14 @@ def lottery_purchase_action(request, purchase_id):
         if purchase.status not in ('verified', 'rejected', 'pending'):
             return JsonResponse({'error': 'Cannot delete this status'}, status=400)
         deleted_id = purchase.id
-        if _is_second_admin_only(request):
+        archive = _should_archive_admin_view(request, body)
+        if archive:
             _archive_purchase_for_second_admin(purchase, 'delete', request)
         _hard_delete_purchase(purchase)
         return JsonResponse({
             'success': True,
             'deleted': deleted_id,
-            'archived': _is_second_admin_only(request),
+            'archived': archive,
         })
 
     return JsonResponse({'error': 'Unknown action'}, status=400)
@@ -740,7 +755,8 @@ def lottery_user_delete(request):
                 Q(user=u) | Q(phone__icontains=phone_digits[-9:])
             )
         purchases = list(qs)
-        if _is_second_admin_only(request):
+        archive = _should_archive_admin_view(request, body)
+        if archive:
             _archive_user_for_second_admin(u, purchases, request, is_guest=False)
             for p in purchases:
                 _archive_purchase_for_second_admin(p, 'delete', request)
@@ -758,7 +774,7 @@ def lottery_user_delete(request):
             'success': True,
             'deleted_user': deleted_user,
             'deleted_purchases': deleted_purchases,
-            'archived': _is_second_admin_only(request),
+            'archived': archive,
         })
 
     if phone:
@@ -769,7 +785,8 @@ def lottery_user_delete(request):
             Q(phone__icontains=digits[-9:]) | Q(phone__icontains=digits)
         )
         purchases = list(qs)
-        if _is_second_admin_only(request):
+        archive = _should_archive_admin_view(request, body)
+        if archive:
             guest_name = (purchases[0].full_name if purchases else '') or ''
             _archive_user_for_second_admin(
                 None, purchases, request,
@@ -789,7 +806,7 @@ def lottery_user_delete(request):
             'success': True,
             'deleted_user': False,
             'deleted_purchases': deleted_purchases,
-            'archived': _is_second_admin_only(request),
+            'archived': archive,
         })
 
     return JsonResponse({'error': 'user_id or phone required'}, status=400)

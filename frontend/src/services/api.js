@@ -470,8 +470,12 @@ export async function getLotteryUsersAdmin(params = {}) {
   return response.data
 }
 
-export async function deleteLotteryUser({ user_id = null, phone = null } = {}) {
-  const response = await api.post('/admin-dashboard/lottery-users/delete/', { user_id, phone })
+export async function deleteLotteryUser({ user_id = null, phone = null, from_admin_view = false } = {}) {
+  const response = await api.post('/admin-dashboard/lottery-users/delete/', {
+    user_id,
+    phone,
+    from_admin_view: !!from_admin_view,
+  })
   return response.data
 }
 
@@ -557,10 +561,11 @@ export async function getLotteryPurchasesAdmin(params = {}) {
   return response.data
 }
 
-export async function lotteryPurchaseAction(id, action, note = '') {
+export async function lotteryPurchaseAction(id, action, note = '', from_admin_view = false) {
   const response = await api.post(`/admin-dashboard/lottery-purchases/${id}/action/`, {
     action,
     note,
+    from_admin_view: !!from_admin_view,
   })
   return response.data
 }

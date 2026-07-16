@@ -642,7 +642,7 @@ export default {
         if (!confirm('Delete this receipt request? Numbers will become free again.')) return
       }
       try {
-        await lotteryPurchaseAction(id, action)
+        await lotteryPurchaseAction(id, action, '', !this.isMain)
         this.message =
           action === 'verify'
             ? 'Verified — user notified.'
@@ -691,11 +691,16 @@ export default {
       if (!confirm(`Delete ${label}? Their lottery purchases will be removed and numbers freed.`)) return
       this.error = ''
       try {
-        const payload = u.id ? { user_id: u.id } : { phone: u.phone }
+        const payload = u.id
+          ? { user_id: u.id, from_admin_view: !this.isMain }
+          : { phone: u.phone, from_admin_view: !this.isMain }
         const res = await deleteLotteryUser(payload)
-        this.message = `Deleted. Purchases removed: ${res.deleted_purchases || 0}`
+        this.message = res.archived
+          ? `Deleted & archived for main admin. Purchases removed: ${res.deleted_purchases || 0}`
+          : `Deleted. Purchases removed: ${res.deleted_purchases || 0}`
         await this.loadUsers()
         await this.load()
+        if (this.isMain && this.activeTab === 'deleted') await this.loadDeleted()
       } catch (e) {
         this.error = e.response?.data?.error || 'Could not delete user'
       }
