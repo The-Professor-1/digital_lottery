@@ -40,16 +40,70 @@ def _file_sha256(uploaded):
     return h.hexdigest()
 
 
-def _period_filter(qs, period):
-    now = timezone.now()
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    if period == 'today':
-        return qs.filter(created_at__gte=today)
-    if period == 'week':
-        return qs.filter(created_at__gte=today - timedelta(days=7))
-    if period == 'month':
-        return qs.filter(created_at__gte=today - timedelta(days=30))
-    return qs
+def _calendar_periods(now=None):
+    """Exact calendar windows in Africa/Addis_Ababa (not rolling hours/days). Weeks = Monday–Sunday."""
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo('Africa/Addis_Ababa')
+    except Exception:
+        tz = timezone.get_current_timezone()
+
+    now = (now or timezone.now()).astimezone(tz)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+
+    yesterday_start = today_start - timedelta(days=1)
+    yesterday_end = today_start
+
+    days_since_monday = now.weekday()  # Mon=0 … Sun=6
+    week_start = today_start - timedelta(days=days_since_monday)
+    week_end = week_start + timedelta(days=7)
+
+    last_week_start = week_start - timedelta(days=7)
+    last_week_end = week_start
+
+    month_start = today_start.replace(day=1)
+    if now.month == 12:
+        month_end = today_start.replace(year=now.year + 1, month=1, day=1)
+    else:
+        month_end = today_start.replace(month=now.month + 1, day=1)
+
+    if now.month == 1:
+        last_month_start = today_start.replace(year=now.year - 1, month=12, day=1)
+    else:
+        last_month_start = today_start.replace(month=now.month - 1, day=1)
+    last_month_end = month_start
+
+    return {
+        'today': (today_start, today_end),
+        'yesterday': (yesterday_start, yesterday_end),
+        'this_week': (week_start, week_end),
+        'last_week': (last_week_start, last_week_end),
+        'this_month': (month_start, month_end),
+        'last_month': (last_month_start, last_month_end),
+        # legacy aliases
+        'week': (week_start, week_end),
+        'month': (month_start, month_end),
+    }
+
+
+def _period_filter(qs, period, field='created_at'):
+    """Filter by calendar period on `field`. `all` / unknown = no filter."""
+    if not period or period == 'all':
+        return qs
+    bounds = _calendar_periods().get(period)
+    if not bounds:
+        return qs
+    start, end = bounds
+    return qs.filter(**{f'{field}__gte': start, f'{field}__lt': end})
+
+
+def _verified_revenue(period='today'):
+    """Sum verified amounts in a calendar window (by verified_at)."""
+    qs = LotteryPurchase.objects.filter(status='verified')
+    qs = _period_filter(qs, period, field='verified_at')
+    total = qs.aggregate(total=Sum('amount'))['total'] or 0
+    return float(total), qs.count()
 
 
 @ensure_csrf_cookie
@@ -336,19 +390,24 @@ def lottery_purchases_admin(request):
 
     status = (request.GET.get('status') or 'pending').strip()
     period = (request.GET.get('period') or 'all').strip()
+    revenue_period = (request.GET.get('revenue_period') or 'today').strip()
+
     qs = LotteryPurchase.objects.all().select_related('user')
     if status in ('pending', 'verified', 'rejected'):
         qs = qs.filter(status=status)
-    qs = _period_filter(qs, period)
+    qs = _period_filter(qs, period, field='created_at')
 
-    today = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    verified_today = LotteryPurchase.objects.filter(status='verified', verified_at__gte=today)
-    revenue_today = verified_today.aggregate(total=Sum('amount'))['total'] or 0
+    revenue_amount, revenue_count = _verified_revenue(revenue_period)
+    # Keep today keys for older UI; also return selected period revenue
+    revenue_today, verified_today_count = _verified_revenue('today')
 
     return JsonResponse({
         'purchases': [p.to_dict(request) for p in qs[:200]],
-        'revenue_today': float(revenue_today),
-        'verified_today_count': verified_today.count(),
+        'revenue_today': revenue_today,
+        'verified_today_count': verified_today_count,
+        'revenue_period': revenue_period,
+        'revenue_amount': revenue_amount,
+        'revenue_count': revenue_count,
         'pending_count': LotteryPurchase.objects.filter(status='pending').count(),
         'verified_count': LotteryPurchase.objects.filter(status='verified').count(),
     })

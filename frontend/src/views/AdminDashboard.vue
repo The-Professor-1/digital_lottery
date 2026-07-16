@@ -8,7 +8,19 @@
       <div class="header-actions">
         <button v-if="!loggedIn" type="button" class="btn" @click="showLogin = true">Login</button>
         <template v-else>
-          <span class="rev">Today revenue: <strong>{{ formatMoney(revenueToday) }} Birr</strong></span>
+          <div class="rev-block">
+            <select v-model="revenuePeriod" class="period-select" @change="loadPurchases" title="Revenue period">
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="this_week">This week</option>
+              <option value="last_week">Last week</option>
+              <option value="this_month">This month</option>
+              <option value="last_month">Last month</option>
+            </select>
+            <span class="rev">{{ revenuePeriodLabel }}: <strong>{{ formatMoney(revenueAmount) }} Birr</strong>
+              <span class="rev-count">· {{ revenueCount }} verified</span>
+            </span>
+          </div>
           <button type="button" class="btn ghost" @click="logout">Logout</button>
         </template>
       </div>
@@ -96,7 +108,7 @@
     <div v-if="loggedIn && activeTab === 'receipts'" class="panel">
       <div class="row-between">
         <h2>Receipts</h2>
-        <span class="rev">Today: {{ formatMoney(revenueToday) }} Birr · {{ verifiedTodayCount }} verified</span>
+        <span class="rev">{{ revenuePeriodLabel }}: {{ formatMoney(revenueAmount) }} Birr · {{ revenueCount }} verified</span>
       </div>
       <div class="filters">
         <select v-model="receiptStatus" @change="loadPurchases">
@@ -104,10 +116,13 @@
           <option value="verified">Verified</option>
           <option value="rejected">Rejected</option>
         </select>
-        <select v-model="receiptPeriod" @change="loadPurchases">
+        <select v-model="receiptPeriod" @change="loadPurchases" title="Receipt timeline">
           <option value="today">Today</option>
-          <option value="week">Last 7 days</option>
-          <option value="month">Last 30 days</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="this_week">This week</option>
+          <option value="last_week">Last week</option>
+          <option value="this_month">This month</option>
+          <option value="last_month">Last month</option>
           <option value="all">All time</option>
         </select>
         <button type="button" class="btn ghost" @click="loadPurchases">Refresh</button>
@@ -312,8 +327,9 @@ export default {
       purchases: [],
       receiptStatus: 'pending',
       receiptPeriod: 'today',
-      revenueToday: 0,
-      verifiedTodayCount: 0,
+      revenuePeriod: 'today',
+      revenueAmount: 0,
+      revenueCount: 0,
       pendingCount: 0,
       verifiedCount: 0,
       winnerNumber: '',
@@ -340,6 +356,17 @@ export default {
       return this.isMain
         ? 'Settings · receipts · numbers · users · winner · access'
         : 'Settings · receipts · numbers · users · winner'
+    },
+    revenuePeriodLabel() {
+      const labels = {
+        today: 'Today',
+        yesterday: 'Yesterday',
+        this_week: 'This week',
+        last_week: 'Last week',
+        this_month: 'This month',
+        last_month: 'Last month',
+      }
+      return labels[this.revenuePeriod] || 'Revenue'
     },
     tabs() {
       const base = [
@@ -524,10 +551,11 @@ export default {
         const data = await getLotteryPurchasesAdmin({
           status: this.receiptStatus,
           period: this.receiptPeriod,
+          revenue_period: this.revenuePeriod,
         })
         this.purchases = data.purchases || []
-        this.revenueToday = data.revenue_today || 0
-        this.verifiedTodayCount = data.verified_today_count || 0
+        this.revenueAmount = data.revenue_amount ?? data.revenue_today ?? 0
+        this.revenueCount = data.revenue_count ?? data.verified_today_count ?? 0
         this.pendingCount = data.pending_count || 0
         this.verifiedCount = data.verified_count || 0
       } catch (e) {
@@ -651,6 +679,16 @@ export default {
 h1 { margin: 0; font-size: 1.45rem; color: #f5a623; }
 .sub { margin: 0.25rem 0 0; color: #9ca3af; font-size: 0.875rem; }
 .rev { color: #86efac; font-size: 0.9rem; }
+.rev-block { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.rev-count { opacity: 0.85; font-weight: 400; }
+.period-select {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+}
 .tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .tabs button {
   background: #1a1f2a; border: 1px solid #2a3140; color: #d1d5db;
