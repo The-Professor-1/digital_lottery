@@ -48,15 +48,26 @@
     <!-- SETTINGS -->
     <form v-if="loggedIn && activeTab === 'settings'" class="panel" @submit.prevent="save">
       <section>
-        <h2>Branding & car</h2>
+        <h2>Branding & prizes</h2>
         <label>Brand name <input v-model="form.brand_name" type="text" required /></label>
         <label>Display name <input v-model="form.display_name" type="text" /></label>
-        <label>Car name <input v-model="form.car_name" type="text" required /></label>
-        <label>Color label <input v-model="form.car_color" type="text" required /></label>
-        <label>Image URL <input v-model="form.car_image_url_raw" type="text" /></label>
-        <label>Upload photo <input ref="fileInput" type="file" accept="image/*" @change="onFile" /></label>
-        <div v-if="previewUrl" class="preview"><img :src="previewUrl" alt="preview" /></div>
-        <p v-if="form.car_image_url" class="hint">Live image URL: {{ form.car_image_url }}</p>
+        <label>Homepage title (top text)
+          <input v-model="form.hero_title" type="text" placeholder="markos digital lottery" />
+        </label>
+        <div class="timer-grid">
+          <label>1ኛ እጣ (Birr) <input v-model.number="form.prize_1st" type="number" min="0" /></label>
+          <label>2ኛ እጣ (Birr) <input v-model.number="form.prize_2nd" type="number" min="0" /></label>
+          <label>3ኛ እጣ (Birr) <input v-model.number="form.prize_3rd" type="number" min="0" /></label>
+        </div>
+        <p class="hint">Homepage shows: title + 1ኛ/2ኛ/3ኛ እጣ amounts (no car image).</p>
+      </section>
+
+      <section>
+        <h2>Payment verification API</h2>
+        <label>Verify API key (Telebirr &amp; CBE)
+          <input v-model="form.verify_api_key" type="text" placeholder="Paste verifyapi.leulzenebe.pro key" autocomplete="off" />
+        </label>
+        <p class="hint">Used whenever a user pastes SMS for automatic verification.</p>
       </section>
 
       <section>
@@ -140,6 +151,8 @@
           <span class="badge" :class="p.status">{{ p.status }}</span>
         </div>
         <a v-if="p.receipt_image_url" :href="p.receipt_image_url" target="_blank" class="receipt-link">Open receipt image</a>
+        <pre v-if="p.receipt_sms" class="sms-box">{{ p.receipt_sms }}</pre>
+        <div v-if="p.transaction_ref" class="muted">Ref: {{ p.transaction_ref }} · {{ p.payment_provider }}</div>
         <div v-if="p.status === 'pending'" class="actions">
           <button type="button" class="btn primary" @click="act(p.id, 'verify')">Verify</button>
           <button type="button" class="btn ghost danger" @click="act(p.id, 'reject')">Reject</button>
@@ -194,6 +207,41 @@
       <div v-if="usersVisibleCount < users.length" class="actions">
         <button type="button" class="btn primary" @click="showMoreUsers">
           Show more ({{ Math.min(10, users.length - usersVisibleCount) }} more)
+        </button>
+      </div>
+    </div>
+
+    <!-- MESSAGES -->
+    <div v-if="loggedIn && activeTab === 'messages'" class="panel">
+      <h2>Send Telegram message</h2>
+      <p class="hint">Broadcast to all bot members, or multicast to ticket buyers / pending deposits, or pick specific users.</p>
+      <label>Audience
+        <select v-model="msgTarget">
+          <option value="all">All bot members</option>
+          <option value="ticket_buyers">Users who purchased tickets</option>
+          <option value="pending_deposits">Pending deposits (not processed yet)</option>
+          <option value="selected">Selected users below</option>
+        </select>
+      </label>
+      <div v-if="msgTarget === 'selected'" class="user-pick">
+        <p class="hint">Select users (loads from Users tab list — click Refresh users first if empty).</p>
+        <button type="button" class="btn ghost" @click="loadUsers">Refresh users</button>
+        <label v-for="u in users" :key="u.id || u.telegram_id" class="check user-row">
+          <input
+            type="checkbox"
+            :value="u.id"
+            :disabled="!u.id || !u.telegram_id"
+            v-model="msgSelectedIds"
+          />
+          <span>{{ u.first_name || u.username || 'User' }} · {{ u.phone || '—' }} · tg {{ u.telegram_id || '—' }}</span>
+        </label>
+      </div>
+      <label>Message
+        <textarea v-model="msgText" rows="5" class="area" placeholder="Write your message…" />
+      </label>
+      <div class="actions">
+        <button type="button" class="btn primary" :disabled="msgSending || !msgText.trim()" @click="sendMsg">
+          {{ msgSending ? 'Sending…' : 'Send message' }}
         </button>
       </div>
     </div>
@@ -345,6 +393,7 @@ import {
   getLotteryUsersAdmin,
   deleteLotteryUser,
   getLotteryDeletedAdmin,
+  sendLotteryMessage,
 } from '../services/api'
 
 export default {
@@ -372,8 +421,13 @@ export default {
       file: null,
       activeTab: 'settings',
       form: {
-        brand_name: 'Getachew Fikadu',
+        brand_name: 'Markos Digital Lottery',
         display_name: '',
+        hero_title: 'markos digital lottery',
+        prize_1st: 100000,
+        prize_2nd: 50000,
+        prize_3rd: 25000,
+        verify_api_key: '',
         car_name: '',
         car_color: '',
         car_image_url: '',
@@ -401,6 +455,10 @@ export default {
       verifiedCount: 0,
       winnerNumber: '',
       winnerMessage: '',
+      msgTarget: 'all',
+      msgText: '',
+      msgSelectedIds: [],
+      msgSending: false,
       accessUser: '',
       accessPass: '',
       accessStoredPassword: '',
@@ -424,8 +482,8 @@ export default {
     },
     pageSubtitle() {
       return this.isMain
-        ? 'Settings · receipts · numbers · users · winner · deleted · access'
-        : 'Settings · receipts · numbers · users · winner'
+        ? 'Settings · receipts · numbers · users · messages · winner · deleted · access'
+        : 'Settings · receipts · numbers · users · messages · winner'
     },
     revenuePeriodLabel() {
       const labels = {
@@ -444,6 +502,7 @@ export default {
         { id: 'numbers', label: 'Numbers' },
         { id: 'receipts', label: 'Receipts' },
         { id: 'users', label: 'Users' },
+        { id: 'messages', label: 'Messages' },
         { id: 'winner', label: 'Winner' },
       ]
       if (this.isMain) {
@@ -456,8 +515,7 @@ export default {
       return (this.users || []).slice(0, this.usersVisibleCount)
     },
     previewUrl() {
-      if (this.file) return URL.createObjectURL(this.file)
-      return this.form.car_image_url || this.form.car_image_url_raw || ''
+      return ''
     },
     adminViewUrl() {
       if (typeof window === 'undefined') return '/admin-view'
@@ -487,7 +545,7 @@ export default {
       this.activeTab = id
       if (id === 'receipts') this.loadPurchases()
       if (id === 'access') this.loadAccess()
-      if (id === 'users') this.loadUsers()
+      if (id === 'users' || id === 'messages') this.loadUsers()
       if (id === 'deleted') this.loadDeleted()
     },
     formatWhen(iso) {
@@ -557,6 +615,11 @@ export default {
         ...this.form,
         brand_name: data.brand_name || '',
         display_name: data.display_name || '',
+        hero_title: data.hero_title || 'markos digital lottery',
+        prize_1st: data.prize_1st ?? 100000,
+        prize_2nd: data.prize_2nd ?? 50000,
+        prize_3rd: data.prize_3rd ?? 25000,
+        verify_api_key: data.verify_api_key || '',
         car_name: data.car_name || '',
         car_color: data.car_color || '',
         car_image_url: data.car_image_url || '',
@@ -609,8 +672,13 @@ export default {
         const payload = {
           brand_name: this.form.brand_name,
           display_name: this.form.display_name,
-          car_name: this.form.car_name,
-          car_color: this.form.car_color,
+          hero_title: this.form.hero_title,
+          prize_1st: this.form.prize_1st,
+          prize_2nd: this.form.prize_2nd,
+          prize_3rd: this.form.prize_3rd,
+          verify_api_key: this.form.verify_api_key || '',
+          car_name: this.form.car_name || this.form.display_name || 'Cash Prize',
+          car_color: this.form.car_color || '',
           car_image_url: this.form.car_image_url_raw || '',
           ticket_price: this.form.ticket_price,
           total_tickets: this.form.total_tickets,
@@ -622,7 +690,7 @@ export default {
           admin_blocked_numbers: this.form.admin_blocked_numbers,
           reset_timer: this.resetTimer,
         }
-        const res = await updateLotterySettingsAdmin(payload, this.file)
+        const res = await updateLotterySettingsAdmin(payload, null)
         this.applyData(res.settings || res)
         this.file = null
         this.resetTimer = false
@@ -636,6 +704,32 @@ export default {
         this.error = e.response?.data?.error || 'Save failed'
       } finally {
         this.saving = false
+      }
+    },
+    async sendMsg() {
+      this.msgSending = true
+      this.message = ''
+      this.error = ''
+      try {
+        const payload = {
+          message: this.msgText.trim(),
+          target: this.msgTarget,
+        }
+        if (this.msgTarget === 'selected') {
+          payload.user_ids = this.msgSelectedIds.filter(Boolean)
+        }
+        const res = await sendLotteryMessage(payload)
+        this.message = res.message || `Sent to ${res.sent_count || 0} user(s)`
+        this.msgText = ''
+        this.msgSelectedIds = []
+      } catch (e) {
+        if (e.response?.status === 401) {
+          this.unauthorized = true
+          this.loggedIn = false
+        }
+        this.error = e.response?.data?.error || 'Could not send message'
+      } finally {
+        this.msgSending = false
       }
     },
     async saveBlocked() {
@@ -853,6 +947,21 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 .tombstone { opacity: 0.85; border-style: dashed; }
 .subhead { margin: 1.25rem 0 0.5rem; font-size: 1rem; color: #cbd5e1; }
 .receipt-link { color: #f5a623; font-size: 0.85rem; }
+.sms-box {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+.user-pick { margin: 0.75rem 0; max-height: 220px; overflow: auto; border: 1px solid #334155; border-radius: 8px; padding: 0.5rem; }
+.user-row { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.35rem 0; font-size: 0.85rem; }
 .nums-row { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.5rem; }
 .num-chip {
   background: #064e3b; color: #6ee7b7; font-size: 0.75rem; font-weight: 700;

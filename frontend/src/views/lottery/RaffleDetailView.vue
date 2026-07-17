@@ -8,28 +8,26 @@
       <ChevronLeft :size="18" /> {{ t.back }}
     </button>
 
-    <div class="relative rounded-card overflow-hidden aspect-[16/11] bg-zinc-300">
-      <img
-        :src="raffle.image"
-        :alt="raffle.name"
-        class="w-full h-full object-cover"
-      />
-      <span
-        class="absolute bottom-3 left-3 inline-flex rounded-full bg-forest text-white text-[11px] font-bold px-2.5 py-1"
-      >
-        {{ t.newBadge }}
-      </span>
-      <div
-        class="absolute bottom-3 right-3 flex items-center gap-1 bg-black/50 rounded-full px-2 py-1"
-      >
-        <Star v-for="n in 5" :key="n" :size="12" class="text-gold fill-gold" />
-        <span class="text-xs text-white ml-0.5">{{ raffle.rating.toFixed(1) }}</span>
-      </div>
+    <div
+      class="relative rounded-card overflow-hidden min-h-[180px] px-5 py-7 flex flex-col items-center justify-center text-center bg-gradient-to-br from-ink-200 via-forest-deep to-ink-100 border border-forest/20"
+    >
+      <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">
+        {{ raffle.heroTitle || 'markos digital lottery' }}
+      </p>
+      <h1 class="mt-3 text-white text-3xl font-extrabold leading-tight tracking-tight">
+        1ኛ እጣ {{ formatAmount(raffle.prize1st) }} ብር
+      </h1>
+      <h2 class="mt-3 text-lime-300/95 text-xl font-bold leading-snug">
+        2ኛ እጣ {{ formatAmount(raffle.prize2nd) }} ብር
+      </h2>
+      <h3 class="mt-2 text-white/80 text-base font-semibold leading-snug">
+        3ኛ እጣ {{ formatAmount(raffle.prize3rd) }} ብር
+      </h3>
     </div>
 
     <div>
-      <h1 class="text-2xl font-bold text-white">{{ raffle.name }}</h1>
-      <p class="text-lime-400 mt-0.5">{{ raffle.color }}</p>
+      <h1 class="text-2xl font-bold text-white">{{ raffle.displayName || raffle.name }}</h1>
+      <p v-if="raffle.color" class="text-lime-400 mt-0.5">{{ raffle.color }}</p>
     </div>
 
     <CountdownTimer :ends-at="raffle.endsAt" show-label />
@@ -85,18 +83,10 @@
       {{ t.chooseNumbers }}
     </button>
 
-    <div class="flex gap-2 sticky bottom-24 pt-2">
+    <div class="sticky bottom-24 pt-2">
       <button
         type="button"
-        class="btn-gold flex-1 py-3.5 text-sm inline-flex items-center justify-center gap-1.5"
-        @click="onQuickPick"
-      >
-        <Zap :size="16" />
-        {{ t.quickPick }}
-      </button>
-      <button
-        type="button"
-        class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white/50 text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
+        class="w-full py-3.5 rounded-2xl border border-white/20 text-white/50 text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
         :disabled="!canBuy"
         :class="canBuy ? 'btn-green !border-transparent' : ''"
         @click="openCheckoutFromSelect"
@@ -111,7 +101,7 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronLeft, Star, Target, Zap, Shield } from 'lucide-vue-next'
+import { ChevronLeft, Target, Shield } from 'lucide-vue-next'
 import CountdownTimer from '../../components/lottery/CountdownTimer.vue'
 import TicketProgress from '../../components/lottery/TicketProgress.vue'
 import { useI18n } from '../../composables/useI18n'
@@ -120,7 +110,6 @@ import {
   store,
   setQuantity,
   openPicker,
-  quickPick,
   openCheckoutFromSelect,
   loadPublicSettings,
 } from '../../stores/lottery'
@@ -138,8 +127,7 @@ onMounted(() => {
   loadPublicSettings()
 })
 
-function onQuickPick() {
-  // Only fill numbers — user taps Buy Ticket to open checkout
-  quickPick()
+function formatAmount(n) {
+  return Number(n || 0).toLocaleString('en-US')
 }
 </script>

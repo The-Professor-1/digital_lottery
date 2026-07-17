@@ -273,46 +273,181 @@ def lottery_tickets(request):
     })
 
 
+def _detect_payment_provider(bank_id='', bank_name=''):
+    s = f'{bank_id} {bank_name}'.lower()
+    if 'tele' in s or 'ቴሌ' in s:
+        return 'telebirr'
+    if 'cbe' in s or 'commercial' in s:
+        return 'cbe'
+    return ''
+
+
+def _available_numbers(settings_obj, count=24, exclude=None):
+    """Return up to `count` free numbers for conflict UI."""
+    taken = settings_obj.taken_numbers_set()
+    exclude = set(exclude or [])
+    available = []
+    total = int(settings_obj.total_tickets or 0)
+    for n in range(1, total + 1):
+        if n in taken or n in exclude:
+            continue
+        available.append(n)
+        if len(available) >= count:
+            break
+    return available
+
+
+def _transaction_already_used(provider, reference, account_suffix=''):
+    """Check Telebirr/CBE receipt tables and lottery purchases for prior use."""
+    from .models import TelebirrReceipt, CbeReceipt
+
+    ref = (reference or '').strip().upper()
+    if not ref:
+        return False
+    if LotteryPurchase.objects.filter(transaction_ref__iexact=ref).exclude(status='rejected').exists():
+        return True
+    if provider == 'telebirr':
+        return TelebirrReceipt.objects.filter(reference__iexact=ref).exists()
+    if provider == 'cbe':
+        suffix = (account_suffix or '').strip()
+        qs = CbeReceipt.objects.filter(reference__iexact=ref)
+        if suffix:
+            qs = qs.filter(account_suffix=suffix)
+        return qs.exists()
+    return False
+
+
+def _mark_receipt_used(provider, reference, account_suffix, user, amount):
+    from .models import TelebirrReceipt, CbeReceipt
+
+    ref = (reference or '').strip().upper()
+    if not ref:
+        return
+    if provider == 'telebirr':
+        TelebirrReceipt.objects.get_or_create(
+            reference=ref,
+            defaults={'user': user, 'amount': amount or 0},
+        )
+    elif provider == 'cbe':
+        suffix = (account_suffix or '').strip()
+        CbeReceipt.objects.get_or_create(
+            reference=ref,
+            account_suffix=suffix,
+            defaults={'user': user, 'amount': amount or 0},
+        )
+
+
 @csrf_exempt
 @require_http_methods(['POST'])
 def lottery_submit_purchase(request):
+    """
+    Submit lottery ticket purchase with SMS receipt text.
+    Flow: parse SMS → dedup transaction → verify via Telebirr/CBE API →
+    verified purchase on success, pending (manual review) if API fails.
+    """
     user = _bearer_user(request)
 
-    full_name = (request.POST.get('full_name') or '').strip()
-    phone = (request.POST.get('phone') or '').strip()
-    paid_from = (request.POST.get('paid_from_account') or '').strip()
-    bank_name = (request.POST.get('bank_name') or '').strip()
-    bank_holder = (request.POST.get('bank_holder') or '').strip()
-    bank_account = (request.POST.get('bank_account') or '').strip()
+    content_type = (request.content_type or '').lower()
+    if 'application/json' in content_type:
+        try:
+            body = json.loads(request.body) if request.body else {}
+        except (json.JSONDecodeError, ValueError):
+            body = {}
+        full_name = (body.get('full_name') or '').strip()
+        phone = (body.get('phone') or '').strip()
+        paid_from = (body.get('paid_from_account') or '').strip()
+        bank_id = (body.get('bank_id') or '').strip()
+        bank_name = (body.get('bank_name') or '').strip()
+        bank_holder = (body.get('bank_holder') or '').strip()
+        bank_account = (body.get('bank_account') or '').strip()
+        receipt_sms = (body.get('receipt_sms') or body.get('sms') or '').strip()
+        numbers_raw = body.get('numbers') or []
+    else:
+        full_name = (request.POST.get('full_name') or '').strip()
+        phone = (request.POST.get('phone') or '').strip()
+        paid_from = (request.POST.get('paid_from_account') or '').strip()
+        bank_id = (request.POST.get('bank_id') or '').strip()
+        bank_name = (request.POST.get('bank_name') or '').strip()
+        bank_holder = (request.POST.get('bank_holder') or '').strip()
+        bank_account = (request.POST.get('bank_account') or '').strip()
+        receipt_sms = (request.POST.get('receipt_sms') or request.POST.get('sms') or '').strip()
+        try:
+            numbers_raw = json.loads(request.POST.get('numbers') or '[]')
+        except (json.JSONDecodeError, TypeError):
+            numbers_raw = []
 
-    try:
-        numbers = json.loads(request.POST.get('numbers') or '[]')
-    except (json.JSONDecodeError, TypeError):
-        numbers = []
-    numbers = [int(n) for n in numbers if str(n).isdigit() or isinstance(n, int)]
+    if isinstance(numbers_raw, str):
+        try:
+            numbers_raw = json.loads(numbers_raw)
+        except (json.JSONDecodeError, TypeError):
+            numbers_raw = []
+    numbers = [int(n) for n in numbers_raw if str(n).isdigit() or isinstance(n, int)]
 
     if not full_name or not phone:
-        return JsonResponse({'error': 'Name and phone are required'}, status=400)
+        return JsonResponse({'error': 'Name and phone are required', 'error_code': 'missing_fields'}, status=400)
     if not numbers:
-        return JsonResponse({'error': 'Select at least one number'}, status=400)
+        return JsonResponse({'error': 'Select at least one number', 'error_code': 'missing_numbers'}, status=400)
 
-    receipt = request.FILES.get('receipt') or request.FILES.get('receipt_image')
-    if not receipt:
-        return JsonResponse({'error': 'Payment receipt image is required'}, status=400)
+    provider = _detect_payment_provider(bank_id, bank_name)
+    provider_label = 'telebirr' if provider == 'telebirr' else ('CBE' if provider == 'cbe' else 'telebirr or CBE')
+
+    if not provider:
+        return JsonResponse({
+            'error': 'Please choose a Telebirr or CBE payment account',
+            'error_code': 'missing_provider',
+        }, status=400)
+
+    if not receipt_sms:
+        return JsonResponse({
+            'error': f'Please enter the full sms you received from {provider_label}',
+            'error_code': 'incomplete_sms',
+            'provider': provider,
+        }, status=400)
 
     settings_obj = LotterySettings.get_settings()
     taken = settings_obj.taken_numbers_set()
-    conflict = [n for n in numbers if n in taken]
+    conflict = sorted({n for n in numbers if n in taken})
     if conflict:
+        conflict_str = ', '.join(str(n).zfill(3) for n in conflict)
+        available = _available_numbers(settings_obj, count=max(24, len(numbers) * 4), exclude=numbers)
         return JsonResponse({
-            'error': 'Some numbers are no longer available',
+            'error': (
+                f'This number {conflict_str} is taken by another user '
+                f'please choose different number from these'
+            ),
+            'error_code': 'numbers_taken',
             'taken': conflict,
+            'available': available,
         }, status=409)
 
-    receipt_hash = _file_sha256(receipt)
-    if LotteryPurchase.objects.filter(receipt_hash=receipt_hash).exists():
+    from .telebirr_verify import parse_telebirr_receipt_text, verify_telebirr_receipt, credited_party_matches
+    from .cbe_verify import parse_cbe_receipt_text, verify_cbe_receipt
+    from .models import GameSettings
+
+    parsed = None
+    account_suffix = ''
+    if provider == 'telebirr':
+        parsed = parse_telebirr_receipt_text(receipt_sms)
+    else:
+        parsed = parse_cbe_receipt_text(receipt_sms)
+        if parsed:
+            account_suffix = parsed.get('account_suffix') or ''
+
+    if not parsed or not parsed.get('reference'):
         return JsonResponse({
-            'error': 'This receipt image was already submitted. Use a different receipt for another ticket.',
+            'error': f'Please enter the full sms you received from {provider_label}',
+            'error_code': 'incomplete_sms',
+            'provider': provider,
+        }, status=400)
+
+    reference = str(parsed['reference']).strip().upper()
+    sms_amount = parsed.get('amount') or Decimal('0')
+
+    if _transaction_already_used(provider, reference, account_suffix):
+        return JsonResponse({
+            'error': 'This receipt was checked before, try again with genuine receipt',
+            'error_code': 'already_verified',
+            'reference': reference,
         }, status=409)
 
     amount = Decimal(settings_obj.ticket_price) * len(numbers)
@@ -325,6 +460,77 @@ def lottery_submit_purchase(request):
         if digits:
             user = User.objects.filter(phone_number__icontains=digits[-9:]).order_by('-id').first()
 
+    receipt_hash = hashlib.sha256(
+        f'{provider}:{reference}:{account_suffix}:{receipt_sms[:200]}'.encode('utf-8')
+    ).hexdigest()
+    if LotteryPurchase.objects.filter(receipt_hash=receipt_hash).exists():
+        return JsonResponse({
+            'error': 'This receipt was checked before, try again with genuine receipt',
+            'error_code': 'already_verified',
+            'reference': reference,
+        }, status=409)
+
+    api_key = settings_obj.resolved_verify_api_key()
+    verify_ok = False
+    verify_error = ''
+    manual_review = False
+
+    if not api_key:
+        manual_review = True
+        verify_error = 'verify_api_key_not_configured'
+    else:
+        try:
+            if provider == 'telebirr':
+                result = verify_telebirr_receipt(reference, api_key)
+                if result.get('success') and result.get('data'):
+                    data = result['data']
+                    if bank_holder or bank_account:
+                        credited_name = (data.get('creditedPartyName') or '').strip()
+                        credited_account_no = (data.get('creditedPartyAccountNo') or '').strip()
+                        # Keep credited_party_matches for soft validation logging
+                        _ = credited_party_matches(credited_name, credited_account_no, bank_holder, bank_account)
+                    verify_ok = True
+                else:
+                    verify_error = result.get('error') or 'verification_failed'
+                    manual_review = True
+            else:
+                gs = GameSettings.get_settings()
+                use_fallback = bool(getattr(gs, 'cbe_use_fallback_proxy', False))
+                result = verify_cbe_receipt(reference, account_suffix, api_key, use_fallback_proxy=use_fallback)
+                if result.get('success') and result.get('data'):
+                    verify_ok = True
+                else:
+                    verify_error = result.get('error') or 'verification_failed'
+                    manual_review = True
+        except Exception as e:
+            verify_error = str(e) or 'api_exception'
+            manual_review = True
+
+    if verify_ok and sms_amount and amount and sms_amount < (amount * Decimal('0.95')):
+        return JsonResponse({
+            'error': (
+                f'Payment amount ({sms_amount} Birr) is less than required ticket total '
+                f'({amount} Birr). Please pay the full amount and try again.'
+            ),
+            'error_code': 'amount_mismatch',
+        }, status=400)
+
+    taken = settings_obj.taken_numbers_set()
+    conflict = sorted({n for n in numbers if n in taken})
+    if conflict:
+        conflict_str = ', '.join(str(n).zfill(3) for n in conflict)
+        available = _available_numbers(settings_obj, count=max(24, len(numbers) * 4), exclude=numbers)
+        return JsonResponse({
+            'error': (
+                f'This number {conflict_str} is taken by another user '
+                f'please choose different number from these'
+            ),
+            'error_code': 'numbers_taken',
+            'taken': conflict,
+            'available': available,
+        }, status=409)
+
+    status = 'verified' if verify_ok else 'pending'
     purchase = LotteryPurchase.objects.create(
         user=user,
         full_name=full_name,
@@ -336,14 +542,34 @@ def lottery_submit_purchase(request):
         bank_holder=bank_holder,
         bank_account=bank_account,
         paid_from_account=paid_from,
-        receipt_image=receipt,
+        receipt_sms=receipt_sms[:4000],
+        payment_provider=provider,
+        transaction_ref=reference,
         receipt_hash=receipt_hash,
-        status='pending',
+        status=status,
+        admin_note=(verify_error[:250] if manual_review and verify_error else ''),
+        verified_at=timezone.now() if verify_ok else None,
     )
+
+    if verify_ok:
+        try:
+            _mark_receipt_used(provider, reference, account_suffix, user, amount)
+        except Exception:
+            pass
+        return JsonResponse({
+            'success': True,
+            'verified': True,
+            'message': 'Payment verified successfully!',
+            'message_key': 'paymentVerified',
+            'purchase': purchase.to_dict(request),
+        })
+
     return JsonResponse({
         'success': True,
-        'message_key': 'receiptPendingHint',
-        'message': '',
+        'verified': False,
+        'manual_review': True,
+        'message': 'Due to system problem your request is sent to manual review please wait moment',
+        'message_key': 'manualReview',
         'purchase': purchase.to_dict(request),
     })
 
@@ -360,6 +586,8 @@ def lottery_settings_admin(request):
         data = settings_obj.to_public_dict(request)
         data['car_image_url_raw'] = settings_obj.car_image_url or ''
         data['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
+        data['verify_api_key'] = settings_obj.verify_api_key or ''
+        data['has_verify_api_key'] = bool((settings_obj.verify_api_key or '').strip())
         return JsonResponse(data)
 
     try:
@@ -376,10 +604,14 @@ def lottery_settings_admin(request):
             accounts_raw = data.get('payment_accounts')
             blocked_raw = data.get('admin_blocked_numbers')
 
-        str_fields = ['brand_name', 'car_name', 'car_color', 'car_image_url', 'display_name']
+        str_fields = [
+            'brand_name', 'car_name', 'car_color', 'car_image_url', 'display_name',
+            'hero_title', 'verify_api_key',
+        ]
         int_fields = [
             'ticket_price', 'total_tickets', 'sold_count',
             'countdown_days', 'countdown_hours', 'countdown_minutes', 'countdown_seconds',
+            'prize_1st', 'prize_2nd', 'prize_3rd',
         ]
 
         old_timer = (
@@ -451,7 +683,15 @@ def lottery_settings_admin(request):
         force_reset = str(data.get('reset_timer', '')).lower() in ('1', 'true', 'yes', 'on')
         settings_obj.save(reset_timer=timer_touched or force_reset)
 
-        # Ensure uploaded media files are world-readable (nginx/alias safety)
+        if 'verify_api_key' in data and data.get('verify_api_key') is not None:
+            try:
+                from .models import GameSettings
+                gs = GameSettings.get_settings()
+                gs.telebirr_verify_api_key = str(data.get('verify_api_key') or '').strip()
+                gs.save(update_fields=['telebirr_verify_api_key'])
+            except Exception:
+                pass
+
         try:
             from django.conf import settings as dj_settings
             root = getattr(dj_settings, 'MEDIA_ROOT', None)
@@ -472,6 +712,8 @@ def lottery_settings_admin(request):
         out = settings_obj.to_public_dict(request)
         out['car_image_url_raw'] = settings_obj.car_image_url or ''
         out['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
+        out['verify_api_key'] = settings_obj.verify_api_key or ''
+        out['has_verify_api_key'] = bool((settings_obj.verify_api_key or '').strip())
         return JsonResponse({'success': True, 'settings': out})
     except Exception as e:
         import traceback
@@ -555,6 +797,26 @@ def lottery_purchase_action(request, purchase_id):
         if getattr(request.user, 'is_authenticated', False) and request.user.is_authenticated:
             purchase.verified_by = request.user
         purchase.save()
+
+        # Prevent SMS reuse after manual verify
+        if purchase.transaction_ref:
+            try:
+                suffix = ''
+                provider = (purchase.payment_provider or '').strip().lower()
+                if provider == 'cbe' and purchase.receipt_sms:
+                    from .cbe_verify import parse_cbe_receipt_text
+                    parsed = parse_cbe_receipt_text(purchase.receipt_sms)
+                    if parsed:
+                        suffix = parsed.get('account_suffix') or ''
+                _mark_receipt_used(
+                    provider,
+                    purchase.transaction_ref,
+                    suffix,
+                    purchase.user,
+                    purchase.amount,
+                )
+            except Exception:
+                pass
 
         if purchase.user_id and purchase.user and purchase.user.telegram_id:
             nums = ', '.join(str(n).zfill(3) for n in (purchase.numbers or []))
@@ -883,4 +1145,91 @@ def lottery_announce_winner(request):
         'winner_number': winner_number,
         'notified': notified,
         'settings': settings_obj.to_public_dict(request),
+    })
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_send_message(request):
+    """
+    Admin broadcast / multicast Telegram messages.
+    target:
+      - all: every bot user with telegram_id
+      - ticket_buyers: users with verified or pending lottery purchases
+      - pending_deposits: users with pending (unprocessed) lottery purchases
+      - user_ids: specific user IDs in body.user_ids
+    """
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    message = (body.get('message') or '').strip()
+    target = (body.get('target') or 'all').strip().lower()
+    user_ids = body.get('user_ids') or []
+
+    if not message:
+        return JsonResponse({'error': 'Message is required'}, status=400)
+
+    from .models import User, BroadcastMessage, BroadcastMessageRecipient
+    from telegram_bot.notifications import send_notification_sync
+
+    base = User.objects.filter(telegram_id__isnull=False)
+
+    if target in ('all', 'broadcast'):
+        users = base
+    elif target in ('ticket_buyers', 'purchasers', 'ticket'):
+        ids = LotteryPurchase.objects.filter(
+            status__in=['pending', 'verified']
+        ).exclude(user_id__isnull=True).values_list('user_id', flat=True).distinct()
+        users = base.filter(id__in=ids)
+    elif target in ('pending_deposits', 'pending', 'deposit_issues'):
+        ids = LotteryPurchase.objects.filter(status='pending').exclude(
+            user_id__isnull=True
+        ).values_list('user_id', flat=True).distinct()
+        users = base.filter(id__in=ids)
+    elif target in ('selected', 'user_ids', 'users'):
+        try:
+            ids = [int(x) for x in user_ids]
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Invalid user_ids'}, status=400)
+        if not ids:
+            return JsonResponse({'error': 'Select at least one user'}, status=400)
+        users = base.filter(id__in=ids)
+    else:
+        return JsonResponse({
+            'error': 'Invalid target. Use all, ticket_buyers, pending_deposits, or selected',
+        }, status=400)
+
+    broadcast = BroadcastMessage.objects.create(
+        message_text=message,
+        amount_added=None,
+        sent_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+    )
+
+    sent_count = 0
+    for user in users.iterator():
+        try:
+            success, message_id = send_notification_sync(user.telegram_id, message)
+            if success:
+                sent_count += 1
+                if message_id:
+                    BroadcastMessageRecipient.objects.create(
+                        broadcast=broadcast,
+                        user=user,
+                        telegram_id=user.telegram_id,
+                        message_id=message_id,
+                    )
+        except Exception as e:
+            print(f'lottery_send_message error user={user.id}: {e}')
+            continue
+
+    return JsonResponse({
+        'success': True,
+        'sent_count': sent_count,
+        'broadcast_id': broadcast.id,
+        'message': f'Message sent to {sent_count} user(s)',
     })

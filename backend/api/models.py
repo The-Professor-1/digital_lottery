@@ -975,20 +975,34 @@ def _absolute_file_url(file_field, request=None, cache_bust=None):
 
 
 class LotterySettings(models.Model):
-    """Singleton settings for the car lottery mini-app (admin-configurable)."""
-    brand_name = models.CharField(max_length=120, default='Getachew Fikadu')
-    car_name = models.CharField(max_length=120, default='BYD Yuan UP')
-    car_color = models.CharField(max_length=80, default='Time Grey')
+    """Singleton settings for the money lottery mini-app (admin-configurable)."""
+    brand_name = models.CharField(max_length=120, default='Markos Digital Lottery')
+    car_name = models.CharField(max_length=120, default='Cash Prize', help_text='Legacy field; prefer hero_title')
+    car_color = models.CharField(max_length=80, default='', blank=True)
     car_image = models.ImageField(upload_to='lottery/cars/', blank=True, null=True)
     car_image_url = models.CharField(
         max_length=500,
         blank=True,
-        default='https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=900&q=80',
-        help_text='Used when no uploaded image is set',
+        default='',
+        help_text='Legacy image URL (homepage now uses prize text)',
+    )
+    hero_title = models.CharField(
+        max_length=160,
+        default='markos digital lottery',
+        help_text='Text shown at top of homepage prize section',
+    )
+    prize_1st = models.PositiveIntegerField(default=100000, help_text='1st prize amount in Birr')
+    prize_2nd = models.PositiveIntegerField(default=50000, help_text='2nd prize amount in Birr')
+    prize_3rd = models.PositiveIntegerField(default=25000, help_text='3rd prize amount in Birr')
+    verify_api_key = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='API key for Telebirr/CBE receipt verification (verifyapi.leulzenebe.pro)',
     )
     display_name = models.CharField(
         max_length=160,
-        default='Gech EV Makina Ekub',
+        default='Markos Digital Lottery',
         help_text='Name shown on checkout / tickets',
     )
     ticket_price = models.PositiveIntegerField(default=3000)
@@ -1059,6 +1073,17 @@ class LotterySettings(models.Model):
                     pass
         return taken
 
+    def resolved_verify_api_key(self):
+        """Prefer lottery setting; fall back to GameSettings for older installs."""
+        key = (self.verify_api_key or '').strip()
+        if key:
+            return key
+        try:
+            gs = GameSettings.get_settings()
+            return (getattr(gs, 'telebirr_verify_api_key', None) or '').strip()
+        except Exception:
+            return ''
+
     def to_public_dict(self, request=None):
         ends = self.ends_at
         if ends is None:
@@ -1070,6 +1095,10 @@ class LotterySettings(models.Model):
             'car_name': self.car_name,
             'car_color': self.car_color,
             'car_image_url': self.resolved_image_url(request),
+            'hero_title': self.hero_title or 'markos digital lottery',
+            'prize_1st': int(self.prize_1st or 0),
+            'prize_2nd': int(self.prize_2nd or 0),
+            'prize_3rd': int(self.prize_3rd or 0),
             'display_name': self.display_name,
             'ticket_price': self.ticket_price,
             'total_tickets': self.total_tickets,
@@ -1116,7 +1145,16 @@ class LotteryPurchase(models.Model):
     bank_holder = models.CharField(max_length=160, blank=True, default='')
     bank_account = models.CharField(max_length=64, blank=True, default='')
     paid_from_account = models.CharField(max_length=64, blank=True, default='')
-    receipt_image = models.ImageField(upload_to='lottery/receipts/')
+    receipt_image = models.ImageField(upload_to='lottery/receipts/', blank=True, null=True)
+    receipt_sms = models.TextField(blank=True, default='', help_text='Full SMS text pasted by user')
+    payment_provider = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text='telebirr or cbe',
+    )
+    transaction_ref = models.CharField(
+        max_length=64, blank=True, default='', db_index=True,
+        help_text='Parsed transaction / receipt reference for dedup',
+    )
     receipt_hash = models.CharField(max_length=64, unique=True, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     admin_note = models.CharField(max_length=255, blank=True, default='')
@@ -1149,6 +1187,9 @@ class LotteryPurchase(models.Model):
             'bank_account': self.bank_account,
             'paid_from_account': self.paid_from_account,
             'receipt_image_url': img,
+            'receipt_sms': self.receipt_sms or '',
+            'payment_provider': self.payment_provider or '',
+            'transaction_ref': self.transaction_ref or '',
             'status': self.status,
             'admin_note': self.admin_note,
             'created_at': self.created_at.isoformat() if self.created_at else None,

@@ -14,7 +14,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
-# backend/.env then repo-root/.env (EC2: /home/ubuntu/apps/CarLottery/.env)
+# backend/.env then repo-root/.env (EC2: /home/ubuntu/apps/DigitalLottery/.env)
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(_BACKEND_DIR / '.env')
 load_dotenv(_BACKEND_DIR.parent / '.env')

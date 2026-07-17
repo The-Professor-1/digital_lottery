@@ -3,7 +3,7 @@
     <div
       v-if="store.showCheckout"
       class="fixed inset-0 z-50 flex items-end justify-center bg-black/70"
-      @click.self="closeCheckout"
+      @click.self="!store.verifying && closeCheckout()"
     >
       <div
         class="sheet-panel w-full max-w-phone bg-ink-100 rounded-t-3xl border-t border-white/10 flex flex-col max-h-[94dvh]"
@@ -15,7 +15,12 @@
               {{ store.checkoutStep < 3 ? t.stepOf(store.checkoutStep, 3) : t.confirmStep }}
             </p>
           </div>
-          <button type="button" class="p-1 text-white/70" @click="closeCheckout">
+          <button
+            type="button"
+            class="p-1 text-white/70"
+            :disabled="store.verifying"
+            @click="closeCheckout"
+          >
             <X :size="20" />
           </button>
         </div>
@@ -79,7 +84,7 @@
             </label>
           </template>
 
-          <!-- Step 2 -->
+          <!-- Step 2: account + SMS -->
           <template v-else-if="store.checkoutStep === 2">
             <div>
               <p class="text-sm text-white/85">{{ t.selectBank }}</p>
@@ -110,43 +115,42 @@
               <p class="text-sm text-white font-medium tabular-nums">{{ bank.account }}</p>
             </button>
 
-            <div>
-              <p class="text-sm text-white/80 mb-2">{{ t.paymentProof }}</p>
-              <label
-                class="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gold/50 bg-ink-200/50 py-8 px-4 cursor-pointer"
-              >
-                <Upload :size="28" class="text-gold" />
-                <span class="text-sm text-white/85">{{ t.uploadProof }}</span>
-                <span class="text-xs text-white/40">{{ t.uploadHint }}</span>
-                <span v-if="store.paymentProofName" class="text-xs text-forest mt-1">
-                  {{ store.paymentProofName }}
-                </span>
-                <input type="file" accept="image/png,image/jpeg" class="hidden" @change="onFile" />
-              </label>
-            </div>
-
             <label class="block">
-              <span class="text-sm text-white/70">{{ t.paidFrom }}</span>
-              <input
-                v-model="store.paidFromAccount"
-                type="text"
-                class="mt-1.5 w-full rounded-xl bg-ink-200 border border-white/10 px-3 py-3 text-sm text-white outline-none"
+              <span class="text-sm text-white/80">{{ t.pasteSms }}</span>
+              <p class="text-xs text-white/45 mt-1 mb-2">{{ smsHint }}</p>
+              <textarea
+                v-model="store.receiptSms"
+                rows="6"
+                class="w-full rounded-2xl bg-ink-200 border border-white/10 px-3 py-3 text-sm text-white outline-none placeholder:text-white/30 resize-none"
+                :placeholder="t.pasteSmsPlaceholder"
+                @input="store.submitError = ''"
               />
             </label>
-            <p v-if="store.submitError" class="text-sm text-red-300">{{ store.submitError }}</p>
+
+            <p v-if="store.submitError" class="text-sm text-red-300 leading-relaxed whitespace-pre-wrap">
+              {{ store.submitError }}
+            </p>
           </template>
 
-          <!-- Step 3 -->
+          <!-- Step 3: result -->
           <template v-else>
             <div class="text-center py-8 space-y-3">
               <div
-                class="mx-auto w-16 h-16 rounded-2xl bg-forest/20 border border-forest/40 flex items-center justify-center"
+                class="mx-auto w-16 h-16 rounded-2xl border flex items-center justify-center"
+                :class="
+                  store.orderVerified
+                    ? 'bg-forest/20 border-forest/40'
+                    : 'bg-amber-500/10 border-amber-400/40'
+                "
               >
-                <Check :size="32" class="text-forest" />
+                <Check v-if="store.orderVerified" :size="32" class="text-forest" />
+                <Clock v-else :size="32" class="text-amber-300" />
               </div>
-              <h3 class="text-xl font-bold">{{ t.receiptReceived }}</h3>
+              <h3 class="text-xl font-bold">
+                {{ store.orderVerified ? t.paymentVerified : t.manualReviewTitle }}
+              </h3>
               <p class="text-sm text-white/80 px-4 leading-relaxed">
-                {{ t.receiptPendingHint }}
+                {{ store.submitMessage || (store.orderVerified ? t.paymentVerifiedHint : t.manualReview) }}
               </p>
             </div>
           </template>
@@ -167,6 +171,7 @@
             <button
               type="button"
               class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white text-sm font-semibold"
+              :disabled="store.verifying"
               @click="store.checkoutStep = 1"
             >
               {{ t.back }}
@@ -174,10 +179,10 @@
             <button
               type="button"
               class="btn-green flex-[1.4] py-3.5 text-sm"
-              :disabled="store.submitting || !store.paymentProofFile"
+              :disabled="store.verifying || !canSubmit"
               @click="onSubmit"
             >
-              {{ store.submitting ? '…' : t.continue + ' >' }}
+              {{ store.verifying ? t.checking : t.continue + ' >' }}
             </button>
           </template>
           <template v-else>
@@ -187,33 +192,134 @@
           </template>
         </div>
       </div>
+
+      <!-- Checking overlay -->
+      <div
+        v-if="store.verifying"
+        class="absolute inset-0 z-[60] flex items-center justify-center bg-black/75 px-6"
+      >
+        <div class="w-full max-w-xs rounded-2xl bg-ink-100 border border-white/10 p-6 text-center space-y-3">
+          <div
+            class="mx-auto w-12 h-12 rounded-full border-2 border-gold border-t-transparent animate-spin"
+          />
+          <p class="text-white font-semibold">{{ t.checking }}</p>
+          <p class="text-xs text-white/50">{{ t.checkingHint }}</p>
+        </div>
+      </div>
+
+      <!-- Number conflict dialog -->
+      <div
+        v-if="store.conflictDialog"
+        class="absolute inset-0 z-[70] flex items-end justify-center bg-black/80 px-3 pb-3"
+        @click.self="store.conflictDialog = false"
+      >
+        <div class="w-full max-w-phone rounded-2xl bg-ink-100 border border-white/10 p-4 space-y-3 max-h-[80dvh] flex flex-col">
+          <h3 class="text-base font-bold text-white">{{ t.numbersTakenTitle }}</h3>
+          <p class="text-sm text-red-300 leading-relaxed">{{ store.conflictMessage }}</p>
+          <p class="text-xs text-white/55">{{ t.pickFromAvailable }}</p>
+          <div class="flex-1 overflow-y-auto grid grid-cols-6 gap-1.5 py-1">
+            <button
+              v-for="n in store.conflictAvailable"
+              :key="n"
+              type="button"
+              class="aspect-square rounded-lg text-[11px] font-semibold tabular-nums"
+              :class="
+                store.conflictPicked.includes(n)
+                  ? 'bg-gold text-black'
+                  : 'bg-ink-300 text-white/90'
+              "
+              @click="toggleConflictPick(n)"
+            >
+              {{ padNumber(n) }}
+            </button>
+          </div>
+          <p class="text-xs text-white/50">
+            {{ store.conflictPicked.length }} / {{ store.quantity }} {{ t.selected }}
+          </p>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="flex-1 py-3 rounded-xl border border-white/20 text-white text-sm"
+              @click="store.conflictDialog = false"
+            >
+              {{ t.back }}
+            </button>
+            <button
+              type="button"
+              class="btn-green flex-[1.3] py-3 text-sm"
+              :disabled="store.conflictPicked.length !== store.quantity"
+              @click="applyConflictAndRetry"
+            >
+              {{ t.continue }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </Transition>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { X, User, Phone, Receipt, Upload, Check } from 'lucide-vue-next'
+import { X, User, Phone, Receipt, Check, Clock } from 'lucide-vue-next'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr, padNumber } from '../../data/mock'
-import { store, closeCheckout, totalPrice, submitOrder, finishOrder } from '../../stores/lottery'
+import {
+  store,
+  closeCheckout,
+  totalPrice,
+  submitOrder,
+  finishOrder,
+} from '../../stores/lottery'
 
 const { t } = useI18n()
 const router = useRouter()
 
-function onFile(e) {
-  const file = e.target.files?.[0] || null
-  store.paymentProofFile = file
-  store.paymentProofName = file ? file.name : ''
-  store.submitError = ''
-}
+const selectedBank = computed(() =>
+  store.banks.find((b) => b.id === store.selectedBankId)
+)
+
+const providerLabel = computed(() => {
+  const name = (selectedBank.value?.name || selectedBank.value?.id || '').toLowerCase()
+  if (name.includes('tele')) return 'telebirr'
+  if (name.includes('cbe') || name.includes('commercial')) return 'CBE'
+  return 'telebirr / CBE'
+})
+
+const smsHint = computed(() => t.value.fullSmsHint(providerLabel.value))
+
+const canSubmit = computed(
+  () => !!store.selectedBankId && !!(store.receiptSms || '').trim()
+)
 
 async function onSubmit() {
   await submitOrder()
 }
 
+function toggleConflictPick(n) {
+  const idx = store.conflictPicked.indexOf(n)
+  if (idx >= 0) {
+    store.conflictPicked.splice(idx, 1)
+    return
+  }
+  if (store.conflictPicked.length >= store.quantity) return
+  store.conflictPicked.push(n)
+}
+
+async function applyConflictAndRetry() {
+  if (store.conflictPicked.length !== store.quantity) return
+  store.selectedNumbers = [...store.conflictPicked]
+  store.conflictDialog = false
+  store.conflictAvailable = []
+  store.conflictPicked = []
+  store.conflictMessage = ''
+  await submitOrder()
+}
+
 function onDone() {
+  const goHome = store.orderVerified
   finishOrder()
-  router.push('/tickets')
+  router.push(goHome ? '/' : '/tickets')
 }
 </script>

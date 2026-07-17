@@ -515,19 +515,9 @@ export async function getLotteryTickets(phone) {
   return response.data
 }
 
-export async function submitLotteryPurchase(formData) {
-  const response = await api.post('/lottery/purchase/', formData, {
-    transformRequest: [(data, headers) => {
-      if (headers) {
-        if (typeof headers.delete === 'function') headers.delete('Content-Type')
-        else {
-          delete headers['Content-Type']
-          delete headers['content-type']
-        }
-      }
-      return data
-    }],
-  })
+export async function submitLotteryPurchase(payload) {
+  // JSON body with SMS text (no receipt image upload)
+  const response = await api.post('/lottery/purchase/', payload)
   return response.data
 }
 
@@ -553,6 +543,11 @@ export async function updateLotterySettingsAdmin(payload, file = null) {
     form.append('car_image', file)
   }
   const response = await api.post('/admin-dashboard/lottery-settings/', form)
+  return response.data
+}
+
+export async function sendLotteryMessage(payload) {
+  const response = await api.post('/admin-dashboard/lottery-send-message/', payload)
   return response.data
 }
 

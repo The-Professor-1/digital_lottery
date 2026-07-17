@@ -15,28 +15,16 @@
               {{ t.pickSubtitle(store.quantity, store.selectedNumbers.length) }}
             </p>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              class="w-10 h-10 rounded-xl bg-gold flex items-center justify-center"
-              @click="quickPick"
-            >
-              <Shuffle :size="18" class="text-black" />
-            </button>
-            <button
-              type="button"
-              class="w-10 h-10 rounded-xl bg-red-900/80 flex items-center justify-center"
-              @click="closePicker"
-            >
-              <X :size="18" class="text-white" />
-            </button>
-          </div>
+          <button
+            type="button"
+            class="w-10 h-10 rounded-xl bg-red-900/80 flex items-center justify-center shrink-0"
+            @click="closePicker"
+          >
+            <X :size="18" class="text-white" />
+          </button>
         </div>
 
         <div class="px-4 py-2 flex items-center gap-4 text-[11px] text-white/70">
-          <span class="inline-flex items-center gap-1.5">
-            <span class="w-3.5 h-3.5 rounded bg-gold" /> {{ t.selected }}
-          </span>
           <span class="inline-flex items-center gap-1.5">
             <span class="w-3.5 h-3.5 rounded bg-sold" /> {{ t.taken }}
           </span>
@@ -87,14 +75,13 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Shuffle, X } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 import { useI18n } from '../../composables/useI18n'
 import { padNumber } from '../../data/mock'
 import {
   store,
   closePicker,
   toggleNumber,
-  quickPick,
   confirmPicker,
   isTaken,
 } from '../../stores/lottery'

@@ -1,5 +1,5 @@
 [Unit]
-Description=Car Lottery Telegram Bot
+Description=Digital Lottery Telegram Bot
 After=network.target postgresql.service redis.service
 Wants=postgresql.service redis.service
 
@@ -7,16 +7,16 @@ Wants=postgresql.service redis.service
 Type=simple
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/apps/CarLottery/backend
+WorkingDirectory=/home/ubuntu/apps/DigitalLottery/backend
 
-EnvironmentFile=/home/ubuntu/apps/CarLottery/.env
+EnvironmentFile=/home/ubuntu/apps/DigitalLottery/.env
 
-Environment="PATH=/home/ubuntu/apps/CarLottery/venv/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/home/ubuntu/apps/CarLottery/backend"
+Environment="PATH=/home/ubuntu/apps/DigitalLottery/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/home/ubuntu/apps/DigitalLottery/backend"
 Environment="DJANGO_SETTINGS_MODULE=bingo.settings"
 Environment="PYTHONUNBUFFERED=1"
 
-ExecStart=/home/ubuntu/apps/CarLottery/venv/bin/python manage.py runbot
+ExecStart=/home/ubuntu/apps/DigitalLottery/venv/bin/python manage.py runbot
 
 Restart=always
 RestartSec=10
@@ -25,7 +25,7 @@ StartLimitBurst=5
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=carlottery-telegram-bot
+SyslogIdentifier=digitallottery-telegram-bot
 
 NoNewPrivileges=true
 PrivateTmp=true

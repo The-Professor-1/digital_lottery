@@ -1,7 +1,9 @@
-name: Deploy Car Lottery
+name: Deploy Digital Lottery
 
 # If this job fails with "dial tcp :22: i/o timeout", AWS Security Group must allow
 # SSH (port 22) from 0.0.0.0/0 (or use scripts/rebuild_frontend.sh on EC2 manually).
+#
+# This deploys ONLY ~/apps/DigitalLottery — it does NOT touch CarLottery.
 
 on:
   push:
@@ -27,14 +29,15 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            APP_DIR="$HOME/apps/CarLottery"
+            APP_DIR="$HOME/apps/DigitalLottery"
             VENV_PY="$APP_DIR/venv/bin/python"
 
-            echo "Starting CarLottery deployment..."
+            echo "Starting DigitalLottery deployment..."
             cd "$APP_DIR"
 
             if [ ! -x "$VENV_PY" ]; then
               echo "ERROR: venv python missing at $VENV_PY"
+              echo "First-time setup: clone this repo to $APP_DIR and create venv (see DEPLOY.md)"
               exit 1
             fi
 
@@ -69,9 +72,8 @@ jobs:
 
             bash scripts/rebuild_frontend.sh
 
-            sudo systemctl restart redis-server || sudo systemctl restart redis || true
-            sudo systemctl restart celery || true
-            sudo systemctl restart celery-beat || true
-            sudo systemctl restart carlottery-telegram-bot || true
+            # Restart ONLY this app's services (do not touch carlottery-* / shared celery)
+            sudo systemctl restart digitallottery-gunicorn || true
+            sudo systemctl restart digitallottery-telegram-bot || true
 
-            echo "Deployment completed successfully"
+            echo "DigitalLottery deployment completed successfully"

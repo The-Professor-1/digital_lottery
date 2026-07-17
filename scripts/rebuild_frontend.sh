@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full deploy on EC2 when GitHub Actions SSH fails.
-# Usage:  bash scripts/rebuild_frontend.sh
+# Usage (on EC2):  cd ~/apps/DigitalLottery && bash scripts/rebuild_frontend.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -50,10 +50,13 @@ cd backend
 "$VENV_PY" manage.py collectstatic --noinput
 cd "$ROOT"
 
-sudo systemctl restart carlottery-gunicorn
+# Restart ONLY Digital Lottery (never carlottery-*)
+sudo systemctl restart digitallottery-gunicorn
+sudo systemctl restart digitallottery-telegram-bot || true
+
 echo "Fix media permissions..."
 mkdir -p "$ROOT/backend/media/lottery/cars" "$ROOT/backend/media/lottery/receipts"
 chmod -R a+rX "$ROOT/backend/media" || true
 echo "Done. Hard-refresh admin (Ctrl+Shift+R) and reopen the Telegram mini-app."
-echo "If receipt/car images still 403: update nginx so /media/ proxies to gunicorn (see nginx/nginx.conf), then:"
+echo "If media still 403: install nginx/nginx.conf as sites-available/digitallottery, then:"
 echo "  sudo nginx -t && sudo systemctl reload nginx"

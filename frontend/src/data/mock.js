@@ -32,12 +32,15 @@ export const banks = [
 
 export const featuredRaffle = {
   id: 'gech-ev-1',
-  name: 'BYD Yuan UP',
-  displayName: 'Gech EV Makina Ekub',
-  color: 'Time Grey',
-  image:
-    'https://images.unsplash.com/photo-1619767886558-efdc259cde1a?auto=format&fit=crop&w=900&q=80',
-  badge: 'trending', // 'trending' | 'new'
+  name: 'Markos Digital Lottery',
+  displayName: 'Markos Digital Lottery',
+  color: '',
+  heroTitle: 'markos digital lottery',
+  prize1st: 100000,
+  prize2nd: 50000,
+  prize3rd: 25000,
+  image: '',
+  badge: 'trending',
   rating: 5.0,
   ticketPrice: 3000,
   totalTickets: TOTAL_TICKETS,

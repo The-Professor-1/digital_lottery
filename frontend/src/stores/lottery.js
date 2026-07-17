@@ -6,7 +6,7 @@ const THEME_KEY = 'gfj_theme'
 
 export const store = reactive({
   theme: localStorage.getItem(THEME_KEY) || 'dark',
-  brandName: 'Getachew Fikadu',
+  brandName: 'Markos Digital Lottery',
   banks: defaultBanks.map((b) => ({ ...b })),
   phone: '',
   quantity: 1,
@@ -17,13 +17,18 @@ export const store = reactive({
   checkoutStep: 1,
   fullName: '',
   selectedBankId: null,
-  paymentProofFile: null,
-  paymentProofName: '',
+  receiptSms: '',
   paidFromAccount: '',
   orderDone: false,
+  orderVerified: false,
   submitError: '',
   submitMessage: '',
   submitting: false,
+  verifying: false,
+  conflictDialog: false,
+  conflictMessage: '',
+  conflictAvailable: [],
+  conflictPicked: [],
   tickets: [],
   ticketStats: { active: 0, pending: 0, total: 0 },
   raffle: { ...featuredRaffle, soldCount: 0 },
@@ -42,10 +47,13 @@ export function applyPublicSettings(data) {
   store.raffle = {
     ...store.raffle,
     id: store.raffle.id || 'gech-ev-1',
-    name: data.car_name || store.raffle.name,
+    name: data.display_name || data.car_name || store.raffle.name,
     displayName: data.display_name || store.raffle.displayName,
     color: data.car_color || store.raffle.color,
-    // Always take API image when present so admin uploads replace the mock photo
+    heroTitle: data.hero_title || store.raffle.heroTitle || 'markos digital lottery',
+    prize1st: data.prize_1st ?? store.raffle.prize1st ?? 0,
+    prize2nd: data.prize_2nd ?? store.raffle.prize2nd ?? 0,
+    prize3rd: data.prize_3rd ?? store.raffle.prize3rd ?? 0,
     image: data.car_image_url || store.raffle.image,
     ticketPrice: data.ticket_price ?? store.raffle.ticketPrice,
     totalTickets: data.total_tickets ?? store.raffle.totalTickets,
@@ -163,19 +171,6 @@ export function toggleNumber(n) {
   store.selectedNumbers.push(n)
 }
 
-export function quickPick() {
-  const need = store.quantity
-  const available = []
-  for (let i = 1; i <= store.raffle.totalTickets; i++) {
-    if (!isTaken(i)) available.push(i)
-  }
-  for (let i = available.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[available[i], available[j]] = [available[j], available[i]]
-  }
-  store.selectedNumbers = available.slice(0, need)
-}
-
 export function openPicker() {
   store.showPicker = true
 }
@@ -187,57 +182,81 @@ export function closePicker() {
 export function confirmPicker() {
   if (store.selectedNumbers.length !== store.quantity) return
   store.showPicker = false
-  // Stay on raffle detail — checkout opens only via Buy Ticket button
 }
 
 export function openCheckoutFromSelect() {
   if (store.selectedNumbers.length !== store.quantity) return
   store.checkoutStep = 1
   store.orderDone = false
+  store.orderVerified = false
   store.submitError = ''
   store.submitMessage = ''
+  store.conflictDialog = false
   store.showCheckout = true
 }
 
 export function closeCheckout() {
+  if (store.verifying) return
   store.showCheckout = false
   store.checkoutStep = 1
   store.submitting = false
+  store.verifying = false
+  store.conflictDialog = false
 }
 
 export async function submitOrder() {
   store.submitError = ''
   store.submitMessage = ''
-  if (!store.paymentProofFile) {
-    store.submitError = 'Please upload a payment receipt image.'
+  const bank = store.banks.find((b) => b.id === store.selectedBankId)
+  if (!bank) {
+    store.submitError = 'Please choose a payment account'
     return false
   }
-  store.submitting = true
-  try {
-    const bank = store.banks.find((b) => b.id === store.selectedBankId)
-    const form = new FormData()
-    form.append('full_name', store.fullName)
-    form.append('phone', store.phone)
-    form.append('numbers', JSON.stringify(store.selectedNumbers))
-    form.append('paid_from_account', store.paidFromAccount || '')
-    form.append('bank_name', bank?.name || '')
-    form.append('bank_holder', bank?.holder || '')
-    form.append('bank_account', bank?.account || '')
-    form.append('receipt', store.paymentProofFile)
+  if (!(store.receiptSms || '').trim()) {
+    store.submitError = 'Please paste the full SMS you received'
+    return false
+  }
 
-    const res = await submitLotteryPurchase(form)
+  store.submitting = true
+  store.verifying = true
+  try {
+    const payload = {
+      full_name: store.fullName,
+      phone: store.phone,
+      numbers: store.selectedNumbers,
+      paid_from_account: store.paidFromAccount || '',
+      bank_id: bank.id || '',
+      bank_name: bank.name || '',
+      bank_holder: bank.holder || '',
+      bank_account: bank.account || '',
+      receipt_sms: store.receiptSms.trim(),
+    }
+
+    const res = await submitLotteryPurchase(payload)
     store.orderDone = true
+    store.orderVerified = !!res.verified
     store.checkoutStep = 3
-    store.submitMessage = ''
+    store.submitMessage = res.message || ''
     await loadPublicSettings()
     await loadTicketsForPhone(store.phone)
     return true
   } catch (e) {
-    store.submitError =
-      e.response?.data?.error || e.message || 'Could not submit. Try again.'
+    const data = e.response?.data || {}
+    const code = data.error_code || ''
+    if (code === 'numbers_taken' || (e.response?.status === 409 && Array.isArray(data.available))) {
+      store.conflictMessage = data.error || 'Some numbers were taken'
+      store.conflictAvailable = data.available || []
+      store.conflictPicked = []
+      store.conflictDialog = true
+      // Refresh taken set so grid stays accurate
+      await loadPublicSettings()
+      return false
+    }
+    store.submitError = data.error || e.message || 'Could not submit. Try again.'
     return false
   } finally {
     store.submitting = false
+    store.verifying = false
   }
 }
 
@@ -245,15 +264,19 @@ export function finishOrder() {
   store.showCheckout = false
   store.checkoutStep = 1
   store.orderDone = false
+  store.orderVerified = false
   store.selectedNumbers = []
   store.quantity = 1
   store.fullName = ''
   store.selectedBankId = null
-  store.paymentProofFile = null
-  store.paymentProofName = ''
+  store.receiptSms = ''
   store.paidFromAccount = ''
   store.submitError = ''
   store.submitMessage = ''
+  store.conflictDialog = false
+  store.conflictAvailable = []
+  store.conflictPicked = []
+  store.conflictMessage = ''
 }
 
 export { padNumber }
