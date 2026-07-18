@@ -803,7 +803,7 @@ export default {
         this.error = e.response?.data?.error || 'Reject failed'
       }
     },
-    async sendMsg()
+    async sendMsg() {
       this.msgSending = true
       this.message = ''
       this.error = ''
