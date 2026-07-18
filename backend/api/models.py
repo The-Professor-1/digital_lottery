@@ -1025,12 +1025,20 @@ class LotterySettings(models.Model):
     draw_completed = models.BooleanField(default=False)
     next_round_minutes = models.PositiveIntegerField(
         default=10,
-        help_text='Minutes to wait after draw before starting a new round (clears tickets)',
+        help_text='Minutes to wait after winners are announced before starting a new round',
     )
     next_round_at = models.DateTimeField(
         null=True,
         blank=True,
         help_text='When the next round auto-starts after a draw',
+    )
+    winner_reveal_seconds = models.PositiveIntegerField(
+        default=6,
+        help_text='Seconds to show each place (1st/2nd/3rd) during live announce',
+    )
+    winners_notified = models.BooleanField(
+        default=False,
+        help_text='True after Telegram winner DMs have been sent (after live announce)',
     )
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1135,6 +1143,8 @@ class LotterySettings(models.Model):
             'next_round_minutes': int(self.next_round_minutes or 10),
             'next_round_at': self.next_round_at.isoformat() if self.next_round_at else None,
             'next_round_at_ms': int(self.next_round_at.timestamp() * 1000) if self.next_round_at else None,
+            'winner_reveal_seconds': max(2, int(self.winner_reveal_seconds or 6)),
+            'winners_notified': bool(self.winners_notified),
         }
 
     def verified_taken_numbers(self):

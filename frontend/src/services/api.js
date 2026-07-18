@@ -592,6 +592,11 @@ export async function runLotteryDraw() {
   return response.data
 }
 
+export async function notifyLotteryWinners() {
+  const response = await api.post('/lottery/notify-winners/')
+  return response.data
+}
+
 export async function startLotteryNextRound() {
   const response = await api.post('/lottery/next-round/')
   return response.data

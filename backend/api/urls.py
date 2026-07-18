@@ -17,6 +17,7 @@ urlpatterns = [
     path('lottery/tickets/', lottery_views.lottery_tickets, name='lottery-tickets'),
     path('lottery/purchase/', lottery_views.lottery_submit_purchase, name='lottery-purchase'),
     path('lottery/draw/', lottery_views.lottery_run_draw, name='lottery-draw'),
+    path('lottery/notify-winners/', lottery_views.lottery_notify_winners, name='lottery-notify-winners'),
     path('lottery/next-round/', lottery_views.lottery_start_next_round, name='lottery-next-round'),
     path('auth/telegram/', views.authenticate_telegram, name='authenticate-telegram'),
     path('auth/telegram-register/', views.telegram_register, name='telegram-register'),

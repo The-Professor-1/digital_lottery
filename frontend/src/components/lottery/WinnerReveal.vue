@@ -99,7 +99,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useCountdown } from '../../composables/useCountdown'
 import { useI18n } from '../../composables/useI18n'
 import { padNumber } from '../../data/mock'
-import { runLotteryDraw, startLotteryNextRound } from '../../services/api'
+import { runLotteryDraw, notifyLotteryWinners, startLotteryNextRound } from '../../services/api'
 import { store, applyPublicSettings, loadPublicSettings } from '../../stores/lottery'
 
 const props = defineProps({
@@ -124,6 +124,7 @@ let revealTimers = []
 let nextRoundTimer = null
 let drawStarted = false
 let resetStarted = false
+let notifyStarted = false
 
 const displaySeconds = computed(() => Math.max(0, remainingSeconds.value))
 
@@ -195,6 +196,8 @@ function applyDrawResult(res) {
     winner3rd: res.winner_3rd,
     drawCompleted: true,
     nextRoundAt: res.next_round_at_ms || store.raffle.nextRoundAt,
+    winnerRevealSeconds: res.winner_reveal_seconds || store.raffle.winnerRevealSeconds || 6,
+    winnersNotified: !!res.winners_notified,
   }
   if (res.next_round_at_ms) {
     nextRoundEndsAt.value = res.next_round_at_ms
@@ -249,11 +252,12 @@ async function runDrawAndReveal() {
   revealedRows.value = []
   let i = 0
 
+  const revealMs = Math.max(2000, (store.raffle.winnerRevealSeconds || drawResult.value?.winner_reveal_seconds || 6) * 1000)
+
   const showNext = () => {
     if (i >= rows.length) {
       phase.value = 'done'
-      startNextRoundClock()
-      loadPublicSettings()
+      finishAnnounceAndNotify()
       return
     }
     const row = rows[i]
@@ -269,10 +273,37 @@ async function runDrawAndReveal() {
       setTimeout(() => {
         revealedRows.value = rows.slice(0, i)
         showNext()
-      }, 3000)
+      }, revealMs)
     )
   }
   showNext()
+}
+
+async function finishAnnounceAndNotify() {
+  if (notifyStarted) return
+  notifyStarted = true
+  try {
+    const res = await notifyLotteryWinners()
+    applyDrawResult(res)
+    if (res.next_round_at_ms) {
+      nextRoundEndsAt.value = res.next_round_at_ms
+      store.raffle.nextRoundAt = res.next_round_at_ms
+    }
+    store.raffle.winnersNotified = true
+    startNextRoundClock()
+    loadPublicSettings()
+  } catch (e) {
+    const code = e.response?.data?.error_code
+    const wait = Number(e.response?.data?.remaining_seconds) || 2
+    notifyStarted = false
+    if (code === 'announce_in_progress') {
+      setTimeout(finishAnnounceAndNotify, Math.max(1000, wait * 1000))
+      return
+    }
+    console.warn('notify winners failed', e)
+    // Still show next-round UI if timer already exists
+    startNextRoundClock()
+  }
 }
 
 function startNextRoundClock() {
@@ -324,6 +355,7 @@ async function doStartNextRound() {
   phase.value = 'idle'
   drawStarted = false
   resetStarted = false
+  notifyStarted = false
   drawResult.value = null
   nextRoundEndsAt.value = 0
   nextRoundLeft.value = 0
@@ -334,7 +366,14 @@ watch(
   ([finalMin, finished, secs]) => {
     pulse.value = secs % 2 === 0
 
-    if (store.raffle.drawCompleted && store.raffle.winner1st && phase.value !== 'reveal') {
+    // Skip while this client is mid-shuffle/reveal; late joiners (idle) jump to winners
+    if (
+      store.raffle.drawCompleted &&
+      store.raffle.winner1st &&
+      phase.value !== 'reveal' &&
+      phase.value !== 'drawing' &&
+      phase.value !== 'final'
+    ) {
       if (phase.value !== 'done') {
         drawResult.value = {
           winner_1st: store.raffle.winner1st,
@@ -346,7 +385,8 @@ watch(
         }
         nextRoundEndsAt.value = store.raffle.nextRoundAt || 0
         phase.value = 'done'
-        startNextRoundClock()
+        // Late joiners / refresh: DMs wait until announce window ends (server-gated)
+        finishAnnounceAndNotify()
       }
       return
     }
@@ -362,7 +402,7 @@ watch(
 )
 
 onMounted(() => {
-  if (store.raffle.drawCompleted && store.raffle.winner1st) {
+  if (store.raffle.drawCompleted && store.raffle.winner1st && phase.value !== 'reveal') {
     drawResult.value = {
       winner_1st: store.raffle.winner1st,
       winner_2nd: store.raffle.winner2nd,
@@ -373,7 +413,7 @@ onMounted(() => {
     }
     nextRoundEndsAt.value = store.raffle.nextRoundAt || 0
     phase.value = 'done'
-    startNextRoundClock()
+    finishAnnounceAndNotify()
   }
 })
 

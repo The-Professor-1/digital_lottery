@@ -82,11 +82,19 @@
       </section>
 
       <section>
-        <h2>Next round</h2>
-        <label>Minutes until next round starts (after winners)
-          <input v-model.number="form.next_round_minutes" type="number" min="1" />
-        </label>
-        <p class="hint">Default 10. Shown under winners as a countdown, then tickets clear and a new round begins.</p>
+        <h2>Draw &amp; next round</h2>
+        <div class="timer-grid">
+          <label>Next round timer (minutes)
+            <input v-model.number="form.next_round_minutes" type="number" min="1" max="1440" />
+          </label>
+          <label>Winner announce interval (seconds)
+            <input v-model.number="form.winner_reveal_seconds" type="number" min="2" max="60" />
+          </label>
+        </div>
+        <p class="hint">
+          Next round: countdown under winners (default 10 min), then tickets clear and a new round starts.
+          Announce interval: how long each place (1st → 2nd → 3rd) stays on screen before the next. Winner Telegram DMs are sent only after all three are announced live.
+        </p>
       </section>
 
       <section>
@@ -488,6 +496,7 @@ export default {
         countdown_minutes: 24,
         countdown_seconds: 45,
         next_round_minutes: 10,
+        winner_reveal_seconds: 6,
         payment_accounts: [],
         admin_blocked_numbers: [],
         taken_numbers: [],
@@ -687,6 +696,7 @@ export default {
         countdown_minutes: data.countdown_minutes ?? 0,
         countdown_seconds: data.countdown_seconds ?? 0,
         next_round_minutes: data.next_round_minutes ?? 10,
+        winner_reveal_seconds: data.winner_reveal_seconds ?? 6,
         payment_accounts: Array.isArray(data.payment_accounts)
           ? data.payment_accounts.map((a) => ({ ...a }))
           : [],
@@ -744,6 +754,7 @@ export default {
           countdown_minutes: this.form.countdown_minutes,
           countdown_seconds: this.form.countdown_seconds,
           next_round_minutes: Math.max(1, Number(this.form.next_round_minutes) || 10),
+          winner_reveal_seconds: Math.min(60, Math.max(2, Number(this.form.winner_reveal_seconds) || 6)),
           payment_accounts: this.form.payment_accounts,
           admin_blocked_numbers: this.form.admin_blocked_numbers,
           reset_timer: this.resetTimer,

@@ -664,6 +664,7 @@ def lottery_settings_admin(request):
             'ticket_price', 'total_tickets', 'sold_count',
             'countdown_days', 'countdown_hours', 'countdown_minutes', 'countdown_seconds',
             'prize_1st', 'prize_2nd', 'prize_3rd', 'next_round_minutes',
+            'winner_reveal_seconds',
         ]
 
         old_timer = (
@@ -686,6 +687,10 @@ def lottery_settings_admin(request):
 
         if getattr(settings_obj, 'next_round_minutes', 0) < 1:
             settings_obj.next_round_minutes = 10
+        if getattr(settings_obj, 'winner_reveal_seconds', 0) < 2:
+            settings_obj.winner_reveal_seconds = 6
+        elif int(settings_obj.winner_reveal_seconds or 0) > 60:
+            settings_obj.winner_reveal_seconds = 60
 
         timer_touched = old_timer != (
             settings_obj.countdown_days,
@@ -1427,8 +1432,50 @@ def _draw_response(settings_obj, notified=0, already_drawn=False):
         'next_round_at': settings_obj.next_round_at.isoformat() if settings_obj.next_round_at else None,
         'next_round_at_ms': int(settings_obj.next_round_at.timestamp() * 1000) if settings_obj.next_round_at else None,
         'next_round_minutes': int(settings_obj.next_round_minutes or 10),
+        'winner_reveal_seconds': max(2, int(settings_obj.winner_reveal_seconds or 6)),
+        'winners_notified': bool(settings_obj.winners_notified),
         'notified': notified,
     }
+
+
+def _send_winner_dms(settings_obj):
+    """Send Telegram DMs to holders of winning numbers. Returns count notified."""
+    prizes = [
+        (1, settings_obj.winner_1st, int(settings_obj.prize_1st or 0), '1ኛ እጣ'),
+        (2, settings_obj.winner_2nd, int(settings_obj.prize_2nd or 0), '2ኛ እጣ'),
+        (3, settings_obj.winner_3rd, int(settings_obj.prize_3rd or 0), '3ኛ እጣ'),
+    ]
+    notified = 0
+    try:
+        from telegram_bot.notifications import send_notification_sync
+        for place, win_num, prize_amt, place_label in prizes:
+            if not win_num:
+                continue
+            holders = LotteryPurchase.objects.filter(status='verified').select_related('user')
+            for purchase in holders:
+                nums = []
+                for n in purchase.numbers or []:
+                    try:
+                        nums.append(int(n))
+                    except (TypeError, ValueError):
+                        pass
+                if win_num not in nums:
+                    continue
+                if not (purchase.user and purchase.user.telegram_id):
+                    continue
+                msg = (
+                    f'🏆 Congratulations!\n\n'
+                    f'You won {place_label} (place #{place})!\n'
+                    f'Winning number: {str(win_num).zfill(3)}\n'
+                    f'Prize amount: {prize_amt:,} ብር\n\n'
+                    f'Please contact support to claim your prize.'
+                )
+                ok, _ = send_notification_sync(purchase.user.telegram_id, msg)
+                if ok:
+                    notified += 1
+    except Exception as e:
+        print(f'_send_winner_dms error: {e}')
+    return notified
 
 
 @csrf_exempt
@@ -1436,7 +1483,8 @@ def _draw_response(settings_obj, notified=0, already_drawn=False):
 def lottery_run_draw(request):
     """
     Run prize draw when countdown has ended (or return existing winners).
-    Picks up to 3 distinct random numbers from VERIFIED taken tickets only.
+    Saves winners only — Telegram DMs are sent later via lottery_notify_winners
+    after the live on-screen announce finishes.
     """
     import random
 
@@ -1478,49 +1526,59 @@ def lottery_run_draw(request):
     settings_obj.winner_number = str(w1) if w1 else ''
     settings_obj.draw_completed = True
     settings_obj.winner_announced_at = now
-    mins = max(1, int(settings_obj.next_round_minutes or 10))
-    settings_obj.next_round_at = now + timedelta(minutes=mins)
+    settings_obj.winners_notified = False
+    # Next-round timer starts after live announce + notify, not at draw time
+    settings_obj.next_round_at = None
     settings_obj.save(reset_timer=False)
 
-    prizes = [
-        (1, w1, int(settings_obj.prize_1st or 0), '1ኛ እጣ'),
-        (2, w2, int(settings_obj.prize_2nd or 0), '2ኛ እጣ'),
-        (3, w3, int(settings_obj.prize_3rd or 0), '3ኛ እጣ'),
-    ]
+    return JsonResponse(_draw_response(settings_obj, notified=0, already_drawn=False))
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_notify_winners(request):
+    """
+    Called after the live UI has finished announcing 1st/2nd/3rd.
+    Sends Telegram DMs once and starts the next-round countdown.
+    Guards against early calls so DMs are not sent before the live announce window ends.
+    """
+    settings_obj = LotterySettings.get_settings()
+    now = timezone.now()
+
+    if not settings_obj.draw_completed or not settings_obj.winner_1st:
+        return JsonResponse({'error': 'No winners to notify', 'error_code': 'no_draw'}, status=400)
+
+    # Wait until each place has had its on-screen interval (admin-configured)
+    if not settings_obj.winners_notified and settings_obj.winner_announced_at:
+        reveal_s = max(2, int(settings_obj.winner_reveal_seconds or 6))
+        places = sum(
+            1 for w in (settings_obj.winner_1st, settings_obj.winner_2nd, settings_obj.winner_3rd) if w
+        )
+        earliest = settings_obj.winner_announced_at + timedelta(seconds=reveal_s * max(1, places))
+        if now < earliest - timedelta(seconds=1):
+            remaining = int((earliest - now).total_seconds())
+            return JsonResponse({
+                'error': 'Live announce still in progress',
+                'error_code': 'announce_in_progress',
+                'remaining_seconds': max(1, remaining),
+                **_draw_response(settings_obj, notified=0, already_drawn=True),
+            }, status=400)
 
     notified = 0
-    try:
-        from telegram_bot.notifications import send_notification_sync
-        for place, win_num, prize_amt, place_label in prizes:
-            if not win_num:
-                continue
-            holders = LotteryPurchase.objects.filter(status='verified').select_related('user')
-            for p in holders:
-                nums = []
-                for n in p.numbers or []:
-                    try:
-                        nums.append(int(n))
-                    except (TypeError, ValueError):
-                        pass
-                if win_num not in nums:
-                    continue
-                if not (p.user and p.user.telegram_id):
-                    continue
-                msg = (
-                    f'🏆 Congratulations!\n\n'
-                    f'You won {place_label} (place #{place})!\n'
-                    f'Winning number: {str(win_num).zfill(3)}\n'
-                    f'Prize amount: {prize_amt:,} ብር\n\n'
-                    f'Please contact support to claim your prize.'
-                )
-                ok, _ = send_notification_sync(p.user.telegram_id, msg)
-                if ok:
-                    notified += 1
-    except Exception as e:
-        print(f'lottery_run_draw notify error: {e}')
+    if not settings_obj.winners_notified:
+        notified = _send_winner_dms(settings_obj)
+        settings_obj.winners_notified = True
 
-    return JsonResponse(_draw_response(settings_obj, notified=notified, already_drawn=False))
+    if not settings_obj.next_round_at:
+        mins = max(1, int(settings_obj.next_round_minutes or 10))
+        settings_obj.next_round_at = now + timedelta(minutes=mins)
 
+    settings_obj.save(reset_timer=False)
+
+    return JsonResponse({
+        **_draw_response(settings_obj, notified=notified, already_drawn=True),
+        'message': 'Winners notified' if notified else 'Already notified',
+    })
 
 @csrf_exempt
 @require_http_methods(['POST'])
@@ -1553,6 +1611,7 @@ def lottery_start_next_round(request):
     settings_obj.winner_message = ''
     settings_obj.winner_announced_at = None
     settings_obj.draw_completed = False
+    settings_obj.winners_notified = False
     settings_obj.next_round_at = None
     settings_obj.save(reset_timer=True)
 
