@@ -82,6 +82,14 @@
       </section>
 
       <section>
+        <h2>Next round</h2>
+        <label>Minutes until next round starts (after winners)
+          <input v-model.number="form.next_round_minutes" type="number" min="1" />
+        </label>
+        <p class="hint">Default 10. Shown under winners as a countdown, then tickets clear and a new round begins.</p>
+      </section>
+
+      <section>
         <h2>Tickets</h2>
         <div class="timer-grid">
           <label>Price <input v-model.number="form.ticket_price" type="number" min="1" /></label>
@@ -479,6 +487,7 @@ export default {
         countdown_hours: 10,
         countdown_minutes: 24,
         countdown_seconds: 45,
+        next_round_minutes: 10,
         payment_accounts: [],
         admin_blocked_numbers: [],
         taken_numbers: [],
@@ -677,6 +686,7 @@ export default {
         countdown_hours: data.countdown_hours ?? 0,
         countdown_minutes: data.countdown_minutes ?? 0,
         countdown_seconds: data.countdown_seconds ?? 0,
+        next_round_minutes: data.next_round_minutes ?? 10,
         payment_accounts: Array.isArray(data.payment_accounts)
           ? data.payment_accounts.map((a) => ({ ...a }))
           : [],
@@ -733,6 +743,7 @@ export default {
           countdown_hours: this.form.countdown_hours,
           countdown_minutes: this.form.countdown_minutes,
           countdown_seconds: this.form.countdown_seconds,
+          next_round_minutes: Math.max(1, Number(this.form.next_round_minutes) || 10),
           payment_accounts: this.form.payment_accounts,
           admin_blocked_numbers: this.form.admin_blocked_numbers,
           reset_timer: this.resetTimer,

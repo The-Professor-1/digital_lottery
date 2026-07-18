@@ -663,7 +663,7 @@ def lottery_settings_admin(request):
         int_fields = [
             'ticket_price', 'total_tickets', 'sold_count',
             'countdown_days', 'countdown_hours', 'countdown_minutes', 'countdown_seconds',
-            'prize_1st', 'prize_2nd', 'prize_3rd',
+            'prize_1st', 'prize_2nd', 'prize_3rd', 'next_round_minutes',
         ]
 
         old_timer = (
@@ -683,6 +683,9 @@ def lottery_settings_admin(request):
                     setattr(settings_obj, field, max(0, int(float(data[field]))))
                 except (TypeError, ValueError):
                     pass
+
+        if getattr(settings_obj, 'next_round_minutes', 0) < 1:
+            settings_obj.next_round_minutes = 10
 
         timer_touched = old_timer != (
             settings_obj.countdown_days,
@@ -1410,12 +1413,30 @@ def lottery_failed_deposit_action(request, failed_id):
     })
 
 
+def _draw_response(settings_obj, notified=0, already_drawn=False):
+    return {
+        'success': True,
+        'already_drawn': already_drawn,
+        'winner_1st': settings_obj.winner_1st,
+        'winner_2nd': settings_obj.winner_2nd,
+        'winner_3rd': settings_obj.winner_3rd,
+        'prize_1st': int(settings_obj.prize_1st or 0),
+        'prize_2nd': int(settings_obj.prize_2nd or 0),
+        'prize_3rd': int(settings_obj.prize_3rd or 0),
+        'taken_numbers': settings_obj.verified_taken_numbers(),
+        'next_round_at': settings_obj.next_round_at.isoformat() if settings_obj.next_round_at else None,
+        'next_round_at_ms': int(settings_obj.next_round_at.timestamp() * 1000) if settings_obj.next_round_at else None,
+        'next_round_minutes': int(settings_obj.next_round_minutes or 10),
+        'notified': notified,
+    }
+
+
 @csrf_exempt
 @require_http_methods(['POST', 'GET'])
 def lottery_run_draw(request):
     """
     Run prize draw when countdown has ended (or return existing winners).
-    Picks 3 distinct random numbers from 1..total_tickets and notifies holders.
+    Picks up to 3 distinct random numbers from VERIFIED taken tickets only.
     """
     import random
 
@@ -1431,32 +1452,34 @@ def lottery_run_draw(request):
             'error_code': 'too_early',
             'remaining_seconds': remaining,
             'draw_completed': bool(settings_obj.draw_completed),
+            'taken_numbers': settings_obj.verified_taken_numbers(),
         }, status=400)
 
     if settings_obj.draw_completed and settings_obj.winner_1st:
-        return JsonResponse({
-            'success': True,
-            'already_drawn': True,
-            'winner_1st': settings_obj.winner_1st,
-            'winner_2nd': settings_obj.winner_2nd,
-            'winner_3rd': settings_obj.winner_3rd,
-            'prize_1st': int(settings_obj.prize_1st or 0),
-            'prize_2nd': int(settings_obj.prize_2nd or 0),
-            'prize_3rd': int(settings_obj.prize_3rd or 0),
-            'notified': 0,
-        })
+        return JsonResponse(_draw_response(settings_obj, already_drawn=True))
 
-    total = max(3, int(settings_obj.total_tickets or 3))
-    pool = list(range(1, total + 1))
+    pool = settings_obj.verified_taken_numbers()
+    if not pool:
+        return JsonResponse({
+            'error': 'No verified tickets to draw from',
+            'error_code': 'no_tickets',
+            'taken_numbers': [],
+        }, status=400)
+
     random.shuffle(pool)
-    w1, w2, w3 = pool[0], pool[1], pool[2]
+    winners = pool[: min(3, len(pool))]
+    w1 = winners[0] if len(winners) > 0 else None
+    w2 = winners[1] if len(winners) > 1 else None
+    w3 = winners[2] if len(winners) > 2 else None
 
     settings_obj.winner_1st = w1
     settings_obj.winner_2nd = w2
     settings_obj.winner_3rd = w3
-    settings_obj.winner_number = str(w1)
+    settings_obj.winner_number = str(w1) if w1 else ''
     settings_obj.draw_completed = True
     settings_obj.winner_announced_at = now
+    mins = max(1, int(settings_obj.next_round_minutes or 10))
+    settings_obj.next_round_at = now + timedelta(minutes=mins)
     settings_obj.save(reset_timer=False)
 
     prizes = [
@@ -1469,6 +1492,8 @@ def lottery_run_draw(request):
     try:
         from telegram_bot.notifications import send_notification_sync
         for place, win_num, prize_amt, place_label in prizes:
+            if not win_num:
+                continue
             holders = LotteryPurchase.objects.filter(status='verified').select_related('user')
             for p in holders:
                 nums = []
@@ -1494,14 +1519,45 @@ def lottery_run_draw(request):
     except Exception as e:
         print(f'lottery_run_draw notify error: {e}')
 
+    return JsonResponse(_draw_response(settings_obj, notified=notified, already_drawn=False))
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_start_next_round(request):
+    """
+    Clear ticket purchases and winners, start a fresh countdown round.
+    Allowed when next_round_at has passed (or draw completed and timer due).
+    """
+    settings_obj = LotterySettings.get_settings()
+    now = timezone.now()
+
+    if not settings_obj.draw_completed:
+        return JsonResponse({'error': 'No completed draw to reset', 'error_code': 'no_draw'}, status=400)
+
+    if settings_obj.next_round_at and now < settings_obj.next_round_at - timedelta(seconds=3):
+        remaining = int((settings_obj.next_round_at - now).total_seconds())
+        return JsonResponse({
+            'error': 'Next round not ready yet',
+            'error_code': 'too_early',
+            'remaining_seconds': remaining,
+        }, status=400)
+
+    # Clear all live ticket records for a fresh round
+    LotteryPurchase.objects.filter(status__in=['pending', 'verified', 'rejected']).delete()
+
+    settings_obj.winner_1st = None
+    settings_obj.winner_2nd = None
+    settings_obj.winner_3rd = None
+    settings_obj.winner_number = ''
+    settings_obj.winner_message = ''
+    settings_obj.winner_announced_at = None
+    settings_obj.draw_completed = False
+    settings_obj.next_round_at = None
+    settings_obj.save(reset_timer=True)
+
     return JsonResponse({
         'success': True,
-        'already_drawn': False,
-        'winner_1st': w1,
-        'winner_2nd': w2,
-        'winner_3rd': w3,
-        'prize_1st': int(settings_obj.prize_1st or 0),
-        'prize_2nd': int(settings_obj.prize_2nd or 0),
-        'prize_3rd': int(settings_obj.prize_3rd or 0),
-        'notified': notified,
+        'message': 'New round started',
+        'settings': settings_obj.to_public_dict(request),
     })

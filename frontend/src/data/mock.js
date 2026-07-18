@@ -43,6 +43,8 @@ export const featuredRaffle = {
   winner2nd: null,
   winner3rd: null,
   drawCompleted: false,
+  nextRoundAt: 0,
+  nextRoundMinutes: 10,
   image: '',
   badge: 'trending',
   rating: 5.0,

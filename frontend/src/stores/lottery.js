@@ -12,6 +12,7 @@ export const store = reactive({
   quantity: 1,
   selectedNumbers: [],
   takenNumbers: new Set(),
+  verifiedTakenNumbers: new Set(),
   showPicker: false,
   showCheckout: false,
   checkoutStep: 1,
@@ -54,10 +55,12 @@ export function applyPublicSettings(data) {
     prize1st: data.prize_1st ?? store.raffle.prize1st ?? 0,
     prize2nd: data.prize_2nd ?? store.raffle.prize2nd ?? 0,
     prize3rd: data.prize_3rd ?? store.raffle.prize3rd ?? 0,
-    winner1st: data.winner_1st ?? store.raffle.winner1st ?? null,
-    winner2nd: data.winner_2nd ?? store.raffle.winner2nd ?? null,
-    winner3rd: data.winner_3rd ?? store.raffle.winner3rd ?? null,
+    winner1st: data.winner_1st ?? null,
+    winner2nd: data.winner_2nd ?? null,
+    winner3rd: data.winner_3rd ?? null,
     drawCompleted: !!data.draw_completed,
+    nextRoundAt: data.next_round_at_ms || 0,
+    nextRoundMinutes: data.next_round_minutes ?? store.raffle.nextRoundMinutes ?? 10,
     image: data.car_image_url || store.raffle.image,
     ticketPrice: data.ticket_price ?? store.raffle.ticketPrice,
     totalTickets: data.total_tickets ?? store.raffle.totalTickets,
@@ -78,6 +81,11 @@ export function applyPublicSettings(data) {
     taken.add(Number(n))
   }
   store.takenNumbers = taken
+  const verified = new Set()
+  for (const n of data.verified_taken_numbers || []) {
+    verified.add(Number(n))
+  }
+  store.verifiedTakenNumbers = verified
   store.settingsLoaded = true
 }
 

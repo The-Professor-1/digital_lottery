@@ -1023,6 +1023,15 @@ class LotterySettings(models.Model):
     winner_2nd = models.PositiveIntegerField(null=True, blank=True)
     winner_3rd = models.PositiveIntegerField(null=True, blank=True)
     draw_completed = models.BooleanField(default=False)
+    next_round_minutes = models.PositiveIntegerField(
+        default=10,
+        help_text='Minutes to wait after draw before starting a new round (clears tickets)',
+    )
+    next_round_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When the next round auto-starts after a draw',
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1108,6 +1117,7 @@ class LotterySettings(models.Model):
             'total_tickets': self.total_tickets,
             'sold_count': sold,
             'taken_numbers': taken,
+            'verified_taken_numbers': self.verified_taken_numbers(),
             'countdown_days': self.countdown_days,
             'countdown_hours': self.countdown_hours,
             'countdown_minutes': self.countdown_minutes,
@@ -1122,7 +1132,21 @@ class LotterySettings(models.Model):
             'winner_2nd': self.winner_2nd,
             'winner_3rd': self.winner_3rd,
             'draw_completed': bool(self.draw_completed),
+            'next_round_minutes': int(self.next_round_minutes or 10),
+            'next_round_at': self.next_round_at.isoformat() if self.next_round_at else None,
+            'next_round_at_ms': int(self.next_round_at.timestamp() * 1000) if self.next_round_at else None,
         }
+
+    def verified_taken_numbers(self):
+        """Numbers from verified purchases only (real ticket owners)."""
+        taken = set()
+        for purchase in LotteryPurchase.objects.filter(status='verified').only('numbers'):
+            for n in purchase.numbers or []:
+                try:
+                    taken.add(int(n))
+                except (TypeError, ValueError):
+                    pass
+        return sorted(taken)
 
     @classmethod
     def get_settings(cls):

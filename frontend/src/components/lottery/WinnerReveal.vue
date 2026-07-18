@@ -1,46 +1,70 @@
 <template>
   <div class="rounded-card overflow-hidden border border-gold/30 bg-gradient-to-b from-ink-200 via-forest-deep to-ink-100">
-    <!-- Final 60s big countdown -->
-    <div v-if="phase === 'countdown'" class="px-4 py-10 text-center space-y-3">
-      <p class="text-gold text-xs font-semibold tracking-[0.2em] uppercase">{{ t.drawStarting }}</p>
-      <div
-        class="text-gold font-extrabold tabular-nums leading-none transition-transform"
-        :class="pulse ? 'scale-110' : 'scale-100'"
-        style="font-size: clamp(4.5rem, 22vw, 7rem)"
-      >
-        {{ displaySeconds }}
-      </div>
-      <p class="text-white/60 text-sm">{{ t.secondsLeft }}</p>
-    </div>
-
-    <!-- Ball shuffle -->
-    <div v-else-if="phase === 'shuffle'" class="px-3 py-6 space-y-4">
-      <p class="text-center text-gold text-sm font-semibold">{{ t.shufflingBalls }}</p>
-      <div class="flex flex-wrap justify-center gap-1.5 max-h-48 overflow-hidden">
-        <span
-          v-for="(ball, i) in visibleBalls"
-          :key="i + '-' + ball"
-          class="ball"
-          :style="{ background: ballColor(ball) }"
+    <!-- Final minute: timer on top + shuffle on bottom -->
+    <template v-if="phase === 'final' || phase === 'drawing'">
+      <div class="px-4 pt-8 pb-4 text-center space-y-2 border-b border-white/5">
+        <p class="text-gold text-xs font-semibold tracking-[0.2em] uppercase">{{ t.drawStarting }}</p>
+        <div
+          class="text-gold font-extrabold tabular-nums leading-none transition-transform"
+          :class="pulse ? 'scale-110' : 'scale-100'"
+          style="font-size: clamp(3.5rem, 18vw, 6rem)"
         >
-          {{ padNumber(ball) }}
-        </span>
+          {{ displaySeconds }}
+        </div>
+        <p class="text-white/60 text-sm">{{ t.secondsLeft }}</p>
       </div>
-    </div>
+      <div class="px-3 py-5 space-y-3">
+        <p class="text-center text-gold text-sm font-semibold">{{ t.shufflingBalls }}</p>
+        <div class="flex flex-wrap justify-center gap-1.5 max-h-40 overflow-hidden min-h-[5rem]">
+          <span
+            v-for="(ball, i) in visibleBalls"
+            :key="i + '-' + ball"
+            class="ball"
+            :style="{ background: ballColor(ball) }"
+          >
+            {{ padNumber(ball) }}
+          </span>
+        </div>
+        <p v-if="!takenPool.length" class="text-center text-xs text-white/40">
+          {{ t.waitingTickets }}
+        </p>
+      </div>
+    </template>
 
-    <!-- Reveal prizes one by one -->
-    <div v-else-if="phase === 'reveal'" class="px-4 py-8 text-center space-y-5">
-      <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">{{ revealLabel }}</p>
+    <!-- Ordered reveal: show current big ball + already revealed list growing -->
+    <div v-else-if="phase === 'reveal'" class="px-4 py-6 space-y-5">
+      <p class="text-center text-gold text-xs font-semibold tracking-[0.18em] uppercase">
+        {{ revealLabel }}
+      </p>
       <div
         class="mx-auto w-28 h-28 rounded-full flex items-center justify-center text-3xl font-extrabold text-white shadow-lg border-4 border-white/20"
         :style="{ background: ballColor(revealNumber) }"
       >
         {{ padNumber(revealNumber) }}
       </div>
-      <p class="text-white/80 text-lg font-semibold">{{ revealPrizeText }}</p>
+      <p class="text-center text-white/80 text-lg font-semibold">{{ revealPrizeText }}</p>
+
+      <div v-if="revealedRows.length" class="space-y-2 pt-2 border-t border-white/10">
+        <div
+          v-for="row in revealedRows"
+          :key="'r' + row.place"
+          class="flex items-center gap-3 rounded-xl bg-black/25 border border-white/10 px-3 py-2 opacity-80"
+        >
+          <div
+            class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold text-white"
+            :style="{ background: ballColor(row.number) }"
+          >
+            {{ padNumber(row.number) }}
+          </div>
+          <div>
+            <p class="text-white text-sm font-bold">{{ row.label }}</p>
+            <p class="text-lime-300/80 text-xs">{{ formatAmount(row.prize) }} ብር</p>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Final board -->
+    <!-- Winners + next round timer -->
     <div v-else-if="phase === 'done'" class="px-4 py-6 space-y-4">
       <p class="text-center text-gold text-sm font-bold tracking-wide uppercase">{{ t.winnersAnnounced }}</p>
       <div
@@ -59,6 +83,13 @@
           <p class="text-lime-300/90 text-sm">{{ formatAmount(row.prize) }} ብር</p>
         </div>
       </div>
+
+      <div class="mt-2 rounded-2xl border border-gold/40 bg-black/35 px-4 py-4 text-center space-y-2">
+        <p class="text-white/70 text-xs uppercase tracking-wide">{{ t.nextRoundIn }}</p>
+        <div class="text-gold text-3xl font-extrabold tabular-nums">
+          {{ nextRoundLabel }}
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -68,8 +99,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useCountdown } from '../../composables/useCountdown'
 import { useI18n } from '../../composables/useI18n'
 import { padNumber } from '../../data/mock'
-import { runLotteryDraw } from '../../services/api'
-import { store, loadPublicSettings } from '../../stores/lottery'
+import { runLotteryDraw, startLotteryNextRound } from '../../services/api'
+import { store, applyPublicSettings, loadPublicSettings } from '../../stores/lottery'
 
 const props = defineProps({
   endsAt: { type: Number, required: true },
@@ -78,18 +109,30 @@ const props = defineProps({
 const { t } = useI18n()
 const { remainingSeconds, inFinalMinute, isFinished } = useCountdown(() => props.endsAt)
 
-const phase = ref('idle') // idle | countdown | shuffle | reveal | done
+const phase = ref('idle') // idle | final | drawing | reveal | done
 const pulse = ref(false)
 const visibleBalls = ref([])
 const revealLabel = ref('')
 const revealNumber = ref(0)
 const revealPrizeText = ref('')
+const revealedRows = ref([])
 const drawResult = ref(null)
+const nextRoundEndsAt = ref(0)
+const nextRoundLeft = ref(0)
 let shuffleTimer = null
 let revealTimers = []
-let started = false
+let nextRoundTimer = null
+let drawStarted = false
+let resetStarted = false
 
 const displaySeconds = computed(() => Math.max(0, remainingSeconds.value))
+
+const takenPool = computed(() => {
+  const fromStore = [...(store.verifiedTakenNumbers || [])].map(Number).filter((n) => n > 0)
+  const fromDraw = (drawResult.value?.taken_numbers || []).map(Number)
+  const pool = fromDraw.length ? fromDraw : fromStore
+  return [...new Set(pool)].sort((a, b) => a - b)
+})
 
 const finalRows = computed(() => {
   const r = drawResult.value || {}
@@ -98,6 +141,13 @@ const finalRows = computed(() => {
     { place: 2, label: '2ኛ እጣ', number: r.winner_2nd, prize: r.prize_2nd },
     { place: 3, label: '3ኛ እጣ', number: r.winner_3rd, prize: r.prize_3rd },
   ].filter((x) => x.number)
+})
+
+const nextRoundLabel = computed(() => {
+  const s = Math.max(0, nextRoundLeft.value)
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 })
 
 function formatAmount(n) {
@@ -112,54 +162,180 @@ function ballColor(n) {
   return colors[Number(n) % colors.length]
 }
 
-function startCountdownUi() {
-  if (phase.value === 'idle' || phase.value === 'countdown') {
-    phase.value = 'countdown'
+function startShuffleLoop() {
+  if (shuffleTimer) return
+  shuffleTimer = setInterval(() => {
+    // Only shuffle verified / taken ticket numbers (real owners)
+    const pool = [...takenPool.value]
+    if (!pool.length) {
+      visibleBalls.value = []
+      return
+    }
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[pool[i], pool[j]] = [pool[j], pool[i]]
+    }
+    visibleBalls.value = pool.slice(0, Math.min(24, pool.length))
+  }, 140)
+}
+
+function stopShuffleLoop() {
+  if (shuffleTimer) {
+    clearInterval(shuffleTimer)
+    shuffleTimer = null
   }
 }
 
-async function runDrawSequence() {
-  if (started) return
-  started = true
-  phase.value = 'shuffle'
-
-  const total = store.raffle.totalTickets || 100
-  const balls = Array.from({ length: Math.min(total, 80) }, (_, i) => i + 1)
-  let ticks = 0
-  shuffleTimer = setInterval(() => {
-    ticks += 1
-    for (let i = balls.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[balls[i], balls[j]] = [balls[j], balls[i]]
-    }
-    visibleBalls.value = balls.slice(0, 24)
-    if (ticks > 18) {
-      clearInterval(shuffleTimer)
-      shuffleTimer = null
-      fetchAndReveal()
-    }
-  }, 120)
+function applyDrawResult(res) {
+  drawResult.value = res
+  store.raffle = {
+    ...store.raffle,
+    winner1st: res.winner_1st,
+    winner2nd: res.winner_2nd,
+    winner3rd: res.winner_3rd,
+    drawCompleted: true,
+    nextRoundAt: res.next_round_at_ms || store.raffle.nextRoundAt,
+  }
+  if (res.next_round_at_ms) {
+    nextRoundEndsAt.value = res.next_round_at_ms
+  }
 }
 
-async function fetchAndReveal() {
+async function runDrawAndReveal() {
+  if (drawStarted) return
+  drawStarted = true
+  phase.value = 'drawing'
+  startShuffleLoop()
+
+  // Keep shuffle visible briefly after 0
+  await new Promise((r) => setTimeout(r, 1800))
+
   try {
     const res = await runLotteryDraw()
-    drawResult.value = res
-    store.raffle = {
-      ...store.raffle,
-      winner1st: res.winner_1st,
-      winner2nd: res.winner_2nd,
-      winner3rd: res.winner_3rd,
-      drawCompleted: true,
-    }
+    applyDrawResult(res)
   } catch (e) {
-    // If too early, retry shortly; if already drawn, use settings
     const data = e.response?.data
     if (data?.winner_1st) {
-      drawResult.value = data
+      applyDrawResult(data)
     } else {
       await loadPublicSettings()
-      if (store.raffle.drawCompleted || store.raffle.winner1st) {
+      if (store.raffle.winner1st) {
+        applyDrawResult({
+          winner_1st: store.raffle.winner1st,
+          winner_2nd: store.raffle.winner2nd,
+          winner_3rd: store.raffle.winner3rd,
+          prize_1st: store.raffle.prize1st,
+          prize_2nd: store.raffle.prize2nd,
+          prize_3rd: store.raffle.prize3rd,
+          next_round_at_ms: store.raffle.nextRoundAt,
+          taken_numbers: [...store.takenNumbers],
+        })
+      } else {
+        drawStarted = false
+        setTimeout(runDrawAndReveal, 2000)
+        return
+      }
+    }
+  }
+
+  stopShuffleLoop()
+  const rows = [
+    { place: 1, label: '1ኛ እጣ', number: drawResult.value.winner_1st, prize: drawResult.value.prize_1st },
+    { place: 2, label: '2ኛ እጣ', number: drawResult.value.winner_2nd, prize: drawResult.value.prize_2nd },
+    { place: 3, label: '3ኛ እጣ', number: drawResult.value.winner_3rd, prize: drawResult.value.prize_3rd },
+  ].filter((r) => r.number)
+
+  phase.value = 'reveal'
+  revealedRows.value = []
+  let i = 0
+
+  const showNext = () => {
+    if (i >= rows.length) {
+      phase.value = 'done'
+      startNextRoundClock()
+      loadPublicSettings()
+      return
+    }
+    const row = rows[i]
+    revealLabel.value = row.label
+    revealNumber.value = row.number
+    revealPrizeText.value = `${formatAmount(row.prize)} ብር`
+    // keep prior reveals in the list below (not including current until next)
+    if (i > 0) {
+      revealedRows.value = rows.slice(0, i)
+    }
+    i += 1
+    revealTimers.push(
+      setTimeout(() => {
+        revealedRows.value = rows.slice(0, i)
+        showNext()
+      }, 3000)
+    )
+  }
+  showNext()
+}
+
+function startNextRoundClock() {
+  if (nextRoundTimer) clearInterval(nextRoundTimer)
+  const end = nextRoundEndsAt.value || store.raffle.nextRoundAt || 0
+  const tick = () => {
+    nextRoundLeft.value = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+    if (nextRoundLeft.value <= 0) {
+      clearInterval(nextRoundTimer)
+      nextRoundTimer = null
+      doStartNextRound()
+    }
+  }
+  tick()
+  nextRoundTimer = setInterval(tick, 500)
+}
+
+async function doStartNextRound() {
+  if (resetStarted) return
+  resetStarted = true
+  try {
+    const res = await startLotteryNextRound()
+    if (res.settings) applyPublicSettings(res.settings)
+    else await loadPublicSettings()
+  } catch (e) {
+    const code = e.response?.data?.error_code
+    // Another client may have already started the round
+    if (code === 'no_draw' || e.response?.status === 400) {
+      await loadPublicSettings()
+      if (!store.raffle.drawCompleted) {
+        /* continue to local reset below */
+      } else {
+        resetStarted = false
+        setTimeout(doStartNextRound, 2500)
+        return
+      }
+    } else {
+      resetStarted = false
+      setTimeout(doStartNextRound, 2500)
+      return
+    }
+  }
+  store.selectedNumbers = []
+  store.tickets = []
+  store.ticketStats = { active: 0, pending: 0, total: 0 }
+  store.verifiedTakenNumbers = new Set()
+  store.takenNumbers = new Set()
+  store.homeRefreshKey += 1
+  phase.value = 'idle'
+  drawStarted = false
+  resetStarted = false
+  drawResult.value = null
+  nextRoundEndsAt.value = 0
+  nextRoundLeft.value = 0
+}
+
+watch(
+  [inFinalMinute, isFinished, remainingSeconds],
+  ([finalMin, finished, secs]) => {
+    pulse.value = secs % 2 === 0
+
+    if (store.raffle.drawCompleted && store.raffle.winner1st && phase.value !== 'reveal') {
+      if (phase.value !== 'done') {
         drawResult.value = {
           winner_1st: store.raffle.winner1st,
           winner_2nd: store.raffle.winner2nd,
@@ -168,60 +344,18 @@ async function fetchAndReveal() {
           prize_2nd: store.raffle.prize2nd,
           prize_3rd: store.raffle.prize3rd,
         }
-      } else {
-        setTimeout(() => {
-          started = false
-          runDrawSequence()
-        }, 2000)
-        return
+        nextRoundEndsAt.value = store.raffle.nextRoundAt || 0
+        phase.value = 'done'
+        startNextRoundClock()
       }
-    }
-  }
-
-  const rows = [
-    { label: '1ኛ እጣ', number: drawResult.value.winner_1st, prize: drawResult.value.prize_1st },
-    { label: '2ኛ እጣ', number: drawResult.value.winner_2nd, prize: drawResult.value.prize_2nd },
-    { label: '3ኛ እጣ', number: drawResult.value.winner_3rd, prize: drawResult.value.prize_3rd },
-  ]
-
-  phase.value = 'reveal'
-  let i = 0
-  const showNext = () => {
-    if (i >= rows.length) {
-      phase.value = 'done'
-      loadPublicSettings()
       return
     }
-    const row = rows[i]
-    revealLabel.value = row.label
-    revealNumber.value = row.number
-    revealPrizeText.value = `${formatAmount(row.prize)} ብር`
-    i += 1
-    revealTimers.push(setTimeout(showNext, 2800))
-  }
-  showNext()
-}
 
-watch(
-  [inFinalMinute, isFinished, remainingSeconds],
-  ([finalMin, finished, secs]) => {
-    pulse.value = secs % 2 === 0
-    if (store.raffle.drawCompleted && store.raffle.winner1st) {
-      drawResult.value = {
-        winner_1st: store.raffle.winner1st,
-        winner_2nd: store.raffle.winner2nd,
-        winner_3rd: store.raffle.winner3rd,
-        prize_1st: store.raffle.prize1st,
-        prize_2nd: store.raffle.prize2nd,
-        prize_3rd: store.raffle.prize3rd,
-      }
-      phase.value = 'done'
-      return
-    }
-    if (finished && !started) {
-      runDrawSequence()
-    } else if (finalMin) {
-      startCountdownUi()
+    if (finished && !drawStarted && !store.raffle.drawCompleted) {
+      runDrawAndReveal()
+    } else if (finalMin && !drawStarted) {
+      phase.value = 'final'
+      startShuffleLoop()
     }
   },
   { immediate: true }
@@ -237,16 +371,17 @@ onMounted(() => {
       prize_2nd: store.raffle.prize2nd,
       prize_3rd: store.raffle.prize3rd,
     }
+    nextRoundEndsAt.value = store.raffle.nextRoundAt || 0
     phase.value = 'done'
+    startNextRoundClock()
   }
 })
 
 onUnmounted(() => {
-  if (shuffleTimer) clearInterval(shuffleTimer)
+  stopShuffleLoop()
   revealTimers.forEach(clearTimeout)
+  if (nextRoundTimer) clearInterval(nextRoundTimer)
 })
-
-defineExpose({ phase })
 </script>
 
 <style scoped>
