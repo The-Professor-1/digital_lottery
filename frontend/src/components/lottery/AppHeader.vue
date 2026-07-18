@@ -73,7 +73,6 @@ const langOpen = ref(false)
 const langOptions = [
   { code: 'am', label: 'አማርኛ' },
   { code: 'en', label: 'English' },
-  { code: 'om', label: 'Afaan Oromoo' },
 ]
 
 function pickLang(code) {

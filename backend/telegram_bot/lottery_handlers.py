@@ -34,16 +34,14 @@ except ImportError:
 
 
 BOT_DESCRIPTION = (
-    "🚗 Getachew Fikadu Jirata\n\n"
-    "Baga gara bootii keenyaa dhuftan.\n"
-    "ወደ መተግበሪያችን እንኳን በደህና መጡ።\n"
-    "Welcome to our Bot."
+    "🚗 ስማቸው ሎተሪ\n\n"
+    
+    "እንኳን ደህና መጡ።\n"
+
 )
 
 LANG_PROMPT = (
-    "🚗 Getachew Fikadu Jirata\n\n"
-    "Maaloo afaan filadhu.\n"
-    "━━━━━━━━━━━━━━\n"
+   
     "እባክዎ ቋንቋ ይምረጡ።\n"
     "━━━━━━━━━━━━━━\n"
     "Please select your language."
@@ -52,45 +50,39 @@ LANG_PROMPT = (
 SHARE_PHONE = {
     'am': 'ለመቀጠል የስልክ ቁጥርዎን ያጋሩ።',
     'en': 'To continue, please share your phone number.',
-    'om': 'Itti fufuuf lakkoofsa bilbilaa kee maxxansi.',
 }
 
 SHARE_PHONE_BUTTON = {
     'am': '📱 ስልክ ቁጥር ያጋሩ',
     'en': '📱 Share phone number',
-    'om': '📱 Lakkoofsa bilbilaa maxxansi',
 }
 
 PHONE_RECEIVED = {
     'am': '🤝',
     'en': '🤝',
-    'om': '🤝',
 }
 
 OPEN_APP_HINT = {
     'am': 'የስልክ ቁጥር ተቀብለናል ✅ \n\nመተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
     'en': 'Phone number received ✅ \n\nTo open the application, press the button below.',
-    'om': 'Lakkoofsi bilbilaa fudhatameera ✅ \n\nAppii banuuf qabduu armaan gadii tuqi.',
-}
+    }
 
 OWN_CONTACT_ONLY = {
     'am': 'እባክዎ የእርስዎን ስልክ ቁጥር ያጋሩ።',
     'en': 'Please share your own phone number.',
-    'om': 'Maaloo lakkoofsa bilbilaa kee qofa maxxansi.',
-}
+   }
 
 
 def _brand_app_label():
     try:
         brand = LotterySettings.get_settings().brand_name or 'Getachew Fikadu'
     except Exception:
-        brand = 'Getachew Fikadu'
+        brand = 'ስማቸው ሎተሪ'
     return f'{brand} app 🚗'
 
 
 def _lang_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('🇪🇹 Afaan Oromo', callback_data='lang_om')],
         [InlineKeyboardButton('🇪🇹 አማርኛ', callback_data='lang_am')],
         [InlineKeyboardButton('🇬🇧 English', callback_data='lang_en')],
     ])
@@ -225,8 +217,7 @@ async def ask_share_phone(update: Update, lang: str):
 TRY_AGAIN = {
     'am': 'እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።',
     'en': 'Please try again in a moment.',
-    'om': 'Maaloo yeroo xinnoo booda irra deebi\'ii yaali.',
-}
+    }
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -273,7 +264,7 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query or not query.data:
         return
     lang = query.data.replace('lang_', '')
-    if lang not in ('am', 'en', 'om'):
+    if lang not in ('am', 'en'):
         await query.answer()
         return
 
@@ -364,11 +355,11 @@ async def configure_bot_profile(application):
 
     try:
         await bot.set_my_description(BOT_DESCRIPTION)
-        await bot.set_my_short_description('Getachew Fikadu Jirata — Car Lottery')
+        await bot.set_my_short_description('ስማቸው ሎተሪ')
     except Exception as e:
         logger.warning(f'Could not set bot description (needs Bot API support): {e}')
 
-    commands = [BotCommand('start', 'Start / መጀመር / Jalqabi')]
+    commands = [BotCommand('start', 'Start / መጀመሪያ')]
     try:
         await bot.set_my_commands(commands)
         if BotCommandScopeAllPrivateChats:
