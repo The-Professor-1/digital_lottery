@@ -54,6 +54,10 @@ export function applyPublicSettings(data) {
     prize1st: data.prize_1st ?? store.raffle.prize1st ?? 0,
     prize2nd: data.prize_2nd ?? store.raffle.prize2nd ?? 0,
     prize3rd: data.prize_3rd ?? store.raffle.prize3rd ?? 0,
+    winner1st: data.winner_1st ?? store.raffle.winner1st ?? null,
+    winner2nd: data.winner_2nd ?? store.raffle.winner2nd ?? null,
+    winner3rd: data.winner_3rd ?? store.raffle.winner3rd ?? null,
+    drawCompleted: !!data.draw_completed,
     image: data.car_image_url || store.raffle.image,
     ticketPrice: data.ticket_price ?? store.raffle.ticketPrice,
     totalTickets: data.total_tickets ?? store.raffle.totalTickets,
@@ -182,6 +186,7 @@ export function closePicker() {
 export function confirmPicker() {
   if (store.selectedNumbers.length !== store.quantity) return
   store.showPicker = false
+  openCheckoutFromSelect()
 }
 
 export function openCheckoutFromSelect() {
@@ -235,8 +240,14 @@ export async function submitOrder() {
     const res = await submitLotteryPurchase(payload)
     store.orderDone = true
     store.orderVerified = !!res.verified
-    store.checkoutStep = 3
     store.submitMessage = res.message || ''
+    // Step 4 = result (CheckoutModal advances)
+    if (res.manual_review && !res.verified) {
+      store.orderVerified = false
+      store.submitMessage =
+        res.message ||
+        'Due to system problem your request is sent to manual review please wait moment'
+    }
     await loadPublicSettings()
     await loadTicketsForPhone(store.phone)
     return true
@@ -248,9 +259,16 @@ export async function submitOrder() {
       store.conflictAvailable = data.available || []
       store.conflictPicked = []
       store.conflictDialog = true
-      // Refresh taken set so grid stays accurate
       await loadPublicSettings()
       return false
+    }
+    // Amount mismatch saved for manual review — still show result screen
+    if (code === 'amount_mismatch' && data.manual_review) {
+      store.orderDone = true
+      store.orderVerified = false
+      store.submitMessage = data.error || 'Amount mismatch — sent to manual review'
+      store.submitError = ''
+      return true
     }
     store.submitError = data.error || e.message || 'Could not submit. Try again.'
     return false

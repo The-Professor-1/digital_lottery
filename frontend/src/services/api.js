@@ -573,5 +573,24 @@ export async function announceLotteryWinner(winner_number, message) {
   return response.data
 }
 
+export async function getLotteryFailedDepositsAdmin(params = {}) {
+  const response = await api.get('/admin-dashboard/lottery-failed-deposits/', { params })
+  return response.data
+}
+
+export async function lotteryFailedDepositAction(id, action, transaction_ref = '') {
+  const response = await api.post(`/admin-dashboard/lottery-failed-deposits/${id}/action/`, {
+    action,
+    transaction_ref,
+    txn_no: transaction_ref,
+  })
+  return response.data
+}
+
+export async function runLotteryDraw() {
+  const response = await api.post('/lottery/draw/')
+  return response.data
+}
+
 export default api
 

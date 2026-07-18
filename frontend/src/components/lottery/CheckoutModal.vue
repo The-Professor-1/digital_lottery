@@ -12,7 +12,7 @@
           <div>
             <h2 class="text-lg font-bold text-white">{{ t.completePurchase }}</h2>
             <p class="text-sm text-white/50 mt-0.5">
-              {{ store.checkoutStep < 3 ? t.stepOf(store.checkoutStep, 3) : t.confirmStep }}
+              {{ store.checkoutStep < 4 ? t.stepOf(store.checkoutStep, 4) : t.confirmStep }}
             </p>
           </div>
           <button
@@ -27,7 +27,7 @@
 
         <div class="px-4 pb-3 flex gap-1.5">
           <div
-            v-for="s in 3"
+            v-for="s in 4"
             :key="s"
             class="h-1.5 flex-1 rounded-full transition-colors"
             :class="s <= store.checkoutStep ? 'bg-gold' : 'bg-ink-300'"
@@ -35,7 +35,7 @@
         </div>
 
         <div class="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
-          <!-- Step 1 -->
+          <!-- Step 1: identity -->
           <template v-if="store.checkoutStep === 1">
             <div class="rounded-2xl bg-ink-200 border border-white/5 p-4">
               <p class="font-semibold text-white">{{ store.raffle.displayName }}</p>
@@ -84,11 +84,11 @@
             </label>
           </template>
 
-          <!-- Step 2: account + SMS -->
+          <!-- Step 2: bank only -->
           <template v-else-if="store.checkoutStep === 2">
             <div>
               <p class="text-sm text-white/85">{{ t.selectBank }}</p>
-              <p class="text-xs text-white/45 mt-1">{{ t.selectBankHint }}</p>
+              <p class="text-xs text-white/45 mt-1">{{ t.selectBankRequired }}</p>
             </div>
 
             <button
@@ -114,6 +114,15 @@
               </div>
               <p class="text-sm text-white font-medium tabular-nums">{{ bank.account }}</p>
             </button>
+          </template>
+
+          <!-- Step 3: SMS after bank chosen -->
+          <template v-else-if="store.checkoutStep === 3">
+            <div class="rounded-2xl bg-ink-200 border border-white/5 p-3">
+              <p class="text-xs text-white/45">{{ t.payingTo }}</p>
+              <p class="text-sm text-white font-semibold">{{ selectedBank?.name }}</p>
+              <p class="text-xs text-gold mt-1">{{ formatBirr(totalPrice()) }}</p>
+            </div>
 
             <label class="block">
               <span class="text-sm text-white/80">{{ t.pasteSms }}</span>
@@ -132,7 +141,7 @@
             </p>
           </template>
 
-          <!-- Step 3: result -->
+          <!-- Step 4: result -->
           <template v-else>
             <div class="text-center py-8 space-y-3">
               <div
@@ -171,7 +180,6 @@
             <button
               type="button"
               class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white text-sm font-semibold"
-              :disabled="store.verifying"
               @click="store.checkoutStep = 1"
             >
               {{ t.back }}
@@ -179,7 +187,25 @@
             <button
               type="button"
               class="btn-green flex-[1.4] py-3.5 text-sm"
-              :disabled="store.verifying || !canSubmit"
+              :disabled="!store.selectedBankId"
+              @click="store.checkoutStep = 3"
+            >
+              {{ t.continue }} &gt;
+            </button>
+          </template>
+          <template v-else-if="store.checkoutStep === 3">
+            <button
+              type="button"
+              class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white text-sm font-semibold"
+              :disabled="store.verifying"
+              @click="store.checkoutStep = 2"
+            >
+              {{ t.back }}
+            </button>
+            <button
+              type="button"
+              class="btn-green flex-[1.4] py-3.5 text-sm"
+              :disabled="store.verifying || !(store.receiptSms || '').trim()"
               @click="onSubmit"
             >
               {{ store.verifying ? t.checking : t.continue + ' >' }}
@@ -193,7 +219,6 @@
         </div>
       </div>
 
-      <!-- Checking overlay -->
       <div
         v-if="store.verifying"
         class="absolute inset-0 z-[60] flex items-center justify-center bg-black/75 px-6"
@@ -207,7 +232,6 @@
         </div>
       </div>
 
-      <!-- Number conflict dialog -->
       <div
         v-if="store.conflictDialog"
         class="absolute inset-0 z-[70] flex items-end justify-center bg-black/80 px-3 pb-3"
@@ -289,12 +313,9 @@ const providerLabel = computed(() => {
 
 const smsHint = computed(() => t.value.fullSmsHint(providerLabel.value))
 
-const canSubmit = computed(
-  () => !!store.selectedBankId && !!(store.receiptSms || '').trim()
-)
-
 async function onSubmit() {
-  await submitOrder()
+  const ok = await submitOrder()
+  if (ok) store.checkoutStep = 4
 }
 
 function toggleConflictPick(n) {
@@ -314,7 +335,8 @@ async function applyConflictAndRetry() {
   store.conflictAvailable = []
   store.conflictPicked = []
   store.conflictMessage = ''
-  await submitOrder()
+  const ok = await submitOrder()
+  if (ok) store.checkoutStep = 4
 }
 
 function onDone() {

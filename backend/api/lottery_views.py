@@ -11,7 +11,7 @@ from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from .auth_utils import get_user_from_token
-from .models import LotterySettings, LotteryPurchase, DeletedLotteryReceipt, DeletedLotteryUser
+from .models import LotterySettings, LotteryPurchase, LotteryFailedDeposit, DeletedLotteryReceipt, DeletedLotteryUser
 
 
 def _is_admin(request):
@@ -420,7 +420,12 @@ def lottery_submit_purchase(request):
             'available': available,
         }, status=409)
 
-    from .telebirr_verify import parse_telebirr_receipt_text, verify_telebirr_receipt, credited_party_matches
+    from .telebirr_verify import (
+        parse_telebirr_receipt_text,
+        verify_telebirr_receipt,
+        credited_party_matches,
+        amount_from_api_total,
+    )
     from .cbe_verify import parse_cbe_receipt_text, verify_cbe_receipt
     from .models import GameSettings
 
@@ -470,49 +475,109 @@ def lottery_submit_purchase(request):
             'reference': reference,
         }, status=409)
 
+    def _save_failed(reason, credited=None):
+        return LotteryFailedDeposit.objects.create(
+            user=user,
+            full_name=full_name,
+            phone=phone,
+            numbers=numbers,
+            quantity=len(numbers),
+            expected_amount=amount,
+            credited_amount=credited,
+            payment_provider=provider,
+            bank_name=bank_name,
+            bank_holder=bank_holder,
+            bank_account=bank_account,
+            transaction_ref=reference,
+            account_suffix=account_suffix or '',
+            receipt_sms=receipt_sms[:4000],
+            failure_reason=(reason or '')[:255],
+            status='pending',
+        )
+
     api_key = settings_obj.resolved_verify_api_key()
     verify_ok = False
     verify_error = ''
-    manual_review = False
+    credited_amount = None
+    api_data = None
 
     if not api_key:
-        manual_review = True
         verify_error = 'verify_api_key_not_configured'
-    else:
-        try:
-            if provider == 'telebirr':
-                result = verify_telebirr_receipt(reference, api_key)
-                if result.get('success') and result.get('data'):
-                    data = result['data']
-                    if bank_holder or bank_account:
-                        credited_name = (data.get('creditedPartyName') or '').strip()
-                        credited_account_no = (data.get('creditedPartyAccountNo') or '').strip()
-                        # Keep credited_party_matches for soft validation logging
-                        _ = credited_party_matches(credited_name, credited_account_no, bank_holder, bank_account)
-                    verify_ok = True
-                else:
-                    verify_error = result.get('error') or 'verification_failed'
-                    manual_review = True
-            else:
-                gs = GameSettings.get_settings()
-                use_fallback = bool(getattr(gs, 'cbe_use_fallback_proxy', False))
-                result = verify_cbe_receipt(reference, account_suffix, api_key, use_fallback_proxy=use_fallback)
-                if result.get('success') and result.get('data'):
-                    verify_ok = True
-                else:
-                    verify_error = result.get('error') or 'verification_failed'
-                    manual_review = True
-        except Exception as e:
-            verify_error = str(e) or 'api_exception'
-            manual_review = True
+        failed = _save_failed(verify_error)
+        return JsonResponse({
+            'success': True,
+            'verified': False,
+            'manual_review': True,
+            'message': 'Due to system problem your request is sent to manual review please wait moment',
+            'message_key': 'manualReview',
+            'failed_id': failed.id,
+        })
 
-    if verify_ok and sms_amount and amount and sms_amount < (amount * Decimal('0.95')):
+    try:
+        if provider == 'telebirr':
+            result = verify_telebirr_receipt(reference, api_key)
+            if result.get('success') and result.get('data'):
+                api_data = result['data']
+                if bank_holder or bank_account:
+                    credited_name = (api_data.get('creditedPartyName') or '').strip()
+                    credited_account_no = (api_data.get('creditedPartyAccountNo') or '').strip()
+                    _ = credited_party_matches(credited_name, credited_account_no, bank_holder, bank_account)
+                credited_amount = amount_from_api_total(api_data.get('totalPaidAmount') or '')
+                if credited_amount is None:
+                    credited_amount = sms_amount
+                verify_ok = True
+            else:
+                verify_error = result.get('error') or 'verification_failed'
+        else:
+            gs = GameSettings.get_settings()
+            use_fallback = bool(getattr(gs, 'cbe_use_fallback_proxy', False))
+            result = verify_cbe_receipt(reference, account_suffix, api_key, use_fallback_proxy=use_fallback)
+            if result.get('success') and result.get('data'):
+                api_data = result['data']
+                raw_amt = api_data.get('amount') or api_data.get('totalPaidAmount') or api_data.get('paidAmount')
+                if raw_amt is not None:
+                    try:
+                        credited_amount = Decimal(str(raw_amt).replace(',', '').replace('ETB', '').replace('Birr', '').strip())
+                    except Exception:
+                        credited_amount = sms_amount
+                else:
+                    credited_amount = sms_amount
+                verify_ok = True
+            else:
+                verify_error = result.get('error') or 'verification_failed'
+    except Exception as e:
+        verify_error = str(e) or 'api_exception'
+
+    if not verify_ok:
+        failed = _save_failed(verify_error or 'verification_failed', credited_amount)
+        return JsonResponse({
+            'success': True,
+            'verified': False,
+            'manual_review': True,
+            'message': 'Due to system problem your request is sent to manual review please wait moment',
+            'message_key': 'manualReview',
+            'failed_id': failed.id,
+        })
+
+    # Require credited/SMS amount to match ticket total (quantity × ticket price)
+    check_amount = credited_amount if credited_amount is not None else sms_amount
+    if check_amount is None or abs(Decimal(check_amount) - amount) > Decimal('0.01'):
+        reason = (
+            f'amount_mismatch: expected {amount} Birr '
+            f'(got {check_amount if check_amount is not None else "unknown"})'
+        )
+        failed = _save_failed(reason, check_amount)
         return JsonResponse({
             'error': (
-                f'Payment amount ({sms_amount} Birr) is less than required ticket total '
-                f'({amount} Birr). Please pay the full amount and try again.'
+                f'Payment amount ({check_amount} Birr) does not match required ticket total '
+                f'({amount} Birr = {len(numbers)} × {settings_obj.ticket_price}). '
+                f'Your request was saved for manual review.'
             ),
             'error_code': 'amount_mismatch',
+            'expected_amount': float(amount),
+            'credited_amount': float(check_amount) if check_amount is not None else None,
+            'failed_id': failed.id,
+            'manual_review': True,
         }, status=400)
 
     taken = settings_obj.taken_numbers_set()
@@ -530,7 +595,6 @@ def lottery_submit_purchase(request):
             'available': available,
         }, status=409)
 
-    status = 'verified' if verify_ok else 'pending'
     purchase = LotteryPurchase.objects.create(
         user=user,
         full_name=full_name,
@@ -546,30 +610,18 @@ def lottery_submit_purchase(request):
         payment_provider=provider,
         transaction_ref=reference,
         receipt_hash=receipt_hash,
-        status=status,
-        admin_note=(verify_error[:250] if manual_review and verify_error else ''),
-        verified_at=timezone.now() if verify_ok else None,
+        status='verified',
+        verified_at=timezone.now(),
     )
-
-    if verify_ok:
-        try:
-            _mark_receipt_used(provider, reference, account_suffix, user, amount)
-        except Exception:
-            pass
-        return JsonResponse({
-            'success': True,
-            'verified': True,
-            'message': 'Payment verified successfully!',
-            'message_key': 'paymentVerified',
-            'purchase': purchase.to_dict(request),
-        })
-
+    try:
+        _mark_receipt_used(provider, reference, account_suffix, user, amount)
+    except Exception:
+        pass
     return JsonResponse({
         'success': True,
-        'verified': False,
-        'manual_review': True,
-        'message': 'Due to system problem your request is sent to manual review please wait moment',
-        'message_key': 'manualReview',
+        'verified': True,
+        'message': 'Payment verified successfully!',
+        'message_key': 'paymentVerified',
         'purchase': purchase.to_dict(request),
     })
 
@@ -1232,4 +1284,224 @@ def lottery_send_message(request):
         'sent_count': sent_count,
         'broadcast_id': broadcast.id,
         'message': f'Message sent to {sent_count} user(s)',
+    })
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def lottery_failed_deposits_admin(request):
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    status = (request.GET.get('status') or 'pending').strip()
+    qs = LotteryFailedDeposit.objects.all().select_related('user')
+    if status in ('pending', 'approved', 'rejected'):
+        qs = qs.filter(status=status)
+    items = [f.to_admin_dict() for f in qs[:300]]
+    return JsonResponse({
+        'failed_deposits': items,
+        'pending_count': LotteryFailedDeposit.objects.filter(status='pending').count(),
+    })
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_failed_deposit_action(request, failed_id):
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+    action = (body.get('action') or '').strip().lower()
+    txn_no = (body.get('transaction_ref') or body.get('txn_no') or '').strip().upper()
+
+    try:
+        failed = LotteryFailedDeposit.objects.select_related('user').get(id=failed_id)
+    except LotteryFailedDeposit.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    if action == 'reject':
+        failed.status = 'rejected'
+        failed.resolved_at = timezone.now()
+        if getattr(request.user, 'is_authenticated', False) and request.user.is_authenticated:
+            failed.resolved_by = request.user
+        failed.save()
+        return JsonResponse({'success': True, 'failed_deposit': failed.to_admin_dict()})
+
+    if action != 'approve':
+        return JsonResponse({'error': 'Unknown action'}, status=400)
+
+    if failed.status == 'approved':
+        return JsonResponse({'error': 'Already approved'}, status=400)
+    if not txn_no:
+        return JsonResponse({'error': 'Transaction number is required to approve'}, status=400)
+
+    provider = (failed.payment_provider or '').strip().lower()
+    suffix = (failed.account_suffix or '').strip()
+    if _transaction_already_used(provider, txn_no, suffix):
+        return JsonResponse({
+            'error': 'This transaction number was already used. Enter a genuine unused txn no.',
+        }, status=409)
+
+    settings_obj = LotterySettings.get_settings()
+    numbers = []
+    for n in failed.numbers or []:
+        try:
+            numbers.append(int(n))
+        except (TypeError, ValueError):
+            pass
+    taken = settings_obj.taken_numbers_set()
+    conflict = [n for n in numbers if n in taken]
+    if conflict:
+        return JsonResponse({'error': f'Numbers already taken: {conflict}'}, status=409)
+
+    amount = failed.expected_amount or (Decimal(settings_obj.ticket_price) * max(1, len(numbers)))
+    receipt_hash = hashlib.sha256(
+        f'manual:{provider}:{txn_no}:{failed.id}:{timezone.now().timestamp()}'.encode('utf-8')
+    ).hexdigest()
+
+    purchase = LotteryPurchase.objects.create(
+        user=failed.user,
+        full_name=failed.full_name,
+        phone=failed.phone,
+        numbers=numbers,
+        quantity=len(numbers) or failed.quantity or 1,
+        amount=amount,
+        bank_name=failed.bank_name,
+        bank_holder=failed.bank_holder,
+        bank_account=failed.bank_account,
+        receipt_sms=failed.receipt_sms,
+        payment_provider=provider,
+        transaction_ref=txn_no,
+        receipt_hash=receipt_hash,
+        status='verified',
+        admin_note=f'Approved from failed deposit #{failed.id}',
+        verified_at=timezone.now(),
+        verified_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+    )
+    try:
+        _mark_receipt_used(provider, txn_no, suffix, failed.user, amount)
+    except Exception:
+        pass
+
+    failed.status = 'approved'
+    failed.admin_txn_no = txn_no
+    failed.transaction_ref = txn_no or failed.transaction_ref
+    failed.resolved_at = timezone.now()
+    if getattr(request.user, 'is_authenticated', False) and request.user.is_authenticated:
+        failed.resolved_by = request.user
+    failed.save()
+
+    if failed.user_id and failed.user and failed.user.telegram_id:
+        nums = ', '.join(str(n).zfill(3) for n in numbers)
+        try:
+            from telegram_bot.notifications import send_notification_sync
+            send_notification_sync(
+                failed.user.telegram_id,
+                f'✅ Payment approved!\n\nYour lottery numbers: {nums}\nAmount: {amount} Birr',
+            )
+        except Exception:
+            pass
+
+    return JsonResponse({
+        'success': True,
+        'failed_deposit': failed.to_admin_dict(),
+        'purchase': purchase.to_dict(request),
+    })
+
+
+@csrf_exempt
+@require_http_methods(['POST', 'GET'])
+def lottery_run_draw(request):
+    """
+    Run prize draw when countdown has ended (or return existing winners).
+    Picks 3 distinct random numbers from 1..total_tickets and notifies holders.
+    """
+    import random
+
+    settings_obj = LotterySettings.get_settings()
+    now = timezone.now()
+    ends = settings_obj.ends_at or settings_obj.compute_ends_at()
+
+    # Allow draw when timer finished, or within last 5s (client race)
+    if ends and now < ends - timedelta(seconds=5):
+        remaining = int((ends - now).total_seconds())
+        return JsonResponse({
+            'error': 'Draw not ready yet',
+            'error_code': 'too_early',
+            'remaining_seconds': remaining,
+            'draw_completed': bool(settings_obj.draw_completed),
+        }, status=400)
+
+    if settings_obj.draw_completed and settings_obj.winner_1st:
+        return JsonResponse({
+            'success': True,
+            'already_drawn': True,
+            'winner_1st': settings_obj.winner_1st,
+            'winner_2nd': settings_obj.winner_2nd,
+            'winner_3rd': settings_obj.winner_3rd,
+            'prize_1st': int(settings_obj.prize_1st or 0),
+            'prize_2nd': int(settings_obj.prize_2nd or 0),
+            'prize_3rd': int(settings_obj.prize_3rd or 0),
+            'notified': 0,
+        })
+
+    total = max(3, int(settings_obj.total_tickets or 3))
+    pool = list(range(1, total + 1))
+    random.shuffle(pool)
+    w1, w2, w3 = pool[0], pool[1], pool[2]
+
+    settings_obj.winner_1st = w1
+    settings_obj.winner_2nd = w2
+    settings_obj.winner_3rd = w3
+    settings_obj.winner_number = str(w1)
+    settings_obj.draw_completed = True
+    settings_obj.winner_announced_at = now
+    settings_obj.save(reset_timer=False)
+
+    prizes = [
+        (1, w1, int(settings_obj.prize_1st or 0), '1ኛ እጣ'),
+        (2, w2, int(settings_obj.prize_2nd or 0), '2ኛ እጣ'),
+        (3, w3, int(settings_obj.prize_3rd or 0), '3ኛ እጣ'),
+    ]
+
+    notified = 0
+    try:
+        from telegram_bot.notifications import send_notification_sync
+        for place, win_num, prize_amt, place_label in prizes:
+            holders = LotteryPurchase.objects.filter(status='verified').select_related('user')
+            for p in holders:
+                nums = []
+                for n in p.numbers or []:
+                    try:
+                        nums.append(int(n))
+                    except (TypeError, ValueError):
+                        pass
+                if win_num not in nums:
+                    continue
+                if not (p.user and p.user.telegram_id):
+                    continue
+                msg = (
+                    f'🏆 Congratulations!\n\n'
+                    f'You won {place_label} (place #{place})!\n'
+                    f'Winning number: {str(win_num).zfill(3)}\n'
+                    f'Prize amount: {prize_amt:,} ብር\n\n'
+                    f'Please contact support to claim your prize.'
+                )
+                ok, _ = send_notification_sync(p.user.telegram_id, msg)
+                if ok:
+                    notified += 1
+    except Exception as e:
+        print(f'lottery_run_draw notify error: {e}')
+
+    return JsonResponse({
+        'success': True,
+        'already_drawn': False,
+        'winner_1st': w1,
+        'winner_2nd': w2,
+        'winner_3rd': w3,
+        'prize_1st': int(settings_obj.prize_1st or 0),
+        'prize_2nd': int(settings_obj.prize_2nd or 0),
+        'prize_3rd': int(settings_obj.prize_3rd or 0),
+        'notified': notified,
     })

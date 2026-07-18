@@ -1019,6 +1019,10 @@ class LotterySettings(models.Model):
     winner_number = models.CharField(max_length=16, blank=True, default='')
     winner_message = models.TextField(blank=True, default='')
     winner_announced_at = models.DateTimeField(null=True, blank=True)
+    winner_1st = models.PositiveIntegerField(null=True, blank=True)
+    winner_2nd = models.PositiveIntegerField(null=True, blank=True)
+    winner_3rd = models.PositiveIntegerField(null=True, blank=True)
+    draw_completed = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1114,6 +1118,10 @@ class LotterySettings(models.Model):
             'winner_number': self.winner_number or '',
             'winner_message': self.winner_message or '',
             'winner_announced_at': self.winner_announced_at.isoformat() if self.winner_announced_at else None,
+            'winner_1st': self.winner_1st,
+            'winner_2nd': self.winner_2nd,
+            'winner_3rd': self.winner_3rd,
+            'draw_completed': bool(self.draw_completed),
         }
 
     @classmethod
@@ -1194,6 +1202,74 @@ class LotteryPurchase(models.Model):
             'admin_note': self.admin_note,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'verified_at': self.verified_at.isoformat() if self.verified_at else None,
+            'telegram_id': self.user.telegram_id if self.user_id and self.user else None,
+        }
+
+
+class LotteryFailedDeposit(models.Model):
+    """Failed checkout / SMS verification requests awaiting manual admin approval."""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='lottery_failed_deposits'
+    )
+    full_name = models.CharField(max_length=160, blank=True, default='')
+    phone = models.CharField(max_length=32, blank=True, default='', db_index=True)
+    numbers = models.JSONField(default=list, blank=True)
+    quantity = models.PositiveIntegerField(default=1)
+    expected_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    credited_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    payment_provider = models.CharField(max_length=20, blank=True, default='')
+    bank_name = models.CharField(max_length=120, blank=True, default='')
+    bank_holder = models.CharField(max_length=160, blank=True, default='')
+    bank_account = models.CharField(max_length=64, blank=True, default='')
+    transaction_ref = models.CharField(max_length=64, blank=True, default='', db_index=True)
+    account_suffix = models.CharField(max_length=16, blank=True, default='')
+    receipt_sms = models.TextField(blank=True, default='')
+    failure_reason = models.CharField(max_length=255, blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    admin_txn_no = models.CharField(
+        max_length=64, blank=True, default='',
+        help_text='Txn number confirmed by admin on approve (blocks reuse)',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='lottery_failed_resolutions'
+    )
+
+    class Meta:
+        db_table = 'lottery_failed_deposits'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'LotteryFailedDeposit {self.id} {self.payment_provider} {self.status}'
+
+    def to_admin_dict(self):
+        return {
+            'id': self.id,
+            'full_name': self.full_name,
+            'phone': self.phone,
+            'numbers': self.numbers or [],
+            'quantity': self.quantity,
+            'expected_amount': float(self.expected_amount or 0),
+            'credited_amount': float(self.credited_amount) if self.credited_amount is not None else None,
+            'payment_provider': self.payment_provider or '',
+            'bank_name': self.bank_name or '',
+            'bank_holder': self.bank_holder or '',
+            'bank_account': self.bank_account or '',
+            'transaction_ref': self.transaction_ref or '',
+            'account_suffix': self.account_suffix or '',
+            'receipt_sms': self.receipt_sms or '',
+            'failure_reason': self.failure_reason or '',
+            'status': self.status,
+            'admin_txn_no': self.admin_txn_no or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
             'telegram_id': self.user.telegram_id if self.user_id and self.user else None,
         }
 

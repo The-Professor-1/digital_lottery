@@ -211,6 +211,45 @@
       </div>
     </div>
 
+    <!-- FAILED DEPOSITS -->
+    <div v-if="loggedIn && activeTab === 'failed'" class="panel">
+      <div class="row-between">
+        <h2>Failed deposits / checkouts</h2>
+        <button type="button" class="btn ghost" @click="loadFailed">{{ failedLoading ? '…' : 'Refresh' }}</button>
+      </div>
+      <p class="hint">Pending: {{ failedPendingCount }} — Approve requires entering the transaction number to block reuse.</p>
+      <div class="filters">
+        <select v-model="failedStatus" @change="loadFailed">
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <article v-for="f in failedDeposits" :key="f.id" class="receipt-card">
+        <div class="row-between">
+          <div>
+            <strong>{{ f.full_name || '—' }}</strong>
+            <div class="muted">{{ f.phone }} · {{ f.created_at }}</div>
+            <div>Numbers: <b>{{ (f.numbers || []).map(n => String(n).padStart(3,'0')).join(', ') }}</b></div>
+            <div>
+              Expected: {{ formatMoney(f.expected_amount) }} Birr
+              <span v-if="f.credited_amount != null"> · Credited: {{ formatMoney(f.credited_amount) }}</span>
+            </div>
+            <div class="muted">{{ f.payment_provider || f.bank_name }} · ref: {{ f.transaction_ref || '—' }}</div>
+            <div class="error-inline">Reason: {{ f.failure_reason || '—' }}</div>
+          </div>
+          <span class="badge" :class="f.status">{{ f.status }}</span>
+        </div>
+        <pre v-if="f.receipt_sms" class="sms-box">{{ f.receipt_sms }}</pre>
+        <div v-if="f.status === 'pending'" class="actions">
+          <button type="button" class="btn primary" @click="approveFailed(f)">Approve…</button>
+          <button type="button" class="btn ghost danger" @click="rejectFailed(f.id)">Reject</button>
+        </div>
+        <div v-else-if="f.admin_txn_no" class="muted">Saved txn: {{ f.admin_txn_no }}</div>
+      </article>
+      <p v-if="!failedDeposits.length" class="hint">No failed deposits in this filter.</p>
+    </div>
+
     <!-- MESSAGES -->
     <div v-if="loggedIn && activeTab === 'messages'" class="panel">
       <h2>Send Telegram message</h2>
@@ -394,6 +433,8 @@ import {
   deleteLotteryUser,
   getLotteryDeletedAdmin,
   sendLotteryMessage,
+  getLotteryFailedDepositsAdmin,
+  lotteryFailedDepositAction,
 } from '../services/api'
 
 export default {
@@ -459,6 +500,10 @@ export default {
       msgText: '',
       msgSelectedIds: [],
       msgSending: false,
+      failedDeposits: [],
+      failedStatus: 'pending',
+      failedPendingCount: 0,
+      failedLoading: false,
       accessUser: '',
       accessPass: '',
       accessStoredPassword: '',
@@ -482,8 +527,8 @@ export default {
     },
     pageSubtitle() {
       return this.isMain
-        ? 'Settings · receipts · numbers · users · messages · winner · deleted · access'
-        : 'Settings · receipts · numbers · users · messages · winner'
+        ? 'Settings · receipts · failed · numbers · users · messages · winner · deleted · access'
+        : 'Settings · receipts · failed · numbers · users · messages · winner'
     },
     revenuePeriodLabel() {
       const labels = {
@@ -501,6 +546,7 @@ export default {
         { id: 'settings', label: 'Settings' },
         { id: 'numbers', label: 'Numbers' },
         { id: 'receipts', label: 'Receipts' },
+        { id: 'failed', label: 'Failed' },
         { id: 'users', label: 'Users' },
         { id: 'messages', label: 'Messages' },
         { id: 'winner', label: 'Winner' },
@@ -544,6 +590,7 @@ export default {
     switchTab(id) {
       this.activeTab = id
       if (id === 'receipts') this.loadPurchases()
+      if (id === 'failed') this.loadFailed()
       if (id === 'access') this.loadAccess()
       if (id === 'users' || id === 'messages') this.loadUsers()
       if (id === 'deleted') this.loadDeleted()
@@ -706,7 +753,57 @@ export default {
         this.saving = false
       }
     },
-    async sendMsg() {
+    async loadFailed() {
+      this.failedLoading = true
+      this.error = ''
+      try {
+        const data = await getLotteryFailedDepositsAdmin({ status: this.failedStatus })
+        this.failedDeposits = data.failed_deposits || []
+        this.failedPendingCount = data.pending_count || 0
+      } catch (e) {
+        if (e.response?.status === 401) {
+          this.unauthorized = true
+          this.loggedIn = false
+        } else {
+          this.error = e.response?.data?.error || 'Could not load failed deposits'
+        }
+      } finally {
+        this.failedLoading = false
+      }
+    },
+    async approveFailed(f) {
+      const txn = window.prompt(
+        'Enter transaction number to save (blocks future reuse):',
+        f.transaction_ref || ''
+      )
+      if (txn == null) return
+      const cleaned = String(txn).trim()
+      if (!cleaned) {
+        this.error = 'Transaction number is required to approve'
+        return
+      }
+      this.error = ''
+      this.message = ''
+      try {
+        await lotteryFailedDepositAction(f.id, 'approve', cleaned)
+        this.message = `Failed deposit #${f.id} approved`
+        await this.loadFailed()
+        await this.loadPurchases()
+      } catch (e) {
+        this.error = e.response?.data?.error || 'Approve failed'
+      }
+    },
+    async rejectFailed(id) {
+      if (!window.confirm('Reject this failed deposit request?')) return
+      try {
+        await lotteryFailedDepositAction(id, 'reject')
+        this.message = `Failed deposit #${id} rejected`
+        await this.loadFailed()
+      } catch (e) {
+        this.error = e.response?.data?.error || 'Reject failed'
+      }
+    },
+    async sendMsg()
       this.msgSending = true
       this.message = ''
       this.error = ''
@@ -962,6 +1059,7 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 }
 .user-pick { margin: 0.75rem 0; max-height: 220px; overflow: auto; border: 1px solid #334155; border-radius: 8px; padding: 0.5rem; }
 .user-row { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.35rem 0; font-size: 0.85rem; }
+.error-inline { color: #fca5a5; font-size: 0.85rem; margin-top: 0.35rem; }
 .nums-row { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.5rem; }
 .num-chip {
   background: #064e3b; color: #6ee7b7; font-size: 0.75rem; font-weight: 700;
