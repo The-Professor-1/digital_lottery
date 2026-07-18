@@ -78,7 +78,20 @@
           <label>Minutes <input v-model.number="form.countdown_minutes" type="number" min="0" /></label>
           <label>Seconds <input v-model.number="form.countdown_seconds" type="number" min="0" /></label>
         </div>
-        <label class="check"><input v-model="resetTimer" type="checkbox" /> Force restart timer</label>
+        <div class="restart-box">
+          <p class="hint">
+            If the draw is stuck (e.g. timer hit 0 with no verified tickets), set a new time above and click Restart round.
+            This clears winners, draw state, and tickets, then starts a fresh countdown.
+          </p>
+          <button
+            type="button"
+            class="btn danger restart-btn"
+            :disabled="restarting || saving"
+            @click="restartRound"
+          >
+            {{ restarting ? 'Restarting…' : 'Restart round' }}
+          </button>
+        </div>
       </section>
 
       <section>
@@ -438,6 +451,7 @@ import {
   lotteryAdminBootstrap,
   getLotterySettingsAdmin,
   updateLotterySettingsAdmin,
+  restartLotteryRoundAdmin,
   getLotteryPurchasesAdmin,
   lotteryPurchaseAction,
   announceLotteryWinner,
@@ -474,7 +488,7 @@ export default {
       saving: false,
       message: '',
       error: '',
-      resetTimer: false,
+      restarting: false,
       file: null,
       activeTab: 'settings',
       form: {
@@ -731,6 +745,35 @@ export default {
         this.loading = false
       }
     },
+    async restartRound() {
+      const ok = window.confirm(
+        'Restart the round now?\n\nThis will clear winners, draw state, and tickets, then start a new countdown using the Days/Hours/Minutes/Seconds values above.'
+      )
+      if (!ok) return
+      this.restarting = true
+      this.message = ''
+      this.error = ''
+      try {
+        const res = await restartLotteryRoundAdmin({
+          countdown_days: this.form.countdown_days,
+          countdown_hours: this.form.countdown_hours,
+          countdown_minutes: this.form.countdown_minutes,
+          countdown_seconds: this.form.countdown_seconds,
+          clear_tickets: true,
+        })
+        this.applyData(res.settings || res)
+        this.message =
+          'Round restarted. Mini-app users should refresh Home (or wait a few seconds) to see the new countdown.'
+      } catch (e) {
+        if (e.response?.status === 401) {
+          this.unauthorized = true
+          this.loggedIn = false
+        }
+        this.error = e.response?.data?.error || 'Restart failed'
+      } finally {
+        this.restarting = false
+      }
+    },
     async save() {
       this.saving = true
       this.message = ''
@@ -757,12 +800,10 @@ export default {
           winner_reveal_seconds: Math.min(60, Math.max(2, Number(this.form.winner_reveal_seconds) || 6)),
           payment_accounts: this.form.payment_accounts,
           admin_blocked_numbers: this.form.admin_blocked_numbers,
-          reset_timer: this.resetTimer,
         }
         const res = await updateLotterySettingsAdmin(payload, null)
         this.applyData(res.settings || res)
         this.file = null
-        this.resetTimer = false
         this.message = 'Settings saved. Open or refresh the mini-app Home tab to see updates.'
         if (this.$refs.fileInput) this.$refs.fileInput.value = ''
       } catch (e) {
@@ -1028,6 +1069,17 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 .area { resize: vertical; }
 .timer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 @media (min-width: 640px) { .timer-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.restart-box {
+  margin-top: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid #7f1d1d;
+  border-radius: 0.75rem;
+  background: rgba(127, 29, 29, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.restart-btn { align-self: flex-start; font-weight: 700; }
 .hint { font-size: 0.8rem; color: #9ca3af; margin: 0; }
 .check { display: flex; align-items: center; gap: 0.5rem; }
 .account-card, .receipt-card {

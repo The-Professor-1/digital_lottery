@@ -1580,6 +1580,21 @@ def lottery_notify_winners(request):
         'message': 'Winners notified' if notified else 'Already notified',
     })
 
+def _clear_round_state(settings_obj, clear_tickets=True):
+    """Clear winners / draw flags and optionally all ticket purchases."""
+    if clear_tickets:
+        LotteryPurchase.objects.filter(status__in=['pending', 'verified', 'rejected']).delete()
+    settings_obj.winner_1st = None
+    settings_obj.winner_2nd = None
+    settings_obj.winner_3rd = None
+    settings_obj.winner_number = ''
+    settings_obj.winner_message = ''
+    settings_obj.winner_announced_at = None
+    settings_obj.draw_completed = False
+    settings_obj.winners_notified = False
+    settings_obj.next_round_at = None
+
+
 @csrf_exempt
 @require_http_methods(['POST'])
 def lottery_start_next_round(request):
@@ -1601,22 +1616,53 @@ def lottery_start_next_round(request):
             'remaining_seconds': remaining,
         }, status=400)
 
-    # Clear all live ticket records for a fresh round
-    LotteryPurchase.objects.filter(status__in=['pending', 'verified', 'rejected']).delete()
-
-    settings_obj.winner_1st = None
-    settings_obj.winner_2nd = None
-    settings_obj.winner_3rd = None
-    settings_obj.winner_number = ''
-    settings_obj.winner_message = ''
-    settings_obj.winner_announced_at = None
-    settings_obj.draw_completed = False
-    settings_obj.winners_notified = False
-    settings_obj.next_round_at = None
+    _clear_round_state(settings_obj, clear_tickets=True)
     settings_obj.save(reset_timer=True)
 
     return JsonResponse({
         'success': True,
         'message': 'New round started',
         'settings': settings_obj.to_public_dict(request),
+    })
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_force_restart_round(request):
+    """
+    Admin emergency restart: apply countdown values, clear draw/winners/tickets,
+    and start a fresh timer immediately. Use when the app is stuck (e.g. no tickets at draw).
+    """
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    settings_obj = LotterySettings.get_settings()
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        data = {}
+
+    for field in (
+        'countdown_days', 'countdown_hours', 'countdown_minutes', 'countdown_seconds',
+    ):
+        if field in data and data[field] is not None and data[field] != '':
+            try:
+                setattr(settings_obj, field, max(0, int(float(data[field]))))
+            except (TypeError, ValueError):
+                pass
+
+    clear_tickets = str(data.get('clear_tickets', 'true')).lower() in ('1', 'true', 'yes', 'on')
+    _clear_round_state(settings_obj, clear_tickets=clear_tickets)
+    settings_obj.save(reset_timer=True)
+
+    out = settings_obj.to_public_dict(request)
+    out['car_image_url_raw'] = settings_obj.car_image_url or ''
+    out['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
+    out['verify_api_key'] = settings_obj.verify_api_key or ''
+    out['has_verify_api_key'] = bool((settings_obj.verify_api_key or '').strip())
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Round restarted with a fresh countdown',
+        'settings': out,
     })

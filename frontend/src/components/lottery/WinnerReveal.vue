@@ -1,7 +1,14 @@
 <template>
   <div class="rounded-card overflow-hidden border border-gold/30 bg-gradient-to-b from-ink-200 via-forest-deep to-ink-100">
+    <!-- Stuck: timer ended with no verified tickets -->
+    <div v-if="phase === 'stuck'" class="px-4 py-8 text-center space-y-3">
+      <p class="text-gold text-sm font-semibold tracking-wide uppercase">{{ t.drawStarting }}</p>
+      <p class="text-white text-base font-semibold">{{ t.noTicketsToDraw }}</p>
+      <p class="text-white/50 text-xs leading-relaxed">{{ t.waitingAdminRestart }}</p>
+    </div>
+
     <!-- Final minute: timer on top + shuffle on bottom -->
-    <template v-if="phase === 'final' || phase === 'drawing'">
+    <template v-else-if="phase === 'final' || phase === 'drawing'">
       <div class="px-4 pt-8 pb-4 text-center space-y-2 border-b border-white/5">
         <p class="text-gold text-xs font-semibold tracking-[0.2em] uppercase">{{ t.drawStarting }}</p>
         <div
@@ -109,7 +116,7 @@ const props = defineProps({
 const { t } = useI18n()
 const { remainingSeconds, inFinalMinute, isFinished } = useCountdown(() => props.endsAt)
 
-const phase = ref('idle') // idle | final | drawing | reveal | done
+const phase = ref('idle') // idle | final | drawing | reveal | done | stuck
 const pulse = ref(false)
 const visibleBalls = ref([])
 const revealLabel = ref('')
@@ -122,6 +129,7 @@ const nextRoundLeft = ref(0)
 let shuffleTimer = null
 let revealTimers = []
 let nextRoundTimer = null
+let recoverTimer = null
 let drawStarted = false
 let resetStarted = false
 let notifyStarted = false
@@ -220,6 +228,9 @@ async function runDrawAndReveal() {
     const data = e.response?.data
     if (data?.winner_1st) {
       applyDrawResult(data)
+    } else if (data?.error_code === 'no_tickets') {
+      enterStuckWaitingRestart()
+      return
     } else {
       await loadPublicSettings()
       if (store.raffle.winner1st) {
@@ -233,6 +244,9 @@ async function runDrawAndReveal() {
           next_round_at_ms: store.raffle.nextRoundAt,
           taken_numbers: [...store.takenNumbers],
         })
+      } else if (!takenPool.value.length) {
+        enterStuckWaitingRestart()
+        return
       } else {
         drawStarted = false
         setTimeout(runDrawAndReveal, 2000)
@@ -277,6 +291,26 @@ async function runDrawAndReveal() {
     )
   }
   showNext()
+}
+
+function enterStuckWaitingRestart() {
+  stopShuffleLoop()
+  phase.value = 'stuck'
+  drawStarted = false
+  if (recoverTimer) clearInterval(recoverTimer)
+  recoverTimer = setInterval(async () => {
+    await loadPublicSettings()
+    const ends = store.raffle.endsAt || 0
+    // Admin restart sets a future endsAt and clears draw_completed
+    if (!store.raffle.drawCompleted && ends > Date.now() + 2000) {
+      clearInterval(recoverTimer)
+      recoverTimer = null
+      phase.value = 'idle'
+      drawResult.value = null
+      visibleBalls.value = []
+      store.homeRefreshKey += 1
+    }
+  }, 3000)
 }
 
 async function finishAnnounceAndNotify() {
@@ -391,6 +425,10 @@ watch(
       return
     }
 
+    if (phase.value === 'stuck') {
+      return
+    }
+
     if (finished && !drawStarted && !store.raffle.drawCompleted) {
       runDrawAndReveal()
     } else if (finalMin && !drawStarted) {
@@ -421,6 +459,7 @@ onUnmounted(() => {
   stopShuffleLoop()
   revealTimers.forEach(clearTimeout)
   if (nextRoundTimer) clearInterval(nextRoundTimer)
+  if (recoverTimer) clearInterval(recoverTimer)
 })
 </script>
 

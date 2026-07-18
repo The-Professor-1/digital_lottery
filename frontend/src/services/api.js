@@ -526,6 +526,11 @@ export async function getLotterySettingsAdmin() {
   return response.data
 }
 
+export async function restartLotteryRoundAdmin(payload = {}) {
+  const response = await api.post('/admin-dashboard/lottery-restart-round/', payload)
+  return response.data
+}
+
 export async function updateLotterySettingsAdmin(payload, file = null) {
   // Always use FormData so file + nested JSON fields save reliably with session auth
   const form = new FormData()
