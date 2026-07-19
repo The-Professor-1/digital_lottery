@@ -20,6 +20,8 @@ elif git show-ref --quiet refs/remotes/origin/main; then
 else
   echo "WARN: could not detect main/master — using current checkout"
 fi
+# Drop untracked migration leftovers (e.g. local 0047_merge_*) that conflict with git
+git clean -fd -- backend/api/migrations
 git log -1 --oneline
 
 echo "Installing Python deps..."
