@@ -692,6 +692,15 @@ def lottery_settings_admin(request):
         elif int(settings_obj.winner_reveal_seconds or 0) > 60:
             settings_obj.winner_reveal_seconds = 60
 
+        if 'automatic_announcement' in data and data.get('automatic_announcement') is not None:
+            raw = data.get('automatic_announcement')
+            if isinstance(raw, bool):
+                settings_obj.automatic_announcement = raw
+            else:
+                settings_obj.automatic_announcement = str(raw).lower() in (
+                    '1', 'true', 'yes', 'on',
+                )
+
         timer_touched = old_timer != (
             settings_obj.countdown_days,
             settings_obj.countdown_hours,
@@ -1491,6 +1500,13 @@ def lottery_run_draw(request):
     settings_obj = LotterySettings.get_settings()
     now = timezone.now()
     ends = settings_obj.ends_at or settings_obj.compute_ends_at()
+
+    if not settings_obj.automatic_announcement:
+        return JsonResponse({
+            'error': 'Automatic announcement is off — winners are announced manually',
+            'error_code': 'manual_announcement',
+            'automatic_announcement': False,
+        }, status=400)
 
     # Allow draw when timer finished, or within last 5s (client race)
     if ends and now < ends - timedelta(seconds=5):

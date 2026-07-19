@@ -83,12 +83,16 @@
       {{ t.chooseNumbers }}
     </button>
 
-    <div class="sticky bottom-24 pt-2">
+    <div class="pt-2">
       <button
         type="button"
-        class="w-full py-3.5 rounded-2xl border border-white/20 text-white/50 text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
+        class="w-full py-3.5 rounded-2xl text-sm font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
         :disabled="!canBuy"
-        :class="canBuy ? 'btn-green !border-transparent' : ''"
+        :class="
+          canBuy
+            ? 'btn-green'
+            : 'bg-forest/45 text-white/85 border border-forest/50 cursor-not-allowed shadow-none'
+        "
         @click="openCheckoutFromSelect"
       >
         <Shield :size="16" />

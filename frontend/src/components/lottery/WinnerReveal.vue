@@ -1,7 +1,14 @@
 <template>
   <div class="rounded-card overflow-hidden border border-gold/30 bg-gradient-to-b from-ink-200 via-forest-deep to-ink-100">
+    <!-- Manual announcement (auto toggle off) -->
+    <div v-if="phase === 'manual'" class="px-4 py-8 text-center space-y-3">
+      <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">{{ t.manualAnnounceTitle }}</p>
+      <p class="text-white text-base font-semibold leading-snug">{{ t.manualAnnounceBody }}</p>
+      <p class="text-white/55 text-sm leading-relaxed">{{ t.manualAnnounceHint }}</p>
+    </div>
+
     <!-- Stuck: timer ended with no verified tickets -->
-    <div v-if="phase === 'stuck'" class="px-4 py-8 text-center space-y-3">
+    <div v-else-if="phase === 'stuck'" class="px-4 py-8 text-center space-y-3">
       <p class="text-gold text-sm font-semibold tracking-wide uppercase">{{ t.drawStarting }}</p>
       <p class="text-white text-base font-semibold">{{ t.noTicketsToDraw }}</p>
       <p class="text-white/50 text-xs leading-relaxed">{{ t.waitingAdminRestart }}</p>
@@ -116,7 +123,9 @@ const props = defineProps({
 const { t } = useI18n()
 const { remainingSeconds, inFinalMinute, isFinished } = useCountdown(() => props.endsAt)
 
-const phase = ref('idle') // idle | final | drawing | reveal | done | stuck
+const phase = ref('idle') // idle | final | drawing | reveal | done | stuck | manual
+
+const autoAnnounce = computed(() => store.raffle.automaticAnnouncement !== false)
 const pulse = ref(false)
 const visibleBalls = ref([])
 const revealLabel = ref('')
@@ -293,10 +302,7 @@ async function runDrawAndReveal() {
   showNext()
 }
 
-function enterStuckWaitingRestart() {
-  stopShuffleLoop()
-  phase.value = 'stuck'
-  drawStarted = false
+function startRecoverPoll() {
   if (recoverTimer) clearInterval(recoverTimer)
   recoverTimer = setInterval(async () => {
     await loadPublicSettings()
@@ -311,6 +317,20 @@ function enterStuckWaitingRestart() {
       store.homeRefreshKey += 1
     }
   }, 3000)
+}
+
+function enterStuckWaitingRestart() {
+  stopShuffleLoop()
+  phase.value = 'stuck'
+  drawStarted = false
+  startRecoverPoll()
+}
+
+function enterManualAnnounce() {
+  stopShuffleLoop()
+  phase.value = 'manual'
+  drawStarted = false
+  startRecoverPoll()
 }
 
 async function finishAnnounceAndNotify() {
@@ -425,7 +445,14 @@ watch(
       return
     }
 
-    if (phase.value === 'stuck') {
+    if (phase.value === 'stuck' || phase.value === 'manual') {
+      return
+    }
+
+    if (!autoAnnounce.value) {
+      if (finished && !store.raffle.drawCompleted) {
+        enterManualAnnounce()
+      }
       return
     }
 

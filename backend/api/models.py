@@ -1040,6 +1040,10 @@ class LotterySettings(models.Model):
         default=False,
         help_text='True after Telegram winner DMs have been sent (after live announce)',
     )
+    automatic_announcement = models.BooleanField(
+        default=True,
+        help_text='If True, run in-app shuffle/reveal. If False, show manual announcement message.',
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1145,6 +1149,7 @@ class LotterySettings(models.Model):
             'next_round_at_ms': int(self.next_round_at.timestamp() * 1000) if self.next_round_at else None,
             'winner_reveal_seconds': max(2, int(self.winner_reveal_seconds or 6)),
             'winners_notified': bool(self.winners_notified),
+            'automatic_announcement': bool(self.automatic_announcement),
         }
 
     def verified_taken_numbers(self):

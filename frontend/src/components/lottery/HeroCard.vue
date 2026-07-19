@@ -69,12 +69,16 @@ defineEmits(['open', 'buy'])
 const { t } = useI18n()
 const { inFinalMinute, isFinished } = useCountdown(() => props.raffle.endsAt)
 
-const showDrawUi = computed(
-  () =>
-    !!props.raffle.drawCompleted ||
-    inFinalMinute.value ||
-    isFinished.value
-)
+const autoAnnounce = computed(() => props.raffle.automaticAnnouncement !== false)
+
+const showDrawUi = computed(() => {
+  if (props.raffle.drawCompleted) return true
+  if (!autoAnnounce.value) {
+    // Manual mode: only show message after timer ends
+    return isFinished.value
+  }
+  return inFinalMinute.value || isFinished.value
+})
 
 function formatAmount(n) {
   return Number(n || 0).toLocaleString('en-US')

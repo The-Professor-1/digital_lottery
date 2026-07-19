@@ -63,6 +63,7 @@ export function applyPublicSettings(data) {
     nextRoundMinutes: data.next_round_minutes ?? store.raffle.nextRoundMinutes ?? 10,
     winnerRevealSeconds: data.winner_reveal_seconds ?? store.raffle.winnerRevealSeconds ?? 6,
     winnersNotified: !!data.winners_notified,
+    automaticAnnouncement: data.automatic_announcement !== false,
     image: data.car_image_url || store.raffle.image,
     ticketPrice: data.ticket_price ?? store.raffle.ticketPrice,
     totalTickets: data.total_tickets ?? store.raffle.totalTickets,

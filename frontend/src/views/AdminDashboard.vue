@@ -96,12 +96,32 @@
 
       <section>
         <h2>Draw &amp; next round</h2>
+        <label class="check">
+          <input v-model="form.automatic_announcement" type="checkbox" />
+          Automatic announcement
+        </label>
+        <p class="hint">
+          On: in-app shuffle and live reveal of 1st/2nd/3rd, then Telegram DMs.
+          Off: when the timer ends, users see that announcement is performed manually and the video will be released on the Telegram group.
+        </p>
         <div class="timer-grid">
           <label>Next round timer (minutes)
-            <input v-model.number="form.next_round_minutes" type="number" min="1" max="1440" />
+            <input
+              v-model.number="form.next_round_minutes"
+              type="number"
+              min="1"
+              max="1440"
+              :disabled="!form.automatic_announcement"
+            />
           </label>
           <label>Winner announce interval (seconds)
-            <input v-model.number="form.winner_reveal_seconds" type="number" min="2" max="60" />
+            <input
+              v-model.number="form.winner_reveal_seconds"
+              type="number"
+              min="2"
+              max="60"
+              :disabled="!form.automatic_announcement"
+            />
           </label>
         </div>
         <p class="hint">
@@ -511,6 +531,7 @@ export default {
         countdown_seconds: 45,
         next_round_minutes: 10,
         winner_reveal_seconds: 6,
+        automatic_announcement: true,
         payment_accounts: [],
         admin_blocked_numbers: [],
         taken_numbers: [],
@@ -711,6 +732,7 @@ export default {
         countdown_seconds: data.countdown_seconds ?? 0,
         next_round_minutes: data.next_round_minutes ?? 10,
         winner_reveal_seconds: data.winner_reveal_seconds ?? 6,
+        automatic_announcement: data.automatic_announcement !== false,
         payment_accounts: Array.isArray(data.payment_accounts)
           ? data.payment_accounts.map((a) => ({ ...a }))
           : [],
@@ -798,6 +820,7 @@ export default {
           countdown_seconds: this.form.countdown_seconds,
           next_round_minutes: Math.max(1, Number(this.form.next_round_minutes) || 10),
           winner_reveal_seconds: Math.min(60, Math.max(2, Number(this.form.winner_reveal_seconds) || 6)),
+          automatic_announcement: !!this.form.automatic_announcement,
           payment_accounts: this.form.payment_accounts,
           admin_blocked_numbers: this.form.admin_blocked_numbers,
         }

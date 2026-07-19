@@ -47,6 +47,7 @@ export const featuredRaffle = {
   nextRoundMinutes: 10,
   winnerRevealSeconds: 6,
   winnersNotified: false,
+  automaticAnnouncement: true,
   image: '',
   badge: 'trending',
   rating: 5.0,
