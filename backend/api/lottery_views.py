@@ -399,7 +399,7 @@ def lottery_submit_purchase(request):
 
     if not receipt_sms:
         return JsonResponse({
-            'error': f'Please enter the full sms you received from {provider_label}',
+            'error': f'እባክዎ ከ {provider_label} የተቀበሉትን ሙሉ SMS አስገብተው እንደገና ይሞክሩ፡፡',
             'error_code': 'incomplete_sms',
             'provider': provider,
         }, status=400)
@@ -412,8 +412,8 @@ def lottery_submit_purchase(request):
         available = _available_numbers(settings_obj, count=max(24, len(numbers) * 4), exclude=numbers)
         return JsonResponse({
             'error': (
-                f'This number {conflict_str} is taken by another user '
-                f'please choose different number from these'
+                f'ይህ {conflict_str} ቁጥር በሌላ ሰው ተይዟል፡፡ '
+                f'እባክዎ ከነዚህ ውስጥ አዲስ ቁጥር ይምረጡ፡፡'
             ),
             'error_code': 'numbers_taken',
             'taken': conflict,
@@ -440,7 +440,7 @@ def lottery_submit_purchase(request):
 
     if not parsed or not parsed.get('reference'):
         return JsonResponse({
-            'error': f'Please enter the full sms you received from {provider_label}',
+            'error': f'እባክዎ ከ {provider_label} የተቀበሉትን ሙሉ SMS አስገብተው እንደገና ይሞክሩ፡፡',
             'error_code': 'incomplete_sms',
             'provider': provider,
         }, status=400)
@@ -450,7 +450,7 @@ def lottery_submit_purchase(request):
 
     if _transaction_already_used(provider, reference, account_suffix):
         return JsonResponse({
-            'error': 'This receipt was checked before, try again with genuine receipt',
+            'error': 'ይህ ደረሰኝ ከዚህ በፊት አገልግሎት ላይ ውሏል እባክዎ አዲስ ያስገቡ፡፡ ',
             'error_code': 'already_verified',
             'reference': reference,
         }, status=409)
@@ -470,7 +470,7 @@ def lottery_submit_purchase(request):
     ).hexdigest()
     if LotteryPurchase.objects.filter(receipt_hash=receipt_hash).exists():
         return JsonResponse({
-            'error': 'This receipt was checked before, try again with genuine receipt',
+            'error': 'ይህ ደረሰኝ ከዚህ በፊት አገልግሎት ላይ ውሏል እባክዎ አዲስ ያስገቡ፡፡ ',
             'error_code': 'already_verified',
             'reference': reference,
         }, status=409)
@@ -508,7 +508,7 @@ def lottery_submit_purchase(request):
             'success': True,
             'verified': False,
             'manual_review': True,
-            'message': 'Due to system problem your request is sent to manual review please wait moment',
+            'message': ' በሲስተም ችግር ምክንያት ጥያቄዎ ለተጨማሪ ማረጋገጫ ተልኳል እባክዎ ይጠብቁ፡፡ ',
             'message_key': 'manualReview',
             'failed_id': failed.id,
         })
@@ -554,7 +554,7 @@ def lottery_submit_purchase(request):
             'success': True,
             'verified': False,
             'manual_review': True,
-            'message': 'Due to system problem your request is sent to manual review please wait moment',
+            'message': ' በሲስተም ችግር ምክንያት ጥያቄዎ ለተጨማሪ ማረጋገጫ ተልኳል እባክዎ ይጠብቁ፡፡ ',
             'message_key': 'manualReview',
             'failed_id': failed.id,
         })
@@ -569,9 +569,9 @@ def lottery_submit_purchase(request):
         failed = _save_failed(reason, check_amount)
         return JsonResponse({
             'error': (
-                f'Payment amount ({check_amount} Birr) does not match required ticket total '
+                f'በቴክስቱ ያለው ገንዘብ ({check_amount} Birr) ልክ አይደለም '
                 f'({amount} Birr = {len(numbers)} × {settings_obj.ticket_price}). '
-                f'Your request was saved for manual review.'
+                f'ጥያቄዎ ለተጨማሪ ማረጋገጫ ተልኳል እባክዎ ይጠብቁ፡፡'
             ),
             'error_code': 'amount_mismatch',
             'expected_amount': float(amount),
@@ -587,8 +587,8 @@ def lottery_submit_purchase(request):
         available = _available_numbers(settings_obj, count=max(24, len(numbers) * 4), exclude=numbers)
         return JsonResponse({
             'error': (
-                f'This number {conflict_str} is taken by another user '
-                f'please choose different number from these'
+                f'ይህ {conflict_str} ቁጥር በሌላ ሰው ተይዟል፡፡ '
+                f'እባክዎ ከነዚህ ውስጥ አዲስ ቁጥር ይምረጡ፡፡'
             ),
             'error_code': 'numbers_taken',
             'taken': conflict,
@@ -620,7 +620,7 @@ def lottery_submit_purchase(request):
     return JsonResponse({
         'success': True,
         'verified': True,
-        'message': 'Payment verified successfully!',
+        'message': 'ክፍያው ልክ መሆኑ ተረጋግጧል!',
         'message_key': 'paymentVerified',
         'purchase': purchase.to_dict(request),
     })
@@ -833,7 +833,7 @@ def _sync_telegram_bot_profile(settings_obj):
     long_desc = (settings_obj.bot_description or '').strip()
     if not long_desc:
         brand = (settings_obj.brand_name or 'Digital Lottery').strip()
-        long_desc = f'🚗 {brand}\n\nእንኳን ደህና መጡ።'
+        long_desc = f'{brand}\n\nእንኳን ደህና መጡ።'
 
     for method, payload in (
         ('setMyDescription', {'description': long_desc}),
@@ -952,10 +952,8 @@ def lottery_purchase_action(request, purchase_id):
         if purchase.user_id and purchase.user and purchase.user.telegram_id:
             nums = ', '.join(str(n).zfill(3) for n in (purchase.numbers or []))
             msg = (
-                f'✅ Receipt verified!\n\n'
-                f'Your lottery numbers: {nums}\n'
-                f'Amount: {purchase.amount} Birr\n\n'
-                f'Open the app → Tickets to view them.'
+                f'ክፍያው ልክ መሆኑ ተረጋግጧል!\n\n'
+                f'የእጣ ቁጥርዎች: {nums}\n'
             )
             try:
                 from telegram_bot.notifications import send_notification_sync
@@ -967,7 +965,7 @@ def lottery_purchase_action(request, purchase_id):
 
     if action == 'reject':
         if purchase.user_id and purchase.user and purchase.user.telegram_id:
-            msg = '❌ Your payment receipt was not approved. Please contact support or submit again with a clearer receipt.'
+            msg = '❌ የክፍያ ጥያቄዎ ተቀባይነት አላገኘም እባክዎ እንደገና በትክክል ይሞክሩ.'
             if note:
                 msg += f'\n\nNote: {note}'
             try:
@@ -1244,8 +1242,8 @@ def lottery_announce_winner(request):
     settings_obj.winner_announced_at = timezone.now()
     settings_obj.save(reset_timer=False)
 
-    announce = message or f'🎉 Winner announced! Winning number: {winner_number}'
-    full_msg = f'{announce}\n\nWinning number: {str(winner_number).zfill(3)}'
+    announce = message or f'🎉 አሸናፊዎች ታውቀዋል! አሸናፊ ቁጥር: {winner_number}'
+    full_msg = f'{announce}\n\nአሸናፊ ቁጥር: {str(winner_number).zfill(3)}'
 
     notified = 0
     try:
@@ -1264,7 +1262,7 @@ def lottery_announce_winner(request):
                 except (TypeError, ValueError):
                     pass
             if win_int is not None and win_int in nums:
-                send_notification_sync(p.user.telegram_id, f'🏆 Congratulations!\n\n{full_msg}')
+                send_notification_sync(p.user.telegram_id, f'🏆 እንኳን ደስ አለዎት!\n\n{full_msg}')
             else:
                 send_notification_sync(p.user.telegram_id, full_msg)
             notified += 1
@@ -1477,7 +1475,7 @@ def lottery_failed_deposit_action(request, failed_id):
             from telegram_bot.notifications import send_notification_sync
             send_notification_sync(
                 failed.user.telegram_id,
-                f'✅ Payment approved!\n\nYour lottery numbers: {nums}\nAmount: {amount} Birr',
+                f'✅ ክፍያው ልክ መሆኑ ተረጋግጧል!\n\nየእጣ ቁጥርዎች: {nums}',
             )
         except Exception:
             pass
@@ -1535,11 +1533,10 @@ def _send_winner_dms(settings_obj):
                 if not (purchase.user and purchase.user.telegram_id):
                     continue
                 msg = (
-                    f'🏆 Congratulations!\n\n'
-                    f'You won {place_label} (place #{place})!\n'
-                    f'Winning number: {str(win_num).zfill(3)}\n'
-                    f'Prize amount: {prize_amt:,} ብር\n\n'
-                    f'Please contact support to claim your prize.'
+                    f'🏆 እንኳን ደስ አለዎት!\n\n'
+                    f'{place}ኛ እጣ አሸንፈዋል!\n'
+                    f'አሸናፊ ቁጥር: {str(win_num).zfill(3)}\n'
+                    f'ገንዘብ: {prize_amt:,} ብር\n\n'
                 )
                 ok, _ = send_notification_sync(purchase.user.telegram_id, msg)
                 if ok:
