@@ -664,7 +664,7 @@ def lottery_settings_admin(request):
             'ticket_price', 'total_tickets', 'sold_count',
             'countdown_days', 'countdown_hours', 'countdown_minutes', 'countdown_seconds',
             'prize_1st', 'prize_2nd', 'prize_3rd', 'next_round_minutes',
-            'winner_reveal_seconds',
+            'winner_reveal_seconds', 'draw_timer_seconds',
         ]
 
         old_timer = (
@@ -673,6 +673,7 @@ def lottery_settings_admin(request):
             settings_obj.countdown_minutes,
             settings_obj.countdown_seconds,
         )
+        old_mode = settings_obj.draw_mode or LotterySettings.DRAW_MODE_DATE
 
         for field in str_fields:
             if field in data and data[field] is not None:
@@ -685,12 +686,25 @@ def lottery_settings_admin(request):
                 except (TypeError, ValueError):
                     pass
 
+        if 'draw_mode' in data and data.get('draw_mode') is not None:
+            mode = str(data.get('draw_mode') or '').strip().lower()
+            if mode in (
+                LotterySettings.DRAW_MODE_DATE,
+                LotterySettings.DRAW_MODE_SOLD_OUT,
+                LotterySettings.DRAW_MODE_MANUAL,
+            ):
+                settings_obj.draw_mode = mode
+
         if getattr(settings_obj, 'next_round_minutes', 0) < 1:
             settings_obj.next_round_minutes = 10
         if getattr(settings_obj, 'winner_reveal_seconds', 0) < 2:
             settings_obj.winner_reveal_seconds = 6
         elif int(settings_obj.winner_reveal_seconds or 0) > 60:
             settings_obj.winner_reveal_seconds = 60
+        if getattr(settings_obj, 'draw_timer_seconds', 0) < 5:
+            settings_obj.draw_timer_seconds = 60
+        elif int(settings_obj.draw_timer_seconds or 0) > 600:
+            settings_obj.draw_timer_seconds = 600
 
         if 'automatic_announcement' in data and data.get('automatic_announcement') is not None:
             raw = data.get('automatic_announcement')
@@ -707,6 +721,7 @@ def lottery_settings_admin(request):
             settings_obj.countdown_minutes,
             settings_obj.countdown_seconds,
         )
+        mode_changed = old_mode != (settings_obj.draw_mode or LotterySettings.DRAW_MODE_DATE)
 
         if accounts_raw is not None:
             if isinstance(accounts_raw, str):
@@ -750,7 +765,15 @@ def lottery_settings_admin(request):
             settings_obj.car_image = None
 
         force_reset = str(data.get('reset_timer', '')).lower() in ('1', 'true', 'yes', 'on')
-        settings_obj.save(reset_timer=timer_touched or force_reset)
+        # Changing away from / to date mode should clear or set the public deadline correctly
+        if mode_changed and not settings_obj.uses_date_deadline():
+            settings_obj.save(clear_timer=True)
+        else:
+            settings_obj.save(
+                reset_timer=timer_touched or force_reset or (
+                    mode_changed and settings_obj.uses_date_deadline()
+                )
+            )
 
         if 'verify_api_key' in data and data.get('verify_api_key') is not None:
             try:
@@ -1499,7 +1522,9 @@ def lottery_run_draw(request):
 
     settings_obj = LotterySettings.get_settings()
     now = timezone.now()
-    ends = settings_obj.ends_at or settings_obj.compute_ends_at()
+    ends = settings_obj.ends_at
+    if ends is None and settings_obj.uses_date_deadline():
+        ends = settings_obj.compute_ends_at()
 
     if not settings_obj.automatic_announcement:
         return JsonResponse({
@@ -1508,8 +1533,16 @@ def lottery_run_draw(request):
             'automatic_announcement': False,
         }, status=400)
 
+    if ends is None:
+        return JsonResponse({
+            'error': 'Draw has not been started yet',
+            'error_code': 'not_started',
+            'draw_completed': bool(settings_obj.draw_completed),
+            'taken_numbers': settings_obj.verified_taken_numbers(),
+        }, status=400)
+
     # Allow draw when timer finished, or within last 5s (client race)
-    if ends and now < ends - timedelta(seconds=5):
+    if now < ends - timedelta(seconds=5):
         remaining = int((ends - now).total_seconds())
         return JsonResponse({
             'error': 'Draw not ready yet',
@@ -1585,7 +1618,8 @@ def lottery_notify_winners(request):
         notified = _send_winner_dms(settings_obj)
         settings_obj.winners_notified = True
 
-    if not settings_obj.next_round_at:
+    # Date mode auto-starts next round; sold_out / manual wait for admin Restart
+    if settings_obj.uses_date_deadline() and not settings_obj.next_round_at:
         mins = max(1, int(settings_obj.next_round_minutes or 10))
         settings_obj.next_round_at = now + timedelta(minutes=mins)
 
@@ -1633,7 +1667,10 @@ def lottery_start_next_round(request):
         }, status=400)
 
     _clear_round_state(settings_obj, clear_tickets=True)
-    settings_obj.save(reset_timer=True)
+    if settings_obj.uses_date_deadline():
+        settings_obj.save(reset_timer=True)
+    else:
+        settings_obj.save(clear_timer=True)
 
     return JsonResponse({
         'success': True,
@@ -1667,9 +1704,23 @@ def lottery_force_restart_round(request):
             except (TypeError, ValueError):
                 pass
 
+    if 'draw_mode' in data and data.get('draw_mode') is not None:
+        mode = str(data.get('draw_mode') or '').strip().lower()
+        if mode in (
+            LotterySettings.DRAW_MODE_DATE,
+            LotterySettings.DRAW_MODE_SOLD_OUT,
+            LotterySettings.DRAW_MODE_MANUAL,
+        ):
+            settings_obj.draw_mode = mode
+
     clear_tickets = str(data.get('clear_tickets', 'true')).lower() in ('1', 'true', 'yes', 'on')
     _clear_round_state(settings_obj, clear_tickets=clear_tickets)
-    settings_obj.save(reset_timer=True)
+    if settings_obj.uses_date_deadline():
+        settings_obj.save(reset_timer=True)
+        msg = 'Round restarted with a fresh countdown'
+    else:
+        settings_obj.save(clear_timer=True)
+        msg = 'Round restarted. Use Start Draw when ready.'
 
     out = settings_obj.to_public_dict(request)
     out['car_image_url_raw'] = settings_obj.car_image_url or ''
@@ -1679,6 +1730,64 @@ def lottery_force_restart_round(request):
 
     return JsonResponse({
         'success': True,
-        'message': 'Round restarted with a fresh countdown',
+        'message': msg,
+        'settings': out,
+    })
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_start_draw(request):
+    """
+    Admin starts the pre-draw countdown UI (big timer), then automatic or manual
+    announce runs when the timer hits zero — same as the final minute of date mode.
+    """
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    settings_obj = LotterySettings.get_settings()
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        data = {}
+
+    if settings_obj.draw_completed:
+        return JsonResponse({
+            'error': 'Draw already completed. Restart the round first.',
+            'error_code': 'draw_completed',
+        }, status=400)
+
+    try:
+        seconds = int(float(data.get('timer_seconds', settings_obj.draw_timer_seconds or 60)))
+    except (TypeError, ValueError):
+        seconds = int(settings_obj.draw_timer_seconds or 60)
+    seconds = max(5, min(600, seconds))
+
+    if settings_obj.draw_mode == LotterySettings.DRAW_MODE_SOLD_OUT:
+        taken = settings_obj.taken_numbers_set()
+        total = max(1, int(settings_obj.total_tickets or 1))
+        if len(taken) < total:
+            # Allow override if admin forces it
+            if str(data.get('force', '')).lower() not in ('1', 'true', 'yes', 'on'):
+                return JsonResponse({
+                    'error': f'Not sold out yet ({len(taken)}/{total}). Pass force=true to start anyway.',
+                    'error_code': 'not_sold_out',
+                    'sold_count': len(taken),
+                    'total_tickets': total,
+                }, status=400)
+
+    settings_obj.draw_timer_seconds = seconds
+    settings_obj.ends_at = timezone.now() + timedelta(seconds=seconds)
+    settings_obj.save(reset_timer=False)
+
+    out = settings_obj.to_public_dict(request)
+    out['car_image_url_raw'] = settings_obj.car_image_url or ''
+    out['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
+    out['verify_api_key'] = settings_obj.verify_api_key or ''
+    out['has_verify_api_key'] = bool((settings_obj.verify_api_key or '').strip())
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Draw started — {seconds}s countdown live for users',
         'settings': out,
     })

@@ -71,6 +71,27 @@
       </section>
 
       <section>
+        <h2>Draw trigger</h2>
+        <div class="mode-row">
+          <label class="mode-option">
+            <input v-model="form.draw_mode" type="radio" value="date" />
+            Date deadline
+          </label>
+          <label class="mode-option">
+            <input v-model="form.draw_mode" type="radio" value="sold_out" />
+            When all tickets sold
+          </label>
+          <label class="mode-option">
+            <input v-model="form.draw_mode" type="radio" value="manual" />
+            Admin starts when ready
+          </label>
+        </div>
+        <p class="hint">
+          Date: mini-app shows the countdown. Sold out / Admin: countdown is hidden and users see the display name until you click Start Draw.
+        </p>
+      </section>
+
+      <section v-if="form.draw_mode === 'date'">
         <h2>Countdown</h2>
         <div class="timer-grid">
           <label>Days <input v-model.number="form.countdown_days" type="number" min="0" /></label>
@@ -78,18 +99,37 @@
           <label>Minutes <input v-model.number="form.countdown_minutes" type="number" min="0" /></label>
           <label>Seconds <input v-model.number="form.countdown_seconds" type="number" min="0" /></label>
         </div>
-        <div class="restart-box">
-          <p class="hint">
-            If the draw is stuck (e.g. timer hit 0 with no verified tickets), set a new time above and click Restart round.
-            This clears winners, draw state, and tickets, then starts a fresh countdown.
-          </p>
+      </section>
+
+      <section v-if="form.draw_mode !== 'date'">
+        <h2>Start Draw</h2>
+        <label>Pre-draw timer (seconds)
+          <input v-model.number="form.draw_timer_seconds" type="number" min="5" max="600" />
+        </label>
+        <p class="hint">
+          Users see the big countdown for this many seconds, then automatic or manual announce (below).
+          <span v-if="form.draw_mode === 'sold_out'">
+            Sold-out mode blocks Start Draw until every ticket is taken (you can force-start).
+          </span>
+          After winners, start the next round with Restart round — it does not auto-start.
+        </p>
+        <div class="start-box">
           <button
             type="button"
-            class="btn danger restart-btn"
-            :disabled="restarting || saving"
-            @click="restartRound"
+            class="btn primary restart-btn"
+            :disabled="startingDraw || saving || restarting"
+            @click="startDraw(false)"
           >
-            {{ restarting ? 'Restarting…' : 'Restart round' }}
+            {{ startingDraw ? 'Starting…' : 'Start Draw' }}
+          </button>
+          <button
+            v-if="form.draw_mode === 'sold_out'"
+            type="button"
+            class="btn ghost"
+            :disabled="startingDraw || saving || restarting"
+            @click="startDraw(true)"
+          >
+            Force start (not sold out)
           </button>
         </div>
       </section>
@@ -111,7 +151,7 @@
               type="number"
               min="1"
               max="1440"
-              :disabled="!form.automatic_announcement"
+              :disabled="!form.automatic_announcement || form.draw_mode !== 'date'"
             />
           </label>
           <label>Winner announce interval (seconds)
@@ -125,9 +165,29 @@
           </label>
         </div>
         <p class="hint">
-          Next round: countdown under winners (default 10 min), then tickets clear and a new round starts.
-          Announce interval: how long each place (1st → 2nd → 3rd) stays on screen before the next. Winner Telegram DMs are sent only after all three are announced live.
+          <template v-if="form.draw_mode === 'date'">
+            Next round: countdown under winners (default 10 min), then tickets clear and a new round starts.
+          </template>
+          <template v-else>
+            Next round: admin decides — use Restart round below after the draw.
+          </template>
+          Announce interval: how long each place (1st → 2nd → 3rd) stays on screen before the next.
         </p>
+        <div class="restart-box">
+          <p class="hint">
+            Restart clears winners, draw state, and tickets
+            <template v-if="form.draw_mode === 'date'">, then starts a fresh countdown.</template>
+            <template v-else>, then waits until you Start Draw again.</template>
+          </p>
+          <button
+            type="button"
+            class="btn danger restart-btn"
+            :disabled="restarting || saving || startingDraw"
+            @click="restartRound"
+          >
+            {{ restarting ? 'Restarting…' : 'Restart round' }}
+          </button>
+        </div>
       </section>
 
       <section>
@@ -472,6 +532,7 @@ import {
   getLotterySettingsAdmin,
   updateLotterySettingsAdmin,
   restartLotteryRoundAdmin,
+  startLotteryDrawAdmin,
   getLotteryPurchasesAdmin,
   lotteryPurchaseAction,
   announceLotteryWinner,
@@ -509,6 +570,7 @@ export default {
       message: '',
       error: '',
       restarting: false,
+      startingDraw: false,
       file: null,
       activeTab: 'settings',
       form: {
@@ -525,6 +587,8 @@ export default {
         car_image_url_raw: '',
         ticket_price: 3000,
         total_tickets: 3500,
+        draw_mode: 'date',
+        draw_timer_seconds: 60,
         countdown_days: 12,
         countdown_hours: 10,
         countdown_minutes: 24,
@@ -726,6 +790,8 @@ export default {
         car_image_url_raw: data.car_image_url_raw || '',
         ticket_price: data.ticket_price ?? 3000,
         total_tickets: data.total_tickets ?? 3500,
+        draw_mode: data.draw_mode || 'date',
+        draw_timer_seconds: data.draw_timer_seconds ?? 60,
         countdown_days: data.countdown_days ?? 0,
         countdown_hours: data.countdown_hours ?? 0,
         countdown_minutes: data.countdown_minutes ?? 0,
@@ -768,8 +834,11 @@ export default {
       }
     },
     async restartRound() {
+      const dateMode = this.form.draw_mode === 'date'
       const ok = window.confirm(
-        'Restart the round now?\n\nThis will clear winners, draw state, and tickets, then start a new countdown using the Days/Hours/Minutes/Seconds values above.'
+        dateMode
+          ? 'Restart the round now?\n\nThis will clear winners, draw state, and tickets, then start a new countdown using the Days/Hours/Minutes/Seconds values above.'
+          : 'Restart the round now?\n\nThis will clear winners, draw state, and tickets. Users will see the display name until you Start Draw again.'
       )
       if (!ok) return
       this.restarting = true
@@ -777,6 +846,7 @@ export default {
       this.error = ''
       try {
         const res = await restartLotteryRoundAdmin({
+          draw_mode: this.form.draw_mode,
           countdown_days: this.form.countdown_days,
           countdown_hours: this.form.countdown_hours,
           countdown_minutes: this.form.countdown_minutes,
@@ -784,8 +854,9 @@ export default {
           clear_tickets: true,
         })
         this.applyData(res.settings || res)
-        this.message =
-          'Round restarted. Mini-app users should refresh Home (or wait a few seconds) to see the new countdown.'
+        this.message = dateMode
+          ? 'Round restarted. Mini-app users should refresh Home (or wait a few seconds) to see the new countdown.'
+          : 'Round restarted. Click Start Draw when you are ready for the next draw.'
       } catch (e) {
         if (e.response?.status === 401) {
           this.unauthorized = true
@@ -794,6 +865,40 @@ export default {
         this.error = e.response?.data?.error || 'Restart failed'
       } finally {
         this.restarting = false
+      }
+    },
+    async startDraw(force = false) {
+      const seconds = Math.min(600, Math.max(5, Number(this.form.draw_timer_seconds) || 60))
+      const ok = window.confirm(
+        `Start the live draw countdown for ${seconds} seconds?\n\nUsers will see the big timer, then ${
+          this.form.automatic_announcement ? 'automatic announce' : 'manual announce message'
+        }.`
+      )
+      if (!ok) return
+      this.startingDraw = true
+      this.message = ''
+      this.error = ''
+      try {
+        // Persist timer preference first
+        await updateLotterySettingsAdmin({
+          draw_mode: this.form.draw_mode,
+          draw_timer_seconds: seconds,
+          automatic_announcement: !!this.form.automatic_announcement,
+        })
+        const res = await startLotteryDrawAdmin({
+          timer_seconds: seconds,
+          force: !!force,
+        })
+        this.applyData(res.settings || res)
+        this.message = res.message || `Draw started — ${seconds}s countdown is live.`
+      } catch (e) {
+        if (e.response?.status === 401) {
+          this.unauthorized = true
+          this.loggedIn = false
+        }
+        this.error = e.response?.data?.error || 'Could not start draw'
+      } finally {
+        this.startingDraw = false
       }
     },
     async save() {
@@ -814,6 +919,8 @@ export default {
           car_image_url: this.form.car_image_url_raw || '',
           ticket_price: this.form.ticket_price,
           total_tickets: this.form.total_tickets,
+          draw_mode: this.form.draw_mode || 'date',
+          draw_timer_seconds: Math.min(600, Math.max(5, Number(this.form.draw_timer_seconds) || 60)),
           countdown_days: this.form.countdown_days,
           countdown_hours: this.form.countdown_hours,
           countdown_minutes: this.form.countdown_minutes,
@@ -1092,15 +1199,37 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 .area { resize: vertical; }
 .timer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 @media (min-width: 640px) { .timer-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.restart-box {
+.mode-row { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.5rem; }
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #111827;
+  cursor: pointer;
+}
+.mode-option:has(input:checked) {
+  border-color: #f5a623;
+  background: #1a1408;
+}
+.restart-box,
+.start-box {
   margin-top: 0.85rem;
   padding: 0.85rem;
-  border: 1px solid #7f1d1d;
   border-radius: 0.75rem;
-  background: rgba(127, 29, 29, 0.15);
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+.restart-box {
+  border: 1px solid #7f1d1d;
+  background: rgba(127, 29, 29, 0.15);
+}
+.start-box {
+  border: 1px solid #854d0e;
+  background: rgba(245, 166, 35, 0.1);
 }
 .restart-btn { align-self: flex-start; font-weight: 700; }
 .hint { font-size: 0.8rem; color: #9ca3af; margin: 0; }

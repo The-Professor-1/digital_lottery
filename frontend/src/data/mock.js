@@ -48,6 +48,8 @@ export const featuredRaffle = {
   winnerRevealSeconds: 6,
   winnersNotified: false,
   automaticAnnouncement: true,
+  drawMode: 'date',
+  drawTimerSeconds: 60,
   image: '',
   badge: 'trending',
   rating: 5.0,

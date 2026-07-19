@@ -30,7 +30,17 @@
       <p v-if="raffle.color" class="text-lime-400 mt-0.5">{{ raffle.color }}</p>
     </div>
 
-    <CountdownTimer :ends-at="raffle.endsAt" show-label />
+    <CountdownTimer
+      v-if="(raffle.drawMode || 'date') === 'date' && raffle.endsAt"
+      :ends-at="raffle.endsAt"
+      show-label
+    />
+    <div
+      v-else
+      class="rounded-2xl border border-white/10 bg-black/25 px-4 py-5 text-center"
+    >
+      <p class="text-white text-xl font-bold">{{ raffle.displayName || raffle.name }}</p>
+    </div>
     <TicketProgress
       :sold-count="raffle.soldCount"
       :total-tickets="raffle.totalTickets"

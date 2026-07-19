@@ -1008,6 +1008,24 @@ class LotterySettings(models.Model):
     ticket_price = models.PositiveIntegerField(default=3000)
     total_tickets = models.PositiveIntegerField(default=3500)
     sold_count = models.PositiveIntegerField(default=0)
+    DRAW_MODE_DATE = 'date'
+    DRAW_MODE_SOLD_OUT = 'sold_out'
+    DRAW_MODE_MANUAL = 'manual'
+    DRAW_MODE_CHOICES = [
+        (DRAW_MODE_DATE, 'Date deadline'),
+        (DRAW_MODE_SOLD_OUT, 'When all tickets sold'),
+        (DRAW_MODE_MANUAL, 'Admin starts draw'),
+    ]
+    draw_mode = models.CharField(
+        max_length=20,
+        choices=DRAW_MODE_CHOICES,
+        default=DRAW_MODE_DATE,
+        help_text='How the draw is triggered: date countdown, sold out, or admin start',
+    )
+    draw_timer_seconds = models.PositiveIntegerField(
+        default=60,
+        help_text='Default pre-draw countdown seconds when admin clicks Start Draw',
+    )
     countdown_days = models.PositiveIntegerField(default=12)
     countdown_hours = models.PositiveIntegerField(default=10)
     countdown_minutes = models.PositiveIntegerField(default=24)
@@ -1064,10 +1082,22 @@ class LotterySettings(models.Model):
             seconds=int(self.countdown_seconds or 0),
         )
 
+    def uses_date_deadline(self):
+        return (self.draw_mode or self.DRAW_MODE_DATE) == self.DRAW_MODE_DATE
+
     def save(self, *args, **kwargs):
         self.pk = 1
         reset_timer = kwargs.pop('reset_timer', False)
-        if reset_timer or not self.ends_at:
+        clear_timer = kwargs.pop('clear_timer', False)
+        if clear_timer:
+            self.ends_at = None
+        elif reset_timer:
+            if self.uses_date_deadline():
+                self.ends_at = self.compute_ends_at()
+            else:
+                # Non-date modes wait for admin Start Draw
+                self.ends_at = None
+        elif not self.ends_at and self.uses_date_deadline():
             self.ends_at = self.compute_ends_at()
         super().save(*args, **kwargs)
 
@@ -1111,10 +1141,11 @@ class LotterySettings(models.Model):
 
     def to_public_dict(self, request=None):
         ends = self.ends_at
-        if ends is None:
+        if ends is None and self.uses_date_deadline():
             ends = self.compute_ends_at()
         taken = sorted(self.taken_numbers_set())
         sold = len(taken)
+        mode = self.draw_mode or self.DRAW_MODE_DATE
         return {
             'brand_name': self.brand_name,
             'car_name': self.car_name,
@@ -1130,6 +1161,8 @@ class LotterySettings(models.Model):
             'sold_count': sold,
             'taken_numbers': taken,
             'verified_taken_numbers': self.verified_taken_numbers(),
+            'draw_mode': mode,
+            'draw_timer_seconds': max(5, int(self.draw_timer_seconds or 60)),
             'countdown_days': self.countdown_days,
             'countdown_hours': self.countdown_hours,
             'countdown_minutes': self.countdown_minutes,
@@ -1166,7 +1199,7 @@ class LotterySettings(models.Model):
     @classmethod
     def get_settings(cls):
         obj, created = cls.objects.get_or_create(pk=1)
-        if created or not obj.ends_at:
+        if created or (obj.uses_date_deadline() and not obj.ends_at):
             obj.save(reset_timer=True)
             obj.refresh_from_db()
         return obj

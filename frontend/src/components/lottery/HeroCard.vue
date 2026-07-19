@@ -3,7 +3,7 @@
     class="rounded-card overflow-hidden bg-gradient-to-b from-forest-dim via-forest-deep to-ink-100 border border-forest/20"
   >
     <!-- Draw / final minute takeover -->
-    <WinnerReveal v-if="showDrawUi" :ends-at="raffle.endsAt" />
+    <WinnerReveal v-if="showDrawUi" :ends-at="raffle.endsAt || 0" />
 
     <template v-else>
       <button type="button" class="block w-full text-left" @click="$emit('open')">
@@ -27,15 +27,21 @@
             3ኛ እጣ {{ formatAmount(raffle.prize3rd) }} ብር
           </h3>
         </div>
-
-        <div class="px-4 pt-3 pb-2">
-          <h2 class="text-white text-xl font-bold leading-tight">{{ raffle.displayName || raffle.name }}</h2>
-          <p v-if="raffle.color" class="text-lime-400/90 text-sm mt-0.5">{{ raffle.color }}</p>
-        </div>
       </button>
 
-      <div class="px-4 pb-4 space-y-3">
-        <CountdownTimer :ends-at="raffle.endsAt" />
+      <div class="px-4 pb-4 space-y-3 pt-3">
+        <!-- Date mode: countdown. Other modes: display name only until admin starts draw -->
+        <CountdownTimer v-if="showCountdown" :ends-at="raffle.endsAt" />
+        <div
+          v-else
+          class="rounded-2xl border border-white/10 bg-black/25 px-4 py-5 text-center"
+        >
+          <h2 class="text-white text-xl font-bold leading-tight">
+            {{ raffle.displayName || raffle.name }}
+          </h2>
+          <p v-if="raffle.color" class="text-lime-400/90 text-sm mt-1">{{ raffle.color }}</p>
+        </div>
+
         <TicketProgress :sold-count="raffle.soldCount" :total-tickets="raffle.totalTickets" />
 
         <div class="flex items-center gap-3 pt-1">
@@ -67,14 +73,30 @@ const props = defineProps({
 defineEmits(['open', 'buy'])
 
 const { t } = useI18n()
-const { inFinalMinute, isFinished } = useCountdown(() => props.raffle.endsAt)
+const { remainingMs, inFinalMinute, isFinished } = useCountdown(() => props.raffle.endsAt)
 
 const autoAnnounce = computed(() => props.raffle.automaticAnnouncement !== false)
+const drawMode = computed(() => props.raffle.drawMode || 'date')
+const isDateMode = computed(() => drawMode.value === 'date')
+
+const showCountdown = computed(
+  () => isDateMode.value && !!props.raffle.endsAt && !props.raffle.drawCompleted
+)
+
+/** Admin-started draw (sold_out / manual): show big timer for the whole ends_at window */
+const adminDrawLive = computed(() => {
+  if (isDateMode.value) return false
+  if (!props.raffle.endsAt) return false
+  return remainingMs.value > 0 || isFinished.value
+})
 
 const showDrawUi = computed(() => {
   if (props.raffle.drawCompleted) return true
+  // Sold-out / admin mode: show big timer for the whole Start Draw window
+  if (!isDateMode.value) {
+    return adminDrawLive.value
+  }
   if (!autoAnnounce.value) {
-    // Manual mode: only show message after timer ends
     return isFinished.value
   }
   return inFinalMinute.value || isFinished.value

@@ -64,11 +64,13 @@ export function applyPublicSettings(data) {
     winnerRevealSeconds: data.winner_reveal_seconds ?? store.raffle.winnerRevealSeconds ?? 6,
     winnersNotified: !!data.winners_notified,
     automaticAnnouncement: data.automatic_announcement !== false,
+    drawMode: data.draw_mode || store.raffle.drawMode || 'date',
+    drawTimerSeconds: data.draw_timer_seconds ?? store.raffle.drawTimerSeconds ?? 60,
     image: data.car_image_url || store.raffle.image,
     ticketPrice: data.ticket_price ?? store.raffle.ticketPrice,
     totalTickets: data.total_tickets ?? store.raffle.totalTickets,
     soldCount: data.sold_count ?? 0,
-    endsAt: data.ends_at_ms || store.raffle.endsAt,
+    endsAt: data.ends_at_ms || 0,
     participants: data.sold_count ?? 0,
   }
   if (Array.isArray(data.payment_accounts) && data.payment_accounts.length) {
@@ -159,7 +161,8 @@ export function remainingTickets() {
 }
 
 export function totalPrice() {
-  return store.quantity * store.raffle.ticketPrice
+  const n = store.selectedNumbers.length || store.quantity || 0
+  return n * (store.raffle.ticketPrice || 0)
 }
 
 export function toggleTheme() {
@@ -168,7 +171,8 @@ export function toggleTheme() {
 }
 
 export function setQuantity(q) {
-  const next = Math.max(1, Math.min(10, q))
+  const max = Math.max(1, store.raffle.totalTickets || 3500)
+  const next = Math.max(1, Math.min(max, q))
   store.quantity = next
   if (store.selectedNumbers.length > next) {
     store.selectedNumbers = store.selectedNumbers.slice(0, next)
@@ -180,10 +184,13 @@ export function toggleNumber(n) {
   const idx = store.selectedNumbers.indexOf(n)
   if (idx >= 0) {
     store.selectedNumbers.splice(idx, 1)
+    store.quantity = Math.max(1, store.selectedNumbers.length)
     return
   }
-  if (store.selectedNumbers.length >= store.quantity) return
+  const max = Math.max(1, store.raffle.totalTickets || 3500)
+  if (store.selectedNumbers.length >= max) return
   store.selectedNumbers.push(n)
+  store.quantity = store.selectedNumbers.length
 }
 
 export function openPicker() {
@@ -195,13 +202,15 @@ export function closePicker() {
 }
 
 export function confirmPicker() {
-  if (store.selectedNumbers.length !== store.quantity) return
+  if (store.selectedNumbers.length < 1) return
+  store.quantity = store.selectedNumbers.length
   store.showPicker = false
   openCheckoutFromSelect()
 }
 
 export function openCheckoutFromSelect() {
-  if (store.selectedNumbers.length !== store.quantity) return
+  if (store.selectedNumbers.length < 1) return
+  store.quantity = store.selectedNumbers.length
   store.checkoutStep = 1
   store.orderDone = false
   store.orderVerified = false

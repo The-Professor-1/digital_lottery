@@ -99,10 +99,16 @@
       </div>
 
       <div class="mt-2 rounded-2xl border border-gold/40 bg-black/35 px-4 py-4 text-center space-y-2">
-        <p class="text-white/70 text-xs uppercase tracking-wide">{{ t.nextRoundIn }}</p>
-        <div class="text-gold text-3xl font-extrabold tabular-nums">
-          {{ nextRoundLabel }}
-        </div>
+        <template v-if="adminControlsRound">
+          <p class="text-white/70 text-xs uppercase tracking-wide">{{ t.waitingAdminNextRound }}</p>
+          <p class="text-white/55 text-sm leading-relaxed">{{ t.waitingAdminNextRoundHint }}</p>
+        </template>
+        <template v-else>
+          <p class="text-white/70 text-xs uppercase tracking-wide">{{ t.nextRoundIn }}</p>
+          <div class="text-gold text-3xl font-extrabold tabular-nums">
+            {{ nextRoundLabel }}
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -126,6 +132,7 @@ const { remainingSeconds, inFinalMinute, isFinished } = useCountdown(() => props
 const phase = ref('idle') // idle | final | drawing | reveal | done | stuck | manual
 
 const autoAnnounce = computed(() => store.raffle.automaticAnnouncement !== false)
+const adminControlsRound = computed(() => (store.raffle.drawMode || 'date') !== 'date')
 const pulse = ref(false)
 const visibleBalls = ref([])
 const revealLabel = ref('')
@@ -302,19 +309,41 @@ async function runDrawAndReveal() {
   showNext()
 }
 
+function resetLocalDrawState() {
+  phase.value = 'idle'
+  drawResult.value = null
+  visibleBalls.value = []
+  drawStarted = false
+  resetStarted = false
+  notifyStarted = false
+  nextRoundEndsAt.value = 0
+  nextRoundLeft.value = 0
+  store.homeRefreshKey += 1
+}
+
 function startRecoverPoll() {
   if (recoverTimer) clearInterval(recoverTimer)
   recoverTimer = setInterval(async () => {
     await loadPublicSettings()
+    if (store.raffle.drawCompleted) return
+
+    const dateMode = (store.raffle.drawMode || 'date') === 'date'
     const ends = store.raffle.endsAt || 0
-    // Admin restart sets a future endsAt and clears draw_completed
-    if (!store.raffle.drawCompleted && ends > Date.now() + 2000) {
+
+    // Date mode: admin restart sets a future endsAt
+    if (dateMode) {
+      if (ends <= Date.now() + 2000) return
       clearInterval(recoverTimer)
       recoverTimer = null
-      phase.value = 'idle'
-      drawResult.value = null
-      visibleBalls.value = []
-      store.homeRefreshKey += 1
+      resetLocalDrawState()
+      return
+    }
+
+    // Non-date: restart clears endsAt; Start Draw sets a new future endsAt
+    if (!ends || ends > Date.now() + 2000) {
+      clearInterval(recoverTimer)
+      recoverTimer = null
+      resetLocalDrawState()
     }
   }, 3000)
 }
@@ -344,7 +373,11 @@ async function finishAnnounceAndNotify() {
       store.raffle.nextRoundAt = res.next_round_at_ms
     }
     store.raffle.winnersNotified = true
-    startNextRoundClock()
+    if (adminControlsRound.value) {
+      startRecoverPoll()
+    } else {
+      startNextRoundClock()
+    }
     loadPublicSettings()
   } catch (e) {
     const code = e.response?.data?.error_code
@@ -355,8 +388,11 @@ async function finishAnnounceAndNotify() {
       return
     }
     console.warn('notify winners failed', e)
-    // Still show next-round UI if timer already exists
-    startNextRoundClock()
+    if (adminControlsRound.value) {
+      startRecoverPoll()
+    } else {
+      startNextRoundClock()
+    }
   }
 }
 
@@ -449,6 +485,11 @@ watch(
       return
     }
 
+    // Date mode: last 60s. Admin-started draw: entire timer window.
+    const inDrawWindow = adminControlsRound.value
+      ? secs > 0 || finished
+      : finalMin
+
     if (!autoAnnounce.value) {
       if (finished && !store.raffle.drawCompleted) {
         enterManualAnnounce()
@@ -458,7 +499,7 @@ watch(
 
     if (finished && !drawStarted && !store.raffle.drawCompleted) {
       runDrawAndReveal()
-    } else if (finalMin && !drawStarted) {
+    } else if (inDrawWindow && !finished && !drawStarted) {
       phase.value = 'final'
       startShuffleLoop()
     }
