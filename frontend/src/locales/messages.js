@@ -4,7 +4,7 @@ export const messages = {
     home: 'ዋና ገፅ',
     tickets: 'የተያዙ እጣዎች',
     profile: 'መገለጫ',
-    buyTicket: 'እጣ ለማስያዝ',
+    buyTicket: 'የእጣ ቁጥር ለመያዝ',
     remainingTime: 'የቀረ ጊዜ',
     days: 'ቀናት',
     hours: 'ሰዓት',
