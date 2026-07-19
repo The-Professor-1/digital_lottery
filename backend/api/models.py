@@ -937,14 +937,14 @@ def default_payment_accounts():
         {
             'id': 'telebirr',
             'name': 'Telebirr',
-            'holder': 'Getachew',
-            'account': '0924242419',
+            'holder': '',
+            'account': '',
         },
         {
             'id': 'cbe',
             'name': 'Commercial Bank of Ethiopia',
-            'holder': 'Getachew Fikadu Jirata',
-            'account': '1000528139489',
+            'holder': '',
+            'account': '',
         },
     ]
 
@@ -976,7 +976,11 @@ def _absolute_file_url(file_field, request=None, cache_bust=None):
 
 class LotterySettings(models.Model):
     """Singleton settings for the money lottery mini-app (admin-configurable)."""
-    brand_name = models.CharField(max_length=120, default='Markos Digital Lottery')
+    brand_name = models.CharField(
+        max_length=120,
+        default='Digital Lottery',
+        help_text='Brand shown in app header, footer, and bot open-app button',
+    )
     car_name = models.CharField(max_length=120, default='Cash Prize', help_text='Legacy field; prefer hero_title')
     car_color = models.CharField(max_length=80, default='', blank=True)
     car_image = models.ImageField(upload_to='lottery/cars/', blank=True, null=True)
@@ -988,7 +992,7 @@ class LotterySettings(models.Model):
     )
     hero_title = models.CharField(
         max_length=160,
-        default='markos digital lottery',
+        default='Digital Lottery',
         help_text='Text shown at top of homepage prize section',
     )
     prize_1st = models.PositiveIntegerField(default=100000, help_text='1st prize amount in Birr')
@@ -1002,8 +1006,19 @@ class LotterySettings(models.Model):
     )
     display_name = models.CharField(
         max_length=160,
-        default='Markos Digital Lottery',
-        help_text='Name shown on checkout / tickets',
+        default='Digital Lottery',
+        help_text='Name shown instead of countdown (sold-out/manual modes), checkout, tickets',
+    )
+    bot_description = models.TextField(
+        blank=True,
+        default='',
+        help_text='Telegram bot profile description (shown before /start)',
+    )
+    bot_short_description = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        help_text='Telegram bot short description / About line',
     )
     ticket_price = models.PositiveIntegerField(default=3000)
     total_tickets = models.PositiveIntegerField(default=3500)
@@ -1140,22 +1155,31 @@ class LotterySettings(models.Model):
             return ''
 
     def to_public_dict(self, request=None):
+        from django.utils import timezone
+        from datetime import timedelta
+
         ends = self.ends_at
-        if ends is None and self.uses_date_deadline():
+        mode = self.draw_mode or self.DRAW_MODE_DATE
+        if ends is None and mode == self.DRAW_MODE_DATE:
             ends = self.compute_ends_at()
+        # Non-date: ignore stale deadlines so the home slot shows display_name
+        if mode != self.DRAW_MODE_DATE and ends and not self.draw_completed:
+            if ends < timezone.now() - timedelta(minutes=15):
+                ends = None
         taken = sorted(self.taken_numbers_set())
         sold = len(taken)
-        mode = self.draw_mode or self.DRAW_MODE_DATE
         return {
             'brand_name': self.brand_name,
             'car_name': self.car_name,
             'car_color': self.car_color,
             'car_image_url': self.resolved_image_url(request),
-            'hero_title': self.hero_title or 'markos digital lottery',
+            'hero_title': self.hero_title or self.brand_name or 'Digital Lottery',
             'prize_1st': int(self.prize_1st or 0),
             'prize_2nd': int(self.prize_2nd or 0),
             'prize_3rd': int(self.prize_3rd or 0),
-            'display_name': self.display_name,
+            'display_name': self.display_name or self.brand_name or 'Digital Lottery',
+            'bot_description': self.bot_description or '',
+            'bot_short_description': self.bot_short_description or '',
             'ticket_price': self.ticket_price,
             'total_tickets': self.total_tickets,
             'sold_count': sold,

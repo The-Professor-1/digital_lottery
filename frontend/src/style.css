@@ -14,6 +14,16 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Allow native select/copy/paste in form fields (Telegram WebView) */
+.selectable-field,
+input.selectable-field,
+textarea.selectable-field {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
+  pointer-events: auto !important;
+}
+
 html,
 body,
 #app {

@@ -33,12 +33,7 @@ except ImportError:
     BotCommandScopeAllPrivateChats = None
 
 
-BOT_DESCRIPTION = (
-    "🚗 ስማቸው ሎተሪ\n\n"
-    
-    "እንኳን ደህና መጡ።\n"
-
-)
+DEFAULT_BOT_DESCRIPTION = "እንኳን ደህና መጡ።"
 
 LANG_PROMPT = (
    
@@ -73,12 +68,27 @@ OWN_CONTACT_ONLY = {
    }
 
 
-def _brand_app_label():
+def _lottery_settings():
     try:
-        brand = LotterySettings.get_settings().brand_name or 'Getachew Fikadu'
+        return LotterySettings.get_settings()
     except Exception:
-        brand = 'ስማቸው ሎተሪ'
-    return f'{brand} app 🚗'
+        return None
+
+
+def _brand_app_label():
+    s = _lottery_settings()
+    brand = (s.brand_name if s else '') or 'Digital Lottery'
+    return f'{brand}'
+
+
+def _bot_description_texts():
+    s = _lottery_settings()
+    short = (s.bot_short_description if s else '') or (s.brand_name if s else '') or 'Digital Lottery'
+    long_desc = (s.bot_description if s else '') or ''
+    if not long_desc.strip():
+        brand = (s.brand_name if s else '') or 'Digital Lottery'
+        long_desc = f'{brand}\n\n{DEFAULT_BOT_DESCRIPTION}'
+    return short.strip()[:120], long_desc.strip()
 
 
 def _lang_keyboard():
@@ -354,12 +364,13 @@ async def configure_bot_profile(application):
         logger.error(f'get_me failed: {e}')
 
     try:
-        await bot.set_my_description(BOT_DESCRIPTION)
-        await bot.set_my_short_description('ስማቸው ሎተሪ')
+        short_desc, long_desc = await sync_to_async(_bot_description_texts)()
+        await bot.set_my_description(long_desc)
+        await bot.set_my_short_description(short_desc)
     except Exception as e:
         logger.warning(f'Could not set bot description (needs Bot API support): {e}')
 
-    commands = [BotCommand('start', 'Start / መጀመሪያ')]
+    commands = [BotCommand('start', 'Start / ጀምር')]
     try:
         await bot.set_my_commands(commands)
         if BotCommandScopeAllPrivateChats:

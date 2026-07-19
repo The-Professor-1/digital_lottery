@@ -19,23 +19,23 @@ export const banks = [
   {
     id: 'telebirr',
     name: 'Telebirr',
-    holder: 'Getachew',
-    account: '0924242419',
+    holder: '',
+    account: '',
   },
   {
     id: 'cbe',
     name: 'Commercial Bank of Ethiopia',
-    holder: 'Getachew Fikadu Jirata',
-    account: '1000528139489',
+    holder: '',
+    account: '',
   },
 ]
 
 export const featuredRaffle = {
   id: 'gech-ev-1',
-  name: 'Markos Digital Lottery',
-  displayName: 'Markos Digital Lottery',
+  name: 'Digital Lottery',
+  displayName: 'Digital Lottery',
   color: '',
-  heroTitle: 'markos digital lottery',
+  heroTitle: 'Digital Lottery',
   prize1st: 100000,
   prize2nd: 50000,
   prize3rd: 25000,

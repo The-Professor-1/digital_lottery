@@ -12,7 +12,7 @@
       class="relative rounded-card overflow-hidden min-h-[180px] px-5 py-7 flex flex-col items-center justify-center text-center bg-gradient-to-br from-ink-200 via-forest-deep to-ink-100 border border-forest/20"
     >
       <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">
-        {{ raffle.heroTitle || 'markos digital lottery' }}
+        {{ raffle.heroTitle || store.brandName }}
       </p>
       <h1 class="mt-3 text-white text-3xl font-extrabold leading-tight tracking-tight">
         1ኛ እጣ {{ formatAmount(raffle.prize1st) }} ብር
@@ -37,9 +37,11 @@
     />
     <div
       v-else
-      class="rounded-2xl border border-white/10 bg-black/25 px-4 py-5 text-center"
+      class="rounded-2xl bg-gradient-to-b from-forest-dim to-forest-deep border border-forest/30 p-4 text-center"
     >
-      <p class="text-white text-xl font-bold">{{ raffle.displayName || raffle.name }}</p>
+      <p class="text-gold text-xl font-extrabold">
+        {{ raffle.displayName || raffle.name || store.brandName }}
+      </p>
     </div>
     <TicketProgress
       :sold-count="raffle.soldCount"

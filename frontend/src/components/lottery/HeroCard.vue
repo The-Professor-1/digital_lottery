@@ -15,7 +15,7 @@
             style="background: radial-gradient(ellipse at 50% 0%, rgba(212,175,55,0.35), transparent 55%)"
           />
           <p class="relative text-gold text-xs font-semibold tracking-[0.18em] uppercase">
-            {{ raffle.heroTitle || 'markos digital lottery' }}
+            {{ raffle.heroTitle || store.brandName }}
           </p>
           <h1 class="relative mt-4 text-white text-3xl sm:text-4xl font-extrabold leading-tight tracking-tight">
             1ኛ እጣ {{ formatAmount(raffle.prize1st) }} ብር
@@ -30,16 +30,18 @@
       </button>
 
       <div class="px-4 pb-4 space-y-3 pt-3">
-        <!-- Date mode: countdown. Other modes: display name only until admin starts draw -->
-        <CountdownTimer v-if="showCountdown" :ends-at="raffle.endsAt" />
+        <!-- Same slot: date countdown OR display name from admin -->
+        <CountdownTimer
+          v-if="showCountdown"
+          :ends-at="raffle.endsAt"
+        />
         <div
           v-else
-          class="rounded-2xl border border-white/10 bg-black/25 px-4 py-5 text-center"
+          class="rounded-2xl bg-gradient-to-b from-forest-dim to-forest-deep border border-forest/30 p-4 text-center"
         >
-          <h2 class="text-white text-xl font-bold leading-tight">
-            {{ raffle.displayName || raffle.name }}
+          <h2 class="text-gold text-xl sm:text-2xl font-extrabold leading-snug tracking-tight">
+            {{ raffle.displayName || raffle.name || store.brandName }}
           </h2>
-          <p v-if="raffle.color" class="text-lime-400/90 text-sm mt-1">{{ raffle.color }}</p>
         </div>
 
         <TicketProgress :sold-count="raffle.soldCount" :total-tickets="raffle.totalTickets" />
@@ -66,6 +68,7 @@ import TicketProgress from './TicketProgress.vue'
 import WinnerReveal from './WinnerReveal.vue'
 import { useCountdown } from '../../composables/useCountdown'
 import { useI18n } from '../../composables/useI18n'
+import { store } from '../../stores/lottery'
 
 const props = defineProps({
   raffle: { type: Object, required: true },
@@ -79,20 +82,24 @@ const autoAnnounce = computed(() => props.raffle.automaticAnnouncement !== false
 const drawMode = computed(() => props.raffle.drawMode || 'date')
 const isDateMode = computed(() => drawMode.value === 'date')
 
+/** Only date-deadline mode shows D:H:M:S. Other modes show display name. */
 const showCountdown = computed(
   () => isDateMode.value && !!props.raffle.endsAt && !props.raffle.drawCompleted
 )
 
-/** Admin-started draw (sold_out / manual): show big timer for the whole ends_at window */
 const adminDrawLive = computed(() => {
   if (isDateMode.value) return false
-  if (!props.raffle.endsAt) return false
-  return remainingMs.value > 0 || isFinished.value
+  const ends = props.raffle.endsAt || 0
+  if (!ends) return false
+  // Counting down after Start Draw
+  if (remainingMs.value > 0) return true
+  // Just finished — keep announce UI briefly (ignore stale old deadlines)
+  if (isFinished.value && ends > Date.now() - 10 * 60 * 1000) return true
+  return false
 })
 
 const showDrawUi = computed(() => {
   if (props.raffle.drawCompleted) return true
-  // Sold-out / admin mode: show big timer for the whole Start Draw window
   if (!isDateMode.value) {
     return adminDrawLive.value
   }

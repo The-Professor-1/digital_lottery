@@ -63,7 +63,8 @@
                 <input
                   v-model="store.fullName"
                   type="text"
-                  class="flex-1 bg-transparent outline-none text-white placeholder:text-white/30 text-sm"
+                  autocomplete="name"
+                  class="selectable-field flex-1 bg-transparent outline-none text-white placeholder:text-white/30 text-sm"
                   :placeholder="t.fullNamePlaceholder"
                 />
               </div>
@@ -78,7 +79,9 @@
                 <input
                   v-model="store.phone"
                   type="tel"
-                  class="flex-1 bg-transparent outline-none text-white text-sm"
+                  inputmode="tel"
+                  autocomplete="tel"
+                  class="selectable-field flex-1 bg-transparent outline-none text-white text-sm"
                 />
               </div>
             </label>
@@ -111,31 +114,76 @@
               <div class="min-w-0 flex-1">
                 <p class="font-semibold text-white text-sm truncate">{{ bank.name }}</p>
                 <p class="text-xs text-white/45 truncate">{{ bank.holder }}</p>
+                <div class="mt-1.5 flex items-center gap-2">
+                  <p class="text-sm text-gold font-semibold tabular-nums selectable-field">
+                    {{ bank.account }}
+                  </p>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/15 px-2 py-1 text-[11px] text-white/85 shrink-0"
+                    :title="t.copyAccount"
+                    @click.stop="copyText(bank.account, bank.id)"
+                  >
+                    <Copy :size="13" />
+                    {{ copiedId === bank.id ? t.copied : t.copy }}
+                  </button>
+                </div>
               </div>
-              <p class="text-sm text-white font-medium tabular-nums">{{ bank.account }}</p>
             </button>
           </template>
 
           <!-- Step 3: SMS after bank chosen -->
           <template v-else-if="store.checkoutStep === 3">
-            <div class="rounded-2xl bg-ink-200 border border-white/5 p-3">
+            <div class="rounded-2xl bg-ink-200 border border-white/5 p-3 space-y-2">
               <p class="text-xs text-white/45">{{ t.payingTo }}</p>
               <p class="text-sm text-white font-semibold">{{ selectedBank?.name }}</p>
+              <p v-if="selectedBank?.holder" class="text-xs text-white/50">{{ selectedBank.holder }}</p>
+              <div class="flex items-center gap-2">
+                <p class="text-sm text-gold font-semibold tabular-nums selectable-field">
+                  {{ selectedBank?.account }}
+                </p>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/15 px-2 py-1 text-[11px] text-white/85"
+                  @click="copyText(selectedBank?.account, 'selected')"
+                >
+                  <Copy :size="13" />
+                  {{ copiedId === 'selected' ? t.copied : t.copy }}
+                </button>
+              </div>
               <p class="text-xs text-gold mt-1">{{ formatBirr(totalPrice()) }}</p>
             </div>
 
-            <label class="block">
-              <span class="text-sm text-white/80">{{ t.pasteSms }}</span>
+            <div class="block">
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <span class="text-sm text-white/80">{{ t.pasteSms }}</span>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-lg bg-gold/15 border border-gold/30 px-2.5 py-1 text-[11px] text-gold font-semibold"
+                  @click="pasteSmsFromClipboard"
+                >
+                  <Copy :size="13" />
+                  {{ t.paste }}
+                </button>
+              </div>
               <p class="text-xs text-white/45 mt-1 mb-2">{{ smsHint }}</p>
               <textarea
+                ref="smsField"
                 v-model="store.receiptSms"
                 rows="6"
-                class="w-full rounded-2xl bg-ink-200 border border-white/10 px-3 py-3 text-sm text-white outline-none placeholder:text-white/30 resize-none"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                inputmode="text"
+                class="selectable-field w-full rounded-2xl bg-ink-200 border border-white/10 px-3 py-3 text-sm text-white outline-none placeholder:text-white/30 resize-y min-h-[8rem]"
                 :placeholder="t.pasteSmsPlaceholder"
                 @input="store.submitError = ''"
+                @paste="store.submitError = ''"
               />
-            </label>
+            </div>
 
+            <p v-if="pasteError" class="text-xs text-amber-300">{{ pasteError }}</p>
             <p v-if="store.submitError" class="text-sm text-red-300 leading-relaxed whitespace-pre-wrap">
               {{ store.submitError }}
             </p>
@@ -284,9 +332,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { X, User, Phone, Receipt, Check, Clock } from 'lucide-vue-next'
+import { X, User, Phone, Receipt, Check, Clock, Copy } from 'lucide-vue-next'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr, padNumber } from '../../data/mock'
 import {
@@ -299,6 +347,10 @@ import {
 
 const { t } = useI18n()
 const router = useRouter()
+const copiedId = ref('')
+const pasteError = ref('')
+const smsField = ref(null)
+let copyTimer = null
 
 const selectedBank = computed(() =>
   store.banks.find((b) => b.id === store.selectedBankId)
@@ -312,6 +364,54 @@ const providerLabel = computed(() => {
 })
 
 const smsHint = computed(() => t.value.fullSmsHint(providerLabel.value))
+
+async function copyText(value, id) {
+  const text = String(value || '').trim()
+  if (!text) return
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    copiedId.value = id
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
+      copiedId.value = ''
+    }, 1600)
+  } catch (e) {
+    console.warn('copy failed', e)
+  }
+}
+
+async function pasteSmsFromClipboard() {
+  pasteError.value = ''
+  try {
+    let text = ''
+    if (navigator.clipboard?.readText) {
+      text = await navigator.clipboard.readText()
+    }
+    if (!text) {
+      pasteError.value = t.value.pasteManualHint
+      smsField.value?.focus()
+      return
+    }
+    store.receiptSms = text
+    store.submitError = ''
+    smsField.value?.focus()
+  } catch (e) {
+    pasteError.value = t.value.pasteManualHint
+    smsField.value?.focus()
+  }
+}
 
 async function onSubmit() {
   const ok = await submitOrder()

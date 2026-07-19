@@ -6,7 +6,7 @@ const THEME_KEY = 'gfj_theme'
 
 export const store = reactive({
   theme: localStorage.getItem(THEME_KEY) || 'dark',
-  brandName: 'Markos Digital Lottery',
+  brandName: 'Digital Lottery',
   banks: defaultBanks.map((b) => ({ ...b })),
   phone: '',
   quantity: 1,
@@ -44,14 +44,23 @@ export function isTaken(n) {
 
 export function applyPublicSettings(data) {
   if (!data) return
-  if (data.brand_name) store.brandName = data.brand_name
+  if (data.brand_name) {
+    store.brandName = data.brand_name
+    if (typeof document !== 'undefined' && data.brand_name) {
+      document.title = data.brand_name
+    }
+  }
+  const nextMode =
+    data.draw_mode === 'date' || data.draw_mode === 'sold_out' || data.draw_mode === 'manual'
+      ? data.draw_mode
+      : store.raffle.drawMode || 'date'
   store.raffle = {
     ...store.raffle,
-    id: store.raffle.id || 'gech-ev-1',
-    name: data.display_name || data.car_name || store.raffle.name,
-    displayName: data.display_name || store.raffle.displayName,
+    id: store.raffle.id || 'lottery-1',
+    name: data.display_name || data.car_name || store.raffle.name || store.brandName,
+    displayName: data.display_name || store.raffle.displayName || store.brandName,
     color: data.car_color || store.raffle.color,
-    heroTitle: data.hero_title || store.raffle.heroTitle || 'markos digital lottery',
+    heroTitle: data.hero_title || store.raffle.heroTitle || store.brandName,
     prize1st: data.prize_1st ?? store.raffle.prize1st ?? 0,
     prize2nd: data.prize_2nd ?? store.raffle.prize2nd ?? 0,
     prize3rd: data.prize_3rd ?? store.raffle.prize3rd ?? 0,
@@ -64,13 +73,14 @@ export function applyPublicSettings(data) {
     winnerRevealSeconds: data.winner_reveal_seconds ?? store.raffle.winnerRevealSeconds ?? 6,
     winnersNotified: !!data.winners_notified,
     automaticAnnouncement: data.automatic_announcement !== false,
-    drawMode: data.draw_mode || store.raffle.drawMode || 'date',
+    drawMode: nextMode,
     drawTimerSeconds: data.draw_timer_seconds ?? store.raffle.drawTimerSeconds ?? 60,
     image: data.car_image_url || store.raffle.image,
     ticketPrice: data.ticket_price ?? store.raffle.ticketPrice,
     totalTickets: data.total_tickets ?? store.raffle.totalTickets,
     soldCount: data.sold_count ?? 0,
-    endsAt: data.ends_at_ms || 0,
+    // Non-date modes: no public deadline until admin Start Draw
+    endsAt: nextMode === 'date' ? (data.ends_at_ms || 0) : (data.ends_at_ms || 0),
     participants: data.sold_count ?? 0,
   }
   if (Array.isArray(data.payment_accounts) && data.payment_accounts.length) {

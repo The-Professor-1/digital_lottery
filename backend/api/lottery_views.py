@@ -658,7 +658,7 @@ def lottery_settings_admin(request):
 
         str_fields = [
             'brand_name', 'car_name', 'car_color', 'car_image_url', 'display_name',
-            'hero_title', 'verify_api_key',
+            'hero_title', 'verify_api_key', 'bot_description', 'bot_short_description',
         ]
         int_fields = [
             'ticket_price', 'total_tickets', 'sold_count',
@@ -801,6 +801,12 @@ def lottery_settings_admin(request):
         except Exception:
             pass
 
+        # Push bot profile text to Telegram so owners don't need a bot restart
+        try:
+            _sync_telegram_bot_profile(settings_obj)
+        except Exception:
+            pass
+
         out = settings_obj.to_public_dict(request)
         out['car_image_url_raw'] = settings_obj.car_image_url or ''
         out['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
@@ -811,6 +817,39 @@ def lottery_settings_admin(request):
         import traceback
         traceback.print_exc()
         return JsonResponse({'error': str(e) or 'Could not save settings'}, status=500)
+
+
+def _sync_telegram_bot_profile(settings_obj):
+    """Update Telegram bot description / short description from LotterySettings."""
+    from django.conf import settings as dj_settings
+    import urllib.request
+    import urllib.parse
+
+    token = (getattr(dj_settings, 'TELEGRAM_BOT_TOKEN', '') or '').strip()
+    if not token:
+        return
+
+    short = (settings_obj.bot_short_description or settings_obj.brand_name or 'Digital Lottery').strip()[:120]
+    long_desc = (settings_obj.bot_description or '').strip()
+    if not long_desc:
+        brand = (settings_obj.brand_name or 'Digital Lottery').strip()
+        long_desc = f'🚗 {brand}\n\nእንኳን ደህና መጡ።'
+
+    for method, payload in (
+        ('setMyDescription', {'description': long_desc}),
+        ('setMyShortDescription', {'short_description': short}),
+    ):
+        data = urllib.parse.urlencode(payload).encode('utf-8')
+        req = urllib.request.Request(
+            f'https://api.telegram.org/bot{token}/{method}',
+            data=data,
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                resp.read()
+        except Exception as e:
+            print(f'_sync_telegram_bot_profile {method}: {e}')
 
 
 @csrf_exempt
@@ -1704,6 +1743,7 @@ def lottery_force_restart_round(request):
             except (TypeError, ValueError):
                 pass
 
+    # Keep the admin's selected mode — never force back to date deadline
     if 'draw_mode' in data and data.get('draw_mode') is not None:
         mode = str(data.get('draw_mode') or '').strip().lower()
         if mode in (
@@ -1712,21 +1752,24 @@ def lottery_force_restart_round(request):
             LotterySettings.DRAW_MODE_MANUAL,
         ):
             settings_obj.draw_mode = mode
+    # If client omitted draw_mode, leave the stored mode unchanged
 
     clear_tickets = str(data.get('clear_tickets', 'true')).lower() in ('1', 'true', 'yes', 'on')
     _clear_round_state(settings_obj, clear_tickets=clear_tickets)
-    if settings_obj.uses_date_deadline():
+    mode = settings_obj.draw_mode or LotterySettings.DRAW_MODE_DATE
+    if mode == LotterySettings.DRAW_MODE_DATE:
         settings_obj.save(reset_timer=True)
-        msg = 'Round restarted with a fresh countdown'
+        msg = 'Round restarted with a fresh countdown (date deadline mode)'
     else:
         settings_obj.save(clear_timer=True)
-        msg = 'Round restarted. Use Start Draw when ready.'
+        msg = f'Round restarted in {mode} mode. Use Start Draw when ready.'
 
     out = settings_obj.to_public_dict(request)
     out['car_image_url_raw'] = settings_obj.car_image_url or ''
     out['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
     out['verify_api_key'] = settings_obj.verify_api_key or ''
     out['has_verify_api_key'] = bool((settings_obj.verify_api_key or '').strip())
+    out['draw_mode'] = mode
 
     return JsonResponse({
         'success': True,

@@ -49,17 +49,32 @@
     <form v-if="loggedIn && activeTab === 'settings'" class="panel" @submit.prevent="save">
       <section>
         <h2>Branding & prizes</h2>
-        <label>Brand name <input v-model="form.brand_name" type="text" required /></label>
-        <label>Display name <input v-model="form.display_name" type="text" /></label>
-        <label>Homepage title (top text)
-          <input v-model="form.hero_title" type="text" placeholder="markos digital lottery" />
+        <label>Brand name (header, footer, bot button)
+          <input v-model="form.brand_name" type="text" required placeholder="e.g. Owner Lottery" />
+        </label>
+        <label>Display name (shown instead of date countdown)
+          <input v-model="form.display_name" type="text" placeholder="e.g. Lottery name - Round 2" />
+        </label>
+        <label>Homepage title (top gold text above prizes)
+          <input v-model="form.hero_title" type="text" placeholder="Same as brand or custom" />
         </label>
         <div class="timer-grid">
           <label>1ኛ እጣ (Birr) <input v-model.number="form.prize_1st" type="number" min="0" /></label>
           <label>2ኛ እጣ (Birr) <input v-model.number="form.prize_2nd" type="number" min="0" /></label>
           <label>3ኛ እጣ (Birr) <input v-model.number="form.prize_3rd" type="number" min="0" /></label>
         </div>
-        <p class="hint">Homepage shows: title + 1ኛ/2ኛ/3ኛ እጣ amounts (no car image).</p>
+        <p class="hint">All owner-facing names come from these fields — nothing is hard-coded per owner.</p>
+      </section>
+
+      <section>
+        <h2>Telegram bot text</h2>
+        <label>Bot short description (About line)
+          <input v-model="form.bot_short_description" type="text" maxlength="120" placeholder="Short name shown on Telegram" />
+        </label>
+        <label>Bot description (profile / before start)
+          <textarea v-model="form.bot_description" rows="4" class="area" placeholder="Welcome text shown on the bot profile" />
+        </label>
+        <p class="hint">Pushed to Telegram when you Save settings. Restart the bot process if the profile does not update.</p>
       </section>
 
       <section>
@@ -87,7 +102,7 @@
           </label>
         </div>
         <p class="hint">
-          Date: mini-app shows the countdown. Sold out / Admin: countdown is hidden and users see the display name until you click Start Draw.
+          Date: mini-app shows days/hours/minutes/seconds. Sold out / Admin: that timer slot shows your Display name only (no date). Restart round keeps the mode you selected here.
         </p>
       </section>
 
@@ -574,9 +589,11 @@ export default {
       file: null,
       activeTab: 'settings',
       form: {
-        brand_name: 'Markos Digital Lottery',
+        brand_name: 'Digital Lottery',
         display_name: '',
-        hero_title: 'markos digital lottery',
+        hero_title: '',
+        bot_short_description: '',
+        bot_description: '',
         prize_1st: 100000,
         prize_2nd: 50000,
         prize_3rd: 25000,
@@ -779,7 +796,9 @@ export default {
         ...this.form,
         brand_name: data.brand_name || '',
         display_name: data.display_name || '',
-        hero_title: data.hero_title || 'markos digital lottery',
+        hero_title: data.hero_title || '',
+        bot_short_description: data.bot_short_description || '',
+        bot_description: data.bot_description || '',
         prize_1st: data.prize_1st ?? 100000,
         prize_2nd: data.prize_2nd ?? 50000,
         prize_3rd: data.prize_3rd ?? 25000,
@@ -790,7 +809,10 @@ export default {
         car_image_url_raw: data.car_image_url_raw || '',
         ticket_price: data.ticket_price ?? 3000,
         total_tickets: data.total_tickets ?? 3500,
-        draw_mode: data.draw_mode || 'date',
+        draw_mode:
+          data.draw_mode === 'date' || data.draw_mode === 'sold_out' || data.draw_mode === 'manual'
+            ? data.draw_mode
+            : this.form.draw_mode || 'date',
         draw_timer_seconds: data.draw_timer_seconds ?? 60,
         countdown_days: data.countdown_days ?? 0,
         countdown_hours: data.countdown_hours ?? 0,
@@ -853,10 +875,19 @@ export default {
           countdown_seconds: this.form.countdown_seconds,
           clear_tickets: true,
         })
-        this.applyData(res.settings || res)
-        this.message = dateMode
-          ? 'Round restarted. Mini-app users should refresh Home (or wait a few seconds) to see the new countdown.'
-          : 'Round restarted. Click Start Draw when you are ready for the next draw.'
+        const keptMode = this.form.draw_mode
+        const settings = res.settings || res
+        this.applyData(settings)
+        this.form.draw_mode =
+          settings.draw_mode === 'date' ||
+          settings.draw_mode === 'sold_out' ||
+          settings.draw_mode === 'manual'
+            ? settings.draw_mode
+            : keptMode
+        this.message =
+          this.form.draw_mode === 'date'
+            ? 'Round restarted. Mini-app users should refresh Home to see the new countdown.'
+            : `Round restarted in “${this.form.draw_mode}” mode (unchanged). Click Start Draw when ready.`
       } catch (e) {
         if (e.response?.status === 401) {
           this.unauthorized = true
@@ -910,6 +941,8 @@ export default {
           brand_name: this.form.brand_name,
           display_name: this.form.display_name,
           hero_title: this.form.hero_title,
+          bot_short_description: this.form.bot_short_description || '',
+          bot_description: this.form.bot_description || '',
           prize_1st: this.form.prize_1st,
           prize_2nd: this.form.prize_2nd,
           prize_3rd: this.form.prize_3rd,
