@@ -343,7 +343,7 @@ def lottery_submit_purchase(request):
     """
     Submit lottery ticket purchase with SMS receipt text.
     Flow: parse SMS → dedup transaction → verify via Telebirr/CBE API →
-    verified purchase on success, pending (manual review) if API fails.
+    verified purchase on success; manual review only when party+amount match but API is down.
     """
     user = _bearer_user(request)
 
@@ -408,15 +408,20 @@ def lottery_submit_purchase(request):
     taken = settings_obj.taken_numbers_set()
     conflict = sorted({n for n in numbers if n in taken})
     if conflict:
+        kept = [n for n in numbers if n not in set(conflict)]
         conflict_str = ', '.join(str(n).zfill(3) for n in conflict)
-        available = _available_numbers(settings_obj, count=max(24, len(numbers) * 4), exclude=numbers)
+        available = _available_numbers(
+            settings_obj, count=max(24, len(conflict) * 6), exclude=kept
+        )
         return JsonResponse({
             'error': (
                 f'ይህ {conflict_str} ቁጥር በሌላ ሰው ተይዟል፡፡ '
-                f'እባክዎ ከነዚህ ውስጥ አዲስ ቁጥር ይምረጡ፡፡'
+                f'እባክዎ {len(conflict)} ተጨማሪ ቁጥር ከነዚህ ውስጥ ይምረጡ፡፡'
             ),
             'error_code': 'numbers_taken',
             'taken': conflict,
+            'kept': kept,
+            'need': len(conflict),
             'available': available,
         }, status=409)
 
@@ -424,9 +429,9 @@ def lottery_submit_purchase(request):
         parse_telebirr_receipt_text,
         verify_telebirr_receipt,
         credited_party_matches,
-        amount_from_api_total,
+        _last4_digits,
     )
-    from .cbe_verify import parse_cbe_receipt_text, verify_cbe_receipt
+    from .cbe_verify import parse_cbe_receipt_text, verify_cbe_receipt, cbe_receiver_matches
     from .models import GameSettings
 
     parsed = None
@@ -475,7 +480,7 @@ def lottery_submit_purchase(request):
             'reference': reference,
         }, status=409)
 
-    def _save_failed(reason, credited=None):
+    def _save_failed(reason, credited=None, status='pending'):
         return LotteryFailedDeposit.objects.create(
             user=user,
             full_name=full_name,
@@ -492,18 +497,86 @@ def lottery_submit_purchase(request):
             account_suffix=account_suffix or '',
             receipt_sms=receipt_sms[:4000],
             failure_reason=(reason or '')[:255],
-            status='pending',
+            status=status,
         )
 
-    api_key = settings_obj.resolved_verify_api_key()
-    verify_ok = False
-    verify_error = ''
-    credited_amount = None
-    api_data = None
+    def _amount_matches(expected, got):
+        if got is None:
+            return False
+        try:
+            return abs(Decimal(got) - Decimal(expected)) <= Decimal('0.01')
+        except Exception:
+            return False
 
-    if not api_key:
-        verify_error = 'verify_api_key_not_configured'
-        failed = _save_failed(verify_error)
+    def _parse_money(raw):
+        if raw is None or raw == '':
+            return None
+        try:
+            s = (
+                str(raw)
+                .replace(',', '')
+                .replace('ETB', '')
+                .replace('Birr', '')
+                .replace('birr', '')
+                .strip()
+            )
+            return Decimal(s) if s else None
+        except Exception:
+            return None
+
+    def _credited_amount_without_fee(api_payload, sms_amt):
+        """Prefer transfer/settled amount; avoid fee-inclusive totals."""
+        if not api_payload:
+            return sms_amt if sms_amt and sms_amt > 0 else None
+        for key in ('settledAmount', 'amount', 'transferredAmount', 'paidAmount', 'creditAmount'):
+            parsed_amt = _parse_money(api_payload.get(key))
+            if parsed_amt is not None and parsed_amt > 0:
+                return parsed_amt
+        total_paid = _parse_money(api_payload.get('totalPaidAmount'))
+        fee = _parse_money(
+            api_payload.get('serviceFee')
+            or api_payload.get('fee')
+            or api_payload.get('transactionFee')
+        )
+        if total_paid is not None and fee is not None and total_paid > fee:
+            return total_paid - fee
+        if sms_amt and sms_amt > 0:
+            return sms_amt
+        return total_paid
+
+    def _sms_party_ok():
+        if provider == 'telebirr':
+            return credited_party_matches(
+                (parsed.get('recipient_name') or '').strip(),
+                '',
+                bank_holder,
+                bank_account,
+            )
+        expected_digits = ''.join(c for c in str(bank_account or '') if c.isdigit())
+        if account_suffix and expected_digits:
+            if expected_digits.endswith(account_suffix) or _last4_digits(expected_digits) == account_suffix[-4:]:
+                return True
+        return False
+
+    def _reject(error, error_code, credited=None, **extra):
+        # Auto-reject: keep audit row but do NOT enqueue for manual review
+        failed = _save_failed(f'{error_code}: {error}'[:255], credited, status='rejected')
+        payload = {
+            'error': error,
+            'error_code': error_code,
+            'failed_id': failed.id,
+            'manual_review': False,
+        }
+        payload.update(extra)
+        if credited is not None:
+            try:
+                payload['credited_amount'] = float(credited)
+            except Exception:
+                payload['credited_amount'] = None
+        return JsonResponse(payload, status=400)
+
+    def _manual_review(reason, credited=None):
+        failed = _save_failed(reason, credited)
         return JsonResponse({
             'success': True,
             'verified': False,
@@ -513,18 +586,45 @@ def lottery_submit_purchase(request):
             'failed_id': failed.id,
         })
 
+    api_key = settings_obj.resolved_verify_api_key()
+    verify_ok = False
+    verify_error = ''
+    credited_amount = None
+    api_data = None
+    party_ok = False
+
+    if not api_key:
+        amount_ok = _amount_matches(amount, sms_amount)
+        party_ok = _sms_party_ok()
+        if party_ok and amount_ok:
+            return _manual_review('verify_api_key_not_configured', sms_amount)
+        if not party_ok:
+            return _reject(
+                'የተላከበት አካውንት/ስም ከተመረጠው የባንክ አካውንት ጋር አይዛመድም፡፡',
+                'party_mismatch',
+                credited=sms_amount,
+            )
+        return _reject(
+            (
+                f'በቴክስቱ ያለው ገንዘብ ({sms_amount} Birr) ልክ አይደለም '
+                f'({amount} Birr = {len(numbers)} × {settings_obj.ticket_price})፡፡'
+            ),
+            'amount_mismatch',
+            credited=sms_amount,
+            expected_amount=float(amount),
+        )
+
     try:
         if provider == 'telebirr':
             result = verify_telebirr_receipt(reference, api_key)
             if result.get('success') and result.get('data'):
                 api_data = result['data']
-                if bank_holder or bank_account:
-                    credited_name = (api_data.get('creditedPartyName') or '').strip()
-                    credited_account_no = (api_data.get('creditedPartyAccountNo') or '').strip()
-                    _ = credited_party_matches(credited_name, credited_account_no, bank_holder, bank_account)
-                credited_amount = amount_from_api_total(api_data.get('totalPaidAmount') or '')
-                if credited_amount is None:
-                    credited_amount = sms_amount
+                credited_name = (api_data.get('creditedPartyName') or '').strip()
+                credited_account_no = (api_data.get('creditedPartyAccountNo') or '').strip()
+                party_ok = credited_party_matches(
+                    credited_name, credited_account_no, bank_holder, bank_account
+                )
+                credited_amount = _credited_amount_without_fee(api_data, sms_amount)
                 verify_ok = True
             else:
                 verify_error = result.get('error') or 'verification_failed'
@@ -534,14 +634,13 @@ def lottery_submit_purchase(request):
             result = verify_cbe_receipt(reference, account_suffix, api_key, use_fallback_proxy=use_fallback)
             if result.get('success') and result.get('data'):
                 api_data = result['data']
-                raw_amt = api_data.get('amount') or api_data.get('totalPaidAmount') or api_data.get('paidAmount')
-                if raw_amt is not None:
-                    try:
-                        credited_amount = Decimal(str(raw_amt).replace(',', '').replace('ETB', '').replace('Birr', '').strip())
-                    except Exception:
-                        credited_amount = sms_amount
-                else:
-                    credited_amount = sms_amount
+                party_ok = cbe_receiver_matches(
+                    api_data.get('receiver') or api_data.get('receiverName') or '',
+                    api_data.get('receiverAccount') or api_data.get('creditedPartyAccountNo') or '',
+                    bank_holder,
+                    bank_account,
+                )
+                credited_amount = _credited_amount_without_fee(api_data, sms_amount)
                 verify_ok = True
             else:
                 verify_error = result.get('error') or 'verification_failed'
@@ -549,49 +648,63 @@ def lottery_submit_purchase(request):
         verify_error = str(e) or 'api_exception'
 
     if not verify_ok:
-        failed = _save_failed(verify_error or 'verification_failed', credited_amount)
-        return JsonResponse({
-            'success': True,
-            'verified': False,
-            'manual_review': True,
-            'message': ' በሲስተም ችግር ምክንያት ጥያቄዎ ለተጨማሪ ማረጋገጫ ተልኳል እባክዎ ይጠብቁ፡፡ ',
-            'message_key': 'manualReview',
-            'failed_id': failed.id,
-        })
-
-    # Require credited/SMS amount to match ticket total (quantity × ticket price)
-    check_amount = credited_amount if credited_amount is not None else sms_amount
-    if check_amount is None or abs(Decimal(check_amount) - amount) > Decimal('0.01'):
-        reason = (
-            f'amount_mismatch: expected {amount} Birr '
-            f'(got {check_amount if check_amount is not None else "unknown"})'
-        )
-        failed = _save_failed(reason, check_amount)
-        return JsonResponse({
-            'error': (
-                f'በቴክስቱ ያለው ገንዘብ ({check_amount} Birr) ልክ አይደለም '
-                f'({amount} Birr = {len(numbers)} × {settings_obj.ticket_price}). '
-                f'ጥያቄዎ ለተጨማሪ ማረጋገጫ ተልኳል እባክዎ ይጠብቁ፡፡'
+        amount_ok = _amount_matches(amount, sms_amount)
+        party_ok = _sms_party_ok()
+        if party_ok and amount_ok:
+            return _manual_review(verify_error or 'verification_failed', sms_amount)
+        if not party_ok:
+            return _reject(
+                'የተላከበት አካውንት/ስም ከተመረጠው የባንክ አካውንት ጋር አይዛመድም፡፡',
+                'party_mismatch',
+                credited=sms_amount,
+            )
+        return _reject(
+            (
+                f'በቴክስቱ ያለው ገንዘብ ({sms_amount} Birr) ልክ አይደለም '
+                f'({amount} Birr = {len(numbers)} × {settings_obj.ticket_price})፡፡'
             ),
-            'error_code': 'amount_mismatch',
-            'expected_amount': float(amount),
-            'credited_amount': float(check_amount) if check_amount is not None else None,
-            'failed_id': failed.id,
-            'manual_review': True,
-        }, status=400)
+            'amount_mismatch',
+            credited=sms_amount,
+            expected_amount=float(amount),
+        )
+
+    check_amount = credited_amount if credited_amount is not None else sms_amount
+    amount_ok = _amount_matches(amount, check_amount)
+
+    if not party_ok:
+        return _reject(
+            'የተላከበት አካውንት/ስም ከተመረጠው የባንክ አካውንት ጋር አይዛመድም፡፡',
+            'party_mismatch',
+            credited=check_amount,
+        )
+    if not amount_ok:
+        return _reject(
+            (
+                f'በቴክስቱ ያለው ገንዘብ ({check_amount} Birr) ልክ አይደለም '
+                f'({amount} Birr = {len(numbers)} × {settings_obj.ticket_price})፡፡'
+            ),
+            'amount_mismatch',
+            credited=check_amount,
+            expected_amount=float(amount),
+        )
 
     taken = settings_obj.taken_numbers_set()
     conflict = sorted({n for n in numbers if n in taken})
     if conflict:
+        kept = [n for n in numbers if n not in set(conflict)]
         conflict_str = ', '.join(str(n).zfill(3) for n in conflict)
-        available = _available_numbers(settings_obj, count=max(24, len(numbers) * 4), exclude=numbers)
+        available = _available_numbers(
+            settings_obj, count=max(24, len(conflict) * 6), exclude=kept
+        )
         return JsonResponse({
             'error': (
                 f'ይህ {conflict_str} ቁጥር በሌላ ሰው ተይዟል፡፡ '
-                f'እባክዎ ከነዚህ ውስጥ አዲስ ቁጥር ይምረጡ፡፡'
+                f'እባክዎ {len(conflict)} ተጨማሪ ቁጥር ከነዚህ ውስጥ ይምረጡ፡፡'
             ),
             'error_code': 'numbers_taken',
             'taken': conflict,
+            'kept': kept,
+            'need': len(conflict),
             'available': available,
         }, status=409)
 
@@ -1217,6 +1330,206 @@ def lottery_deleted_admin(request):
         'deleted_users': users,
         'receipt_count': len(receipts),
         'user_count': len(users),
+    })
+
+
+def _parse_ticket_numbers(raw, total_tickets):
+    """Parse ints from list/string; validate against ticket range. Returns (nums, error)."""
+    if raw is None:
+        raw = []
+    if isinstance(raw, str):
+        parts = [p for p in raw.replace(';', ',').replace(' ', ',').split(',') if p.strip()]
+        raw = parts
+    if not isinstance(raw, (list, tuple)):
+        raw = [raw]
+    nums = []
+    for item in raw:
+        try:
+            n = int(item)
+        except (TypeError, ValueError):
+            continue
+        if n < 1 or (total_tickets and n > int(total_tickets)):
+            return None, f'Number {n} is out of range (1–{total_tickets})'
+        nums.append(n)
+    nums = sorted(set(nums))
+    if not nums:
+        return None, 'Enter at least one valid number'
+    return nums, None
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_admin_hold_ticket(request):
+    """
+    Walk-in / offline sale: admin reserves numbers for a person (name + phone).
+    Creates a verified purchase so numbers appear taken in the picker.
+    """
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+
+    full_name = (body.get('full_name') or body.get('name') or '').strip()
+    phone = (body.get('phone') or '').strip()
+    settings_obj = LotterySettings.get_settings()
+    numbers, err = _parse_ticket_numbers(
+        body.get('numbers') if body.get('numbers') is not None else body.get('number'),
+        settings_obj.total_tickets,
+    )
+    if not full_name:
+        return JsonResponse({'error': 'Name is required', 'error_code': 'missing_name'}, status=400)
+    if not phone:
+        return JsonResponse({'error': 'Phone is required', 'error_code': 'missing_phone'}, status=400)
+    if err:
+        return JsonResponse({'error': err, 'error_code': 'invalid_numbers'}, status=400)
+
+    taken = settings_obj.taken_numbers_set()
+    conflict = sorted(n for n in numbers if n in taken)
+    if conflict:
+        conflict_str = ', '.join(str(n).zfill(3) for n in conflict)
+        return JsonResponse({
+            'error': f'These numbers are already taken: {conflict_str}',
+            'error_code': 'numbers_taken',
+            'taken': conflict,
+        }, status=409)
+
+    from .models import User
+    user = None
+    digits = ''.join(c for c in phone if c.isdigit())
+    if digits:
+        user = User.objects.filter(phone_number__icontains=digits[-9:]).order_by('-id').first()
+
+    amount = Decimal(settings_obj.ticket_price) * len(numbers)
+    receipt_hash = hashlib.sha256(
+        f'admin-hold:{timezone.now().isoformat()}:{phone}:{numbers}'.encode('utf-8')
+    ).hexdigest()
+
+    purchase = LotteryPurchase.objects.create(
+        user=user,
+        full_name=full_name,
+        phone=phone,
+        numbers=numbers,
+        quantity=len(numbers),
+        amount=amount,
+        bank_name='Admin hold',
+        bank_holder=full_name,
+        bank_account='',
+        paid_from_account='',
+        receipt_sms='',
+        payment_provider='admin',
+        transaction_ref=f'ADMIN-{timezone.now().strftime("%Y%m%d%H%M%S")}',
+        receipt_hash=receipt_hash,
+        status='verified',
+        verified_at=timezone.now(),
+        admin_note='Walk-in / admin held ticket',
+    )
+    settings_obj.sold_count = len(settings_obj.taken_numbers_set())
+    settings_obj.save(reset_timer=False)
+
+    settings_payload = settings_obj.to_public_dict(request)
+    settings_payload['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Held {len(numbers)} number(s) for {full_name}',
+        'purchase': purchase.to_dict(request),
+        'taken_numbers': sorted(settings_obj.taken_numbers_set()),
+        'settings': settings_payload,
+    })
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def lottery_set_manual_winners(request):
+    """
+    Admin enters 1st/2nd/3rd after an offline/manual draw, then DMs holders.
+    Used when draw_mode is manual or automatic announcement is off.
+    """
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except (json.JSONDecodeError, ValueError):
+        body = {}
+
+    settings_obj = LotterySettings.get_settings()
+    if settings_obj.automatic_announcement and settings_obj.draw_mode != LotterySettings.DRAW_MODE_MANUAL:
+        return JsonResponse({
+            'error': 'Manual winner entry is only for manual draw mode (or when automatic announcement is off)',
+            'error_code': 'auto_mode',
+        }, status=400)
+
+    def _one(key):
+        raw = body.get(key)
+        if raw is None or str(raw).strip() == '':
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    w1, w2, w3 = _one('winner_1st'), _one('winner_2nd'), _one('winner_3rd')
+    if not w1:
+        return JsonResponse({'error': '1st place number is required', 'error_code': 'missing_1st'}, status=400)
+
+    total = int(settings_obj.total_tickets or 0)
+    for label, n in (('1st', w1), ('2nd', w2), ('3rd', w3)):
+        if n is None:
+            continue
+        if n < 1 or (total and n > total):
+            return JsonResponse({
+                'error': f'{label} place number {n} is out of range (1–{total})',
+                'error_code': 'invalid_number',
+            }, status=400)
+
+    entered = [n for n in (w1, w2, w3) if n is not None]
+    if len(entered) != len(set(entered)):
+        return JsonResponse({
+            'error': 'Winning numbers must be unique',
+            'error_code': 'duplicate_winners',
+        }, status=400)
+
+    pool = set(settings_obj.verified_taken_numbers())
+    missing = [n for n in entered if n not in pool]
+    if missing:
+        miss = ', '.join(str(n).zfill(3) for n in missing)
+        return JsonResponse({
+            'error': f'These numbers are not on any verified ticket: {miss}',
+            'error_code': 'not_taken',
+            'missing': missing,
+        }, status=400)
+
+    now = timezone.now()
+    settings_obj.winner_1st = w1
+    settings_obj.winner_2nd = w2
+    settings_obj.winner_3rd = w3
+    settings_obj.winner_number = str(w1)
+    settings_obj.draw_completed = True
+    settings_obj.winner_announced_at = now
+    settings_obj.winners_notified = False
+    settings_obj.next_round_at = None
+    settings_obj.save(reset_timer=False)
+
+    notified = _send_winner_dms(settings_obj)
+    settings_obj.winners_notified = True
+    if settings_obj.uses_date_deadline():
+        mins = max(1, int(settings_obj.next_round_minutes or 10))
+        settings_obj.next_round_at = now + timedelta(minutes=mins)
+    settings_obj.save(reset_timer=False)
+
+    settings_payload = settings_obj.to_public_dict(request)
+    settings_payload['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Winners saved. Telegram DMs sent to {notified} holder(s).',
+        'notified': notified,
+        **_draw_response(settings_obj, notified=notified, already_drawn=False),
+        'settings': settings_payload,
     })
 
 

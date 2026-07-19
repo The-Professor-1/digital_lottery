@@ -232,8 +232,25 @@
 
     <!-- NUMBERS -->
     <div v-if="loggedIn && activeTab === 'numbers'" class="panel">
-      <h2>Admin taken / free numbers</h2>
-      <p class="hint">All numbers are free by default. Paste taken numbers (comma/space separated). Verified user tickets stay taken automatically.</p>
+      <h2>Hold ticket (walk-in)</h2>
+      <p class="hint">
+        For buyers who call or pay in person (no Telegram). Saves a verified ticket so those numbers show as taken in the picker. Leave empty and use the normal mini-app flow otherwise.
+      </p>
+      <div class="timer-grid">
+        <label>Name <input v-model="holdName" type="text" placeholder="Full name" autocomplete="name" /></label>
+        <label>Phone <input v-model="holdPhone" type="text" placeholder="09…" autocomplete="tel" /></label>
+      </div>
+      <label>Number(s) to take
+        <input v-model="holdNumbers" type="text" placeholder="e.g. 61 or 12, 45, 90" />
+      </label>
+      <div class="actions">
+        <button type="button" class="btn primary" :disabled="holdingTicket" @click="holdTicket">
+          {{ holdingTicket ? 'Saving…' : 'Save held ticket' }}
+        </button>
+      </div>
+
+      <h2 class="subhead">Bulk blocked numbers (no owner)</h2>
+      <p class="hint">Optional: paste numbers to mark taken without a name/phone. Verified purchases stay taken automatically.</p>
       <textarea v-model="blockedText" rows="4" class="area" placeholder="e.g. 1, 2, 15, 61" />
       <p class="hint">Currently taken (admin + purchases): {{ form.taken_numbers?.length || 0 }}</p>
       <button type="button" class="btn primary" :disabled="saving" @click="saveBlocked">Save blocked numbers</button>
@@ -411,12 +428,39 @@
 
     <!-- WINNER -->
     <div v-if="loggedIn && activeTab === 'winner'" class="panel">
-      <h2>Announce winner</h2>
-      <p class="hint">Use after the ticket deadline. Notifies verified ticket holders on Telegram.</p>
-      <label>Winning number <input v-model="winnerNumber" type="text" placeholder="061" /></label>
-      <label>Message <textarea v-model="winnerMessage" rows="3" class="area" placeholder="Congratulations to the winner!" /></label>
-      <p v-if="form.winner_announced_at" class="hint">Last announced: #{{ form.winner_number }} at {{ form.winner_announced_at }}</p>
-      <button type="button" class="btn primary" @click="announce">Announce winner</button>
+      <template v-if="showManualWinnerEntry">
+        <h2>Manual draw winners</h2>
+        <p class="hint">
+          After you run the draw offline, enter the three winning numbers. Holders of those numbers get a Telegram DM (if they have Telegram). Not used when automatic announcement is on in date/sold-out mode.
+        </p>
+        <div class="timer-grid">
+          <label>1st place
+            <input v-model="manualWinner1st" type="text" inputmode="numeric" placeholder="e.g. 061" />
+          </label>
+          <label>2nd place
+            <input v-model="manualWinner2nd" type="text" inputmode="numeric" placeholder="e.g. 128" />
+          </label>
+          <label>3rd place
+            <input v-model="manualWinner3rd" type="text" inputmode="numeric" placeholder="e.g. 240" />
+          </label>
+        </div>
+        <p v-if="form.draw_completed" class="hint">
+          Current winners: 1st #{{ padWin(form.winner_1st) }} · 2nd #{{ padWin(form.winner_2nd) }} · 3rd #{{ padWin(form.winner_3rd) }}
+        </p>
+        <button type="button" class="btn primary" :disabled="savingManualWinners" @click="saveManualWinners">
+          {{ savingManualWinners ? 'Saving…' : 'Save winners &amp; send DMs' }}
+        </button>
+      </template>
+      <template v-else>
+        <h2>Announce winner</h2>
+        <p class="hint">
+          Automatic mode picks 1st/2nd/3rd in the mini-app. Use this only for a one-number broadcast if needed.
+        </p>
+        <label>Winning number <input v-model="winnerNumber" type="text" placeholder="061" /></label>
+        <label>Message <textarea v-model="winnerMessage" rows="3" class="area" placeholder="Congratulations to the winner!" /></label>
+        <p v-if="form.winner_announced_at" class="hint">Last announced: #{{ form.winner_number }} at {{ form.winner_announced_at }}</p>
+        <button type="button" class="btn primary" @click="announce">Announce winner</button>
+      </template>
     </div>
 
     <!-- DELETED (main admin only) — full archived copies from Admin View removals -->
@@ -551,6 +595,8 @@ import {
   getLotteryPurchasesAdmin,
   lotteryPurchaseAction,
   announceLotteryWinner,
+  setManualLotteryWinners,
+  holdLotteryTicketAdmin,
   getSecondAdminCredentials,
   saveSecondAdminCredentials,
   secondAdminLogin,
@@ -618,8 +664,16 @@ export default {
         taken_numbers: [],
         winner_number: '',
         winner_announced_at: '',
+        winner_1st: null,
+        winner_2nd: null,
+        winner_3rd: null,
+        draw_completed: false,
       },
       blockedText: '',
+      holdName: '',
+      holdPhone: '',
+      holdNumbers: '',
+      holdingTicket: false,
       purchases: [],
       receiptStatus: 'pending',
       receiptPeriod: 'today',
@@ -630,6 +684,10 @@ export default {
       verifiedCount: 0,
       winnerNumber: '',
       winnerMessage: '',
+      manualWinner1st: '',
+      manualWinner2nd: '',
+      manualWinner3rd: '',
+      savingManualWinners: false,
       msgTarget: 'all',
       msgText: '',
       msgSelectedIds: [],
@@ -703,6 +761,9 @@ export default {
     },
     adminViewLoginUrl() {
       return `${this.adminViewUrl}/login`
+    },
+    showManualWinnerEntry() {
+      return this.form.draw_mode === 'manual' || !this.form.automatic_announcement
     },
   },
   mounted() {
@@ -828,9 +889,20 @@ export default {
         taken_numbers: data.taken_numbers || [],
         winner_number: data.winner_number || '',
         winner_announced_at: data.winner_announced_at || '',
+        winner_1st: data.winner_1st ?? null,
+        winner_2nd: data.winner_2nd ?? null,
+        winner_3rd: data.winner_3rd ?? null,
+        draw_completed: !!data.draw_completed,
       }
       this.blockedText = (this.form.admin_blocked_numbers || []).join(', ')
+      if (data.winner_1st) this.manualWinner1st = String(data.winner_1st)
+      if (data.winner_2nd) this.manualWinner2nd = String(data.winner_2nd)
+      if (data.winner_3rd) this.manualWinner3rd = String(data.winner_3rd)
       if (!this.form.payment_accounts.length) this.addAccount()
+    },
+    padWin(n) {
+      if (n == null || n === '') return '—'
+      return String(n).padStart(3, '0')
     },
     async load() {
       this.loading = true
@@ -1062,6 +1134,71 @@ export default {
         .filter((n) => !Number.isNaN(n) && n > 0)
       this.form.admin_blocked_numbers = [...new Set(nums)]
       await this.save()
+    },
+    async holdTicket() {
+      this.error = ''
+      this.message = ''
+      const name = (this.holdName || '').trim()
+      const phone = (this.holdPhone || '').trim()
+      const numbers = (this.holdNumbers || '').trim()
+      if (!name || !phone || !numbers) {
+        this.error = 'Name, phone, and at least one number are required'
+        return
+      }
+      this.holdingTicket = true
+      try {
+        const res = await holdLotteryTicketAdmin({
+          full_name: name,
+          phone,
+          numbers,
+        })
+        this.message = res.message || 'Ticket held'
+        this.holdName = ''
+        this.holdPhone = ''
+        this.holdNumbers = ''
+        if (res.settings) this.applyData(res.settings)
+        else await this.load()
+        if (this.activeTab === 'receipts') await this.loadPurchases()
+      } catch (e) {
+        if (e.response?.status === 401) {
+          this.unauthorized = true
+          this.loggedIn = false
+        }
+        this.error = e.response?.data?.error || 'Could not hold ticket'
+      } finally {
+        this.holdingTicket = false
+      }
+    },
+    async saveManualWinners() {
+      this.error = ''
+      this.message = ''
+      if (!(this.manualWinner1st || '').trim()) {
+        this.error = '1st place number is required'
+        return
+      }
+      const ok = window.confirm(
+        'Save these winners and send Telegram DMs to holders of 1st / 2nd / 3rd?'
+      )
+      if (!ok) return
+      this.savingManualWinners = true
+      try {
+        const res = await setManualLotteryWinners({
+          winner_1st: this.manualWinner1st,
+          winner_2nd: this.manualWinner2nd || null,
+          winner_3rd: this.manualWinner3rd || null,
+        })
+        this.message = res.message || 'Winners saved'
+        if (res.settings) this.applyData(res.settings)
+        else await this.load()
+      } catch (e) {
+        if (e.response?.status === 401) {
+          this.unauthorized = true
+          this.loggedIn = false
+        }
+        this.error = e.response?.data?.error || 'Could not save winners'
+      } finally {
+        this.savingManualWinners = false
+      }
     },
     async loadPurchases() {
       try {

@@ -325,7 +325,12 @@ function startRecoverPoll() {
   if (recoverTimer) clearInterval(recoverTimer)
   recoverTimer = setInterval(async () => {
     await loadPublicSettings()
-    if (store.raffle.drawCompleted) return
+    if (store.raffle.drawCompleted && store.raffle.winner1st) {
+      applyCompletedWinnersFromStore()
+      clearInterval(recoverTimer)
+      recoverTimer = null
+      return
+    }
 
     const dateMode = (store.raffle.drawMode || 'date') === 'date'
     const ends = store.raffle.endsAt || 0
@@ -451,33 +456,46 @@ async function doStartNextRound() {
   nextRoundLeft.value = 0
 }
 
+function applyCompletedWinnersFromStore() {
+  if (
+    !store.raffle.drawCompleted ||
+    !store.raffle.winner1st ||
+    phase.value === 'reveal' ||
+    phase.value === 'drawing' ||
+    phase.value === 'final'
+  ) {
+    return false
+  }
+  if (phase.value !== 'done') {
+    drawResult.value = {
+      winner_1st: store.raffle.winner1st,
+      winner_2nd: store.raffle.winner2nd,
+      winner_3rd: store.raffle.winner3rd,
+      prize_1st: store.raffle.prize1st,
+      prize_2nd: store.raffle.prize2nd,
+      prize_3rd: store.raffle.prize3rd,
+    }
+    nextRoundEndsAt.value = store.raffle.nextRoundAt || 0
+    phase.value = 'done'
+    finishAnnounceAndNotify()
+  }
+  return true
+}
+
+watch(
+  () => [store.raffle.drawCompleted, store.raffle.winner1st, store.raffle.winner2nd, store.raffle.winner3rd],
+  () => {
+    applyCompletedWinnersFromStore()
+  }
+)
+
 watch(
   [inFinalMinute, isFinished, remainingSeconds],
   ([finalMin, finished, secs]) => {
     pulse.value = secs % 2 === 0
 
     // Skip while this client is mid-shuffle/reveal; late joiners (idle) jump to winners
-    if (
-      store.raffle.drawCompleted &&
-      store.raffle.winner1st &&
-      phase.value !== 'reveal' &&
-      phase.value !== 'drawing' &&
-      phase.value !== 'final'
-    ) {
-      if (phase.value !== 'done') {
-        drawResult.value = {
-          winner_1st: store.raffle.winner1st,
-          winner_2nd: store.raffle.winner2nd,
-          winner_3rd: store.raffle.winner3rd,
-          prize_1st: store.raffle.prize1st,
-          prize_2nd: store.raffle.prize2nd,
-          prize_3rd: store.raffle.prize3rd,
-        }
-        nextRoundEndsAt.value = store.raffle.nextRoundAt || 0
-        phase.value = 'done'
-        // Late joiners / refresh: DMs wait until announce window ends (server-gated)
-        finishAnnounceAndNotify()
-      }
+    if (applyCompletedWinnersFromStore()) {
       return
     }
 

@@ -29,6 +29,7 @@ export const store = reactive({
   conflictDialog: false,
   conflictMessage: '',
   conflictAvailable: [],
+  conflictKept: [],
   conflictPicked: [],
   tickets: [],
   ticketStats: { active: 0, pending: 0, total: 0 },
@@ -285,20 +286,17 @@ export async function submitOrder() {
     const data = e.response?.data || {}
     const code = data.error_code || ''
     if (code === 'numbers_taken' || (e.response?.status === 409 && Array.isArray(data.available))) {
+      const taken = Array.isArray(data.taken) ? data.taken.map(Number) : []
+      const kept = Array.isArray(data.kept)
+        ? data.kept.map(Number)
+        : store.selectedNumbers.filter((n) => !taken.includes(Number(n)))
       store.conflictMessage = data.error || 'Some numbers were taken'
       store.conflictAvailable = data.available || []
+      store.conflictKept = kept
       store.conflictPicked = []
       store.conflictDialog = true
       await loadPublicSettings()
       return false
-    }
-    // Amount mismatch saved for manual review — still show result screen
-    if (code === 'amount_mismatch' && data.manual_review) {
-      store.orderDone = true
-      store.orderVerified = false
-      store.submitMessage = data.error || 'Amount mismatch — sent to manual review'
-      store.submitError = ''
-      return true
     }
     store.submitError = data.error || e.message || 'Could not submit. Try again.'
     return false
@@ -323,6 +321,7 @@ export function finishOrder() {
   store.submitMessage = ''
   store.conflictDialog = false
   store.conflictAvailable = []
+  store.conflictKept = []
   store.conflictPicked = []
   store.conflictMessage = ''
 }

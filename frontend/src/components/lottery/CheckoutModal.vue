@@ -122,7 +122,7 @@
                     type="button"
                     class="inline-flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/15 px-2 py-1 text-[11px] text-white/85 shrink-0"
                     :title="t.copyAccount"
-                    @click.stop="copyText(bank.account, bank.id)"
+                    @click.stop="copyAndSelectBank(bank)"
                   >
                     <Copy :size="13" />
                     {{ copiedId === bank.id ? t.copied : t.copy }}
@@ -288,7 +288,23 @@
         <div class="w-full max-w-phone rounded-2xl bg-ink-100 border border-white/10 p-4 space-y-3 max-h-[80dvh] flex flex-col">
           <h3 class="text-base font-bold text-white">{{ t.numbersTakenTitle }}</h3>
           <p class="text-sm text-red-300 leading-relaxed">{{ store.conflictMessage }}</p>
-          <p class="text-xs text-white/55">{{ t.pickFromAvailable }}</p>
+
+          <div v-if="store.conflictKept.length" class="space-y-1.5">
+            <p class="text-xs text-white/55">{{ t.keptNumbersLabel }}</p>
+            <div class="flex flex-wrap gap-1.5">
+              <span
+                v-for="n in store.conflictKept"
+                :key="'k' + n"
+                class="inline-block bg-forest/40 border border-forest/50 text-white text-xs font-bold px-2 py-1 rounded-md tabular-nums"
+              >
+                {{ padNumber(n) }}
+              </span>
+            </div>
+          </div>
+
+          <p class="text-xs text-white/55">
+            {{ t.selectMore(conflictNeedMore) }}
+          </p>
           <div class="flex-1 overflow-y-auto grid grid-cols-6 gap-1.5 py-1">
             <button
               v-for="n in store.conflictAvailable"
@@ -306,7 +322,8 @@
             </button>
           </div>
           <p class="text-xs text-white/50">
-            {{ store.conflictPicked.length }} / {{ store.quantity }} {{ t.selected }}
+            {{ store.conflictKept.length + store.conflictPicked.length }} / {{ store.quantity }}
+            {{ t.selected }}
           </p>
           <div class="flex gap-2">
             <button
@@ -319,7 +336,7 @@
             <button
               type="button"
               class="btn-green flex-[1.3] py-3 text-sm"
-              :disabled="store.conflictPicked.length !== store.quantity"
+              :disabled="store.conflictPicked.length !== conflictNeedMore"
               @click="applyConflictAndRetry"
             >
               {{ t.continue }}
@@ -365,6 +382,10 @@ const providerLabel = computed(() => {
 
 const smsHint = computed(() => t.value.fullSmsHint(providerLabel.value))
 
+const conflictNeedMore = computed(() =>
+  Math.max(0, store.quantity - (store.conflictKept?.length || 0))
+)
+
 async function copyText(value, id) {
   const text = String(value || '').trim()
   if (!text) return
@@ -390,6 +411,11 @@ async function copyText(value, id) {
   } catch (e) {
     console.warn('copy failed', e)
   }
+}
+
+async function copyAndSelectBank(bank) {
+  if (bank?.id) store.selectedBankId = bank.id
+  await copyText(bank?.account, bank?.id)
 }
 
 async function pasteSmsFromClipboard() {
@@ -424,16 +450,18 @@ function toggleConflictPick(n) {
     store.conflictPicked.splice(idx, 1)
     return
   }
-  if (store.conflictPicked.length >= store.quantity) return
+  if (store.conflictPicked.length >= conflictNeedMore.value) return
   store.conflictPicked.push(n)
 }
 
 async function applyConflictAndRetry() {
-  if (store.conflictPicked.length !== store.quantity) return
-  store.selectedNumbers = [...store.conflictPicked]
+  if (store.conflictPicked.length !== conflictNeedMore.value) return
+  store.selectedNumbers = [...store.conflictKept, ...store.conflictPicked]
+  store.quantity = store.selectedNumbers.length
   store.conflictDialog = false
   store.conflictAvailable = []
   store.conflictPicked = []
+  store.conflictKept = []
   store.conflictMessage = ''
   const ok = await submitOrder()
   if (ok) store.checkoutStep = 4
