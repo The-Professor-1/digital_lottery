@@ -58,13 +58,13 @@ PHONE_RECEIVED = {
 }
 
 OPEN_APP_HINT = {
-    'am': 'የስልክ ቁጥር ተቀብለናል ✅ \n\nመተግበሪያውን ለመክፈት ከታች ያለውን ቁልፍ ይጫኑ።',
-    'en': 'Phone number received ✅ \n\nTo open the application, press the button below.',
+    'am': 'ተመዝበዋል ✅ \n\nወደ ሎተሪ ለመግባት ከታች ያለውን ቁልፍ ይጫኑ።',
+    'en': 'Registered ✅ \n\npress the button below, to start the application',
     }
 
 OWN_CONTACT_ONLY = {
-    'am': 'እባክዎ የእርስዎን ስልክ ቁጥር ያጋሩ።',
-    'en': 'Please share your own phone number.',
+    'am': 'እባክዎ ለመመዝገብ የእርስዎን ስልክ ቁጥር ያጋሩ።',
+    'en': 'Please share your phone number to register.',
    }
 
 
