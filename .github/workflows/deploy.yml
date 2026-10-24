@@ -36,5 +36,20 @@ jobs:
               exit 1
             fi
 
+            # Bootstrap: the first deploy needs to pull the commit that adds
+            # scripts/deploy.sh before it can execute it.
+            export GIT_TERMINAL_PROMPT=0
+            git fetch origin
+            if git show-ref --quiet refs/remotes/origin/main; then
+              BRANCH=main
+            elif git show-ref --quiet refs/remotes/origin/master; then
+              BRANCH=master
+            else
+              echo "ERROR: neither origin/main nor origin/master exists"
+              exit 1
+            fi
+            git reset --hard "origin/$BRANCH"
+            git log -1 --oneline
+
             bash scripts/deploy.sh
             echo "DigitalLottery deployment completed successfully"
