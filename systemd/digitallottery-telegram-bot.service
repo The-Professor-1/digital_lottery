@@ -1,7 +1,6 @@
 [Unit]
 Description=Digital Lottery Telegram Bot
-After=network.target postgresql.service redis.service
-Wants=postgresql.service redis.service
+After=network.target
 
 [Service]
 Type=simple

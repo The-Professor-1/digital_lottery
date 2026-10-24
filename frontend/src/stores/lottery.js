@@ -1,6 +1,9 @@
 import { reactive } from 'vue'
 import { featuredRaffle, padNumber, banks as defaultBanks } from '../data/mock'
-import { getLotterySettings, getLotteryMe, getLotteryTickets, submitLotteryPurchase } from '../services/api'
+import {
+  getLotterySettings, getLotteryItems, getLotteryItemDetail, getLotteryMe,
+  getLotteryTickets, submitLotteryPurchase,
+} from '../services/api'
 
 const THEME_KEY = 'gfj_theme'
 
@@ -19,6 +22,8 @@ export const store = reactive({
   fullName: '',
   selectedBankId: null,
   receiptSms: '',
+  paymentProofFile: null,
+  paymentProofName: '',
   paidFromAccount: '',
   orderDone: false,
   orderVerified: false,
@@ -37,6 +42,10 @@ export const store = reactive({
   filter: 'all',
   settingsLoaded: false,
   homeRefreshKey: 0,
+  items: [],
+  winners: [],
+  activeItemId: null,
+  landingLoaded: false,
 })
 
 export function isTaken(n) {
@@ -50,6 +59,19 @@ export function applyPublicSettings(data) {
     if (typeof document !== 'undefined' && data.brand_name) {
       document.title = data.brand_name
     }
+  }
+  if (store.activeItemId) {
+    // Keep the per-item raffle selected by the landing page.
+    if (Array.isArray(data.payment_accounts) && data.payment_accounts.length) {
+      store.banks = data.payment_accounts.map((a, i) => ({
+        id: a.id || 'acc-' + i,
+        name: a.name || '',
+        holder: a.holder || '',
+        account: a.account || '',
+      }))
+    }
+    store.settingsLoaded = true
+    return
   }
   const nextMode =
     data.draw_mode === 'date' || data.draw_mode === 'sold_out' || data.draw_mode === 'manual'
@@ -105,6 +127,96 @@ export function applyPublicSettings(data) {
   store.settingsLoaded = true
 }
 
+
+
+export function applyItemToRaffle(item) {
+  if (!item) return
+  store.activeItemId = item.id
+  const prizes = Array.isArray(item.prizes) ? item.prizes : []
+  store.raffle = {
+    ...store.raffle,
+    id: item.id,
+    name: item.name || item.display_name || store.raffle.name,
+    displayName: item.display_name || item.name || store.raffle.displayName,
+    heroTitle: item.hero_title || item.name || store.brandName,
+    description: item.description || '',
+    image: item.image_url || store.raffle.image,
+    prizes,
+    prize1st: prizes[0]?.amount ?? store.raffle.prize1st ?? 0,
+    prize2nd: prizes[1]?.amount ?? store.raffle.prize2nd ?? 0,
+    prize3rd: prizes[2]?.amount ?? store.raffle.prize3rd ?? 0,
+    ticketPrice: item.ticket_price ?? store.raffle.ticketPrice,
+    totalTickets: item.total_tickets ?? store.raffle.totalTickets,
+    soldCount: item.sold_count ?? 0,
+    participants: item.sold_count ?? 0,
+    endsAt: item.ends_at_ms || 0,
+    drawMode: item.draw_mode || 'date',
+    drawTimerSeconds: item.draw_timer_seconds ?? 60,
+    automaticAnnouncement: item.automatic_announcement !== false,
+    winnerRevealSeconds: item.winner_reveal_seconds ?? 6,
+    drawCompleted: !!item.draw_completed,
+    winner1st: item.winner_1st ?? null,
+    winner2nd: item.winner_2nd ?? null,
+    winner3rd: item.winner_3rd ?? null,
+    nextRoundAt: item.next_round_at_ms || 0,
+    nextRoundMinutes: item.next_round_minutes ?? 10,
+    winnersNotified: !!item.winners_notified,
+  }
+  if (Array.isArray(item.taken_numbers)) {
+    store.takenNumbers = new Set(item.taken_numbers.map((n) => Number(n)))
+  }
+  if (Array.isArray(item.verified_taken_numbers)) {
+    store.verifiedTakenNumbers = new Set(item.verified_taken_numbers.map((n) => Number(n)))
+  }
+}
+
+export async function loadWinners() {
+  try {
+    const data = await getLotteryItems()
+    store.winners = (data.winners || []).slice(0, 30)
+    return store.winners
+  } catch (e) {
+    return []
+  }
+}
+
+export async function loadLanding() {
+  try {
+    const data = await getLotteryItems()
+    store.items = Array.isArray(data.items) ? data.items : []
+    store.winners = (data.winners || []).slice(0, 30)
+    if (data.brand_name) store.brandName = data.brand_name
+    if (Array.isArray(data.payment_accounts) && data.payment_accounts.length) {
+      store.banks = data.payment_accounts.map((a, i) => ({
+        id: a.id || 'acc-' + i,
+        name: a.name || '',
+        holder: a.holder || '',
+        account: a.account || '',
+      }))
+    }
+    store.landingLoaded = true
+    if (store.items.length === 1) {
+      await activateItemById(store.items[0].id)
+    } else if (!store.items.length) {
+      store.activeItemId = null
+    }
+    return data
+  } catch (e) {
+    console.warn('Landing data unavailable, using defaults', e)
+    store.landingLoaded = true
+    return null
+  }
+}
+
+export async function activateItemById(id) {
+  const item =
+    (await getLotteryItemDetail(id).catch(() => null)) ||
+    store.items.find((it) => Number(it.id) === Number(id))
+  if (!item) return null
+  applyItemToRaffle(item)
+  return item
+}
+
 export async function loadPublicSettings() {
   try {
     const data = await getLotterySettings()
@@ -147,7 +259,8 @@ export async function loadTicketsForPhone(phone = store.phone) {
     store.tickets = (data.tickets || []).map((t) => ({
       id: t.id,
       phone: t.phone,
-      raffleName: store.raffle.displayName,
+      lotteryItemId: t.lottery_item_id ?? null,
+      raffleName: t.lottery_item_name || store.raffle.displayName,
       numbers: (t.numbers || []).map((n) => String(n).padStart(3, '0')),
       status: t.status === 'verified' ? 'active' : t.status,
       amount: t.amount,
@@ -228,6 +341,8 @@ export function openCheckoutFromSelect() {
   store.submitError = ''
   store.submitMessage = ''
   store.conflictDialog = false
+  store.paymentProofFile = null
+  store.paymentProofName = ''
   store.showCheckout = true
 }
 
@@ -248,38 +363,38 @@ export async function submitOrder() {
     store.submitError = 'Please choose a payment account'
     return false
   }
-  if (!(store.receiptSms || '').trim()) {
-    store.submitError = 'Please paste the full SMS you received'
+  if (!store.paymentProofFile) {
+    store.submitError = 'Please upload the payment screenshot'
     return false
   }
 
   store.submitting = true
   store.verifying = true
   try {
-    const payload = {
-      full_name: store.fullName,
-      phone: store.phone,
-      numbers: store.selectedNumbers,
-      paid_from_account: store.paidFromAccount || '',
-      bank_id: bank.id || '',
-      bank_name: bank.name || '',
-      bank_holder: bank.holder || '',
-      bank_account: bank.account || '',
-      receipt_sms: store.receiptSms.trim(),
-    }
+    const form = new FormData()
+    form.append('full_name', store.fullName)
+    form.append('phone', store.phone)
+    form.append('numbers', JSON.stringify(store.selectedNumbers))
+    form.append('paid_from_account', store.paidFromAccount || '')
+    form.append('bank_id', bank.id || '')
+    form.append('bank_name', bank.name || '')
+    form.append('bank_holder', bank.holder || '')
+    form.append('bank_account', bank.account || '')
+    if (store.activeItemId) form.append('lottery_item_id', String(store.activeItemId))
+    form.append('receipt', store.paymentProofFile)
 
-    const res = await submitLotteryPurchase(payload)
+    const res = await submitLotteryPurchase(form)
     store.orderDone = true
     store.orderVerified = !!res.verified
     store.submitMessage = res.message || ''
-    // Step 4 = result (CheckoutModal advances)
     if (res.manual_review && !res.verified) {
       store.orderVerified = false
-      store.submitMessage =
-        res.message ||
-        'Due to system problem your request is sent to manual review please wait moment'
     }
-    await loadPublicSettings()
+    if (store.activeItemId) {
+      await activateItemById(store.activeItemId)
+    } else {
+      await loadPublicSettings()
+    }
     await loadTicketsForPhone(store.phone)
     return true
   } catch (e) {
@@ -295,7 +410,6 @@ export async function submitOrder() {
       store.conflictKept = kept
       store.conflictPicked = []
       store.conflictDialog = true
-      await loadPublicSettings()
       return false
     }
     store.submitError = data.error || e.message || 'Could not submit. Try again.'
@@ -316,6 +430,8 @@ export function finishOrder() {
   store.fullName = ''
   store.selectedBankId = null
   store.receiptSms = ''
+  store.paymentProofFile = null
+  store.paymentProofName = ''
   store.paidFromAccount = ''
   store.submitError = ''
   store.submitMessage = ''

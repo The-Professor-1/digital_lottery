@@ -11,6 +11,8 @@
 import HeroCard from '../../components/lottery/HeroCard.vue'
 import { store, openPicker } from '../../stores/lottery'
 
+defineProps({ embedded: { type: Boolean, default: false } })
+
 function startBuy() {
   store.selectedNumbers = []
   store.quantity = 1

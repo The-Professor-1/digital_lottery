@@ -4,6 +4,20 @@
 from django.db import migrations, models
 
 
+def _add_txn_reference_if_missing(apps, schema_editor):
+    """SQLite/Postgres-safe: add the column only when it does not exist."""
+    table = 'deposit_requests'
+    with schema_editor.connection.cursor() as cursor:
+        columns = [
+            col.name
+            for col in schema_editor.connection.introspection.get_table_description(cursor, table)
+        ]
+    if 'transaction_reference' not in columns:
+        schema_editor.execute(
+            'ALTER TABLE deposit_requests ADD COLUMN transaction_reference varchar(128) NULL'
+        )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -37,13 +51,9 @@ class Migration(migrations.Migration):
                 ),
             ],
             database_operations=[
-                migrations.RunSQL(
-                    sql=(
-                        "ALTER TABLE deposit_requests "
-                        "ADD COLUMN IF NOT EXISTS transaction_reference "
-                        "varchar(128) NULL;"
-                    ),
-                    reverse_sql=migrations.RunSQL.noop,
+                migrations.RunPython(
+                    _add_txn_reference_if_missing,
+                    migrations.RunPython.noop,
                 ),
             ],
         ),

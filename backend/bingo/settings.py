@@ -145,23 +145,17 @@ WSGI_APPLICATION = 'bingo.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.1/ref/settings/#databases
 
-# Database configuration for EC2 single instance
-# Optimized for PostgreSQL on same EC2 instance
+# Database configuration: single-instance SQLite (no PostgreSQL server needed).
+_sqlite_name = os.getenv('DB_NAME', 'db.sqlite3')
+if not os.path.isabs(_sqlite_name):
+    _sqlite_name = os.path.join(BASE_DIR, _sqlite_name)
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME', 'bingo_db'),
-        'USER': os.getenv('DB_USER', 'postgres'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-        # Connection pooling for EC2 single instance
-        'CONN_MAX_AGE': 60,  # Keep connections alive for 60 seconds (reduced for single instance)
-        'OPTIONS': {
-            'connect_timeout': 10,
-            # Optimize for single instance PostgreSQL
-            'options': '-c statement_timeout=30000',  # 30 second statement timeout
-        }
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': _sqlite_name,
+        'OPTIONS': {'timeout': 20},
+        'CONN_MAX_AGE': 0,
     }
 }
 
@@ -260,29 +254,23 @@ CORS_ALLOW_CREDENTIALS = True
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 
-# Channels Configuration
+# ASGI is still used by gunicorn/uvicorn, but there are no websocket consumers.
 ASGI_APPLICATION = 'bingo.asgi.application'
 
-# Redis configuration for EC2 single instance
-# Redis runs on same EC2 instance (localhost)
-REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', None)
-
-# Redis URL (cache + rate limiting)
-if REDIS_PASSWORD:
-    REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}"
-else:
-    REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
-
+# File-based cache instead of Redis. Shared by all gunicorn workers on one host.
 CACHES = {
     'default': {
-        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': REDIS_URL,
-        'KEY_PREFIX': 'digitallottery_cache',
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': os.path.join(BASE_DIR, 'cache'),
         'TIMEOUT': 300,
+        'OPTIONS': {'MAX_ENTRIES': 10000},
     }
 }
+
+# Web Push (admin browser notifications)
+PUSH_VAPID_PUBLIC_KEY = os.getenv('PUSH_VAPID_PUBLIC_KEY', '').strip()
+PUSH_VAPID_PRIVATE_KEY = os.getenv('PUSH_VAPID_PRIVATE_KEY', '').strip()
+PUSH_VAPID_SUBJECT = os.getenv('PUSH_VAPID_SUBJECT', 'mailto:admin@digital-lottery.example')
 
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')

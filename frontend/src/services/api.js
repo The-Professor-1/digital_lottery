@@ -49,7 +49,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (
+    if (error.response && error.response.status === 413) {
+      error.response.data = {
+        error: 'The uploaded image is too large. Please choose a smaller screenshot.',
+        status: 413,
+      }
+    } else if (
       error.response &&
       typeof error.response.data === 'string' &&
       error.response.data.trim().startsWith('<')
@@ -266,6 +271,95 @@ export async function notifyLotteryWinners() {
 
 export async function startLotteryNextRound() {
   const response = await api.post('/lottery/next-round/')
+  return response.data
+}
+
+
+
+export async function getLotteryItems() {
+  const response = await api.get('/lottery/items/')
+  return response.data
+}
+
+export async function getLotteryItemDetail(itemId) {
+  const response = await api.get('/lottery/items/' + itemId + '/')
+  return response.data
+}
+
+export async function getLotteryItemsAdmin() {
+  const response = await api.get('/admin-dashboard/lottery-items/')
+  return response.data
+}
+
+export async function saveLotteryItemAdmin(formData) {
+  const response = await api.post('/admin-dashboard/lottery-items/', formData)
+  return response.data
+}
+
+export async function deleteLotteryItemAdmin(id) {
+  const response = await api.post('/admin-dashboard/lottery-items/', { action: 'delete', id })
+  return response.data
+}
+
+export async function getHeldNumbersAdmin(params = {}) {
+  const response = await api.get('/admin-dashboard/lottery-held-numbers/', { params })
+  return response.data
+}
+
+export async function addHeldNumberAdmin(payload) {
+  const response = await api.post('/admin-dashboard/lottery-held-numbers/', { action: 'add', ...payload })
+  return response.data
+}
+
+export async function bulkHeldNumbersAdmin(payload) {
+  const response = await api.post('/admin-dashboard/lottery-held-numbers/', { action: 'bulk', ...payload })
+  return response.data
+}
+
+export async function deleteHeldNumberAdmin(id, lottery_item_id = null) {
+  const response = await api.post('/admin-dashboard/lottery-held-numbers/', {
+    action: 'delete',
+    id,
+    lottery_item_id: lottery_item_id || undefined,
+  })
+  return response.data
+}
+
+export async function getLotteryWinnersAdmin(params = {}) {
+  const response = await api.get('/admin-dashboard/lottery-winners/', { params })
+  return response.data
+}
+
+export async function announceItemWinner(payload) {
+  const response = await api.post('/admin-dashboard/lottery-announce-item-winner/', payload)
+  return response.data
+}
+
+export async function deleteLotteryWinnerAdmin(id) {
+  const response = await api.post('/admin-dashboard/lottery-winners/', { action: 'delete', id })
+  return response.data
+}
+
+export async function getPushVapidKey() {
+  const response = await api.get('/admin-dashboard/push/vapid-key/')
+  return response.data
+}
+
+export async function pushSubscribe(subscription) {
+  const response = await api.post('/admin-dashboard/push/subscribe/', { subscription })
+  return response.data
+}
+
+export async function pushUnsubscribe(endpoint) {
+  const response = await api.post('/admin-dashboard/push/unsubscribe/', { endpoint })
+  return response.data
+}
+
+
+export async function uploadPrizeImage(file) {
+  const form = new FormData()
+  form.append('image', file)
+  const response = await api.post('/admin-dashboard/lottery-prize-image/', form)
   return response.data
 }
 

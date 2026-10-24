@@ -19,6 +19,7 @@ db.sqlite3
 db.sqlite3-journal
 /media
 /staticfiles
+/backend/cache/
 
 # Environment variables
 .env
@@ -42,6 +43,7 @@ yarn-error.log*
 frontend/dist/
 frontend/.vite/
 frontend_dist/
+!backend/frontend_dist/
 
 # Local secrets / keys
 .env

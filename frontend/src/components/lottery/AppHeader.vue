@@ -43,9 +43,10 @@
         type="button"
         class="relative w-9 h-9 rounded-full bg-ink-200 border border-white/10 flex items-center justify-center"
         aria-label="Notifications"
+        @click="openNotice"
       >
         <Bell :size="16" class="text-gold" />
-        <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
+        <span v-if="store.winners.length" class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
       </button>
 
       <button
@@ -58,6 +59,7 @@
         <Moon v-else :size="16" class="text-gold" />
       </button>
     </div>
+    <NotificationsModal v-if="noticeOpen" @close="noticeOpen = false" />
   </header>
 </template>
 
@@ -65,15 +67,23 @@
 import { ref } from 'vue'
 import { Trophy, Globe, Bell, Sun, Moon, ChevronDown } from 'lucide-vue-next'
 import { useI18n } from '../../composables/useI18n'
-import { store, toggleTheme } from '../../stores/lottery'
+import NotificationsModal from './NotificationsModal.vue'
+import { store, toggleTheme, loadWinners } from '../../stores/lottery'
 
 const { locale, t, setLocale } = useI18n()
 const langOpen = ref(false)
+const noticeOpen = ref(false)
 
 const langOptions = [
   { code: 'am', label: 'አማርኛ' },
   { code: 'en', label: 'English' },
 ]
+
+async function openNotice() {
+  langOpen.value = false
+  noticeOpen.value = true
+  await loadWinners()
+}
 
 function pickLang(code) {
   setLocale(code)

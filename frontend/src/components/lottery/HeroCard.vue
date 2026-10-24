@@ -17,15 +17,14 @@
           <p class="relative text-gold text-xs font-semibold tracking-[0.18em] uppercase">
             {{ raffle.heroTitle || store.brandName }}
           </p>
-          <h1 class="relative mt-4 text-white text-3xl sm:text-4xl font-extrabold leading-tight tracking-tight">
-            1ኛ እጣ {{ formatAmount(raffle.prize1st) }} ብር
-          </h1>
-          <h2 class="relative mt-3 text-lime-300/95 text-xl sm:text-2xl font-bold leading-snug">
-            2ኛ እጣ {{ formatAmount(raffle.prize2nd) }} ብር
-          </h2>
-          <h3 class="relative mt-2 text-white/80 text-base sm:text-lg font-semibold leading-snug">
-            3ኛ እጣ {{ formatAmount(raffle.prize3rd) }} ብር
-          </h3>
+          <div class="relative mt-4 w-full max-w-sm">
+            <PrizeList
+              :prizes="raffle.prizes || []"
+              :prize1st="raffle.prize1st"
+              :prize2nd="raffle.prize2nd"
+              :prize3rd="raffle.prize3rd"
+            />
+          </div>
         </div>
       </button>
 
@@ -66,6 +65,7 @@ import { Users } from 'lucide-vue-next'
 import CountdownTimer from './CountdownTimer.vue'
 import TicketProgress from './TicketProgress.vue'
 import WinnerReveal from './WinnerReveal.vue'
+import PrizeList from './PrizeList.vue'
 import { useCountdown } from '../../composables/useCountdown'
 import { useI18n } from '../../composables/useI18n'
 import { store } from '../../stores/lottery'
@@ -109,7 +109,4 @@ const showDrawUi = computed(() => {
   return inFinalMinute.value || isFinished.value
 })
 
-function formatAmount(n) {
-  return Number(n || 0).toLocaleString('en-US')
-}
 </script>

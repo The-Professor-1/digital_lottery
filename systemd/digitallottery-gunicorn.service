@@ -1,7 +1,6 @@
 [Unit]
 Description=Gunicorn for Digital Lottery Django ASGI app
-After=network.target postgresql.service redis.service
-Wants=postgresql.service redis.service
+After=network.target
 
 [Service]
 Type=notify

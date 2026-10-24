@@ -1,10 +1,5 @@
 name: Deploy Digital Lottery
 
-# If this job fails with "dial tcp :22: i/o timeout", AWS Security Group must allow
-# SSH (port 22) from 0.0.0.0/0 (or use scripts/rebuild_frontend.sh on EC2 manually).
-#
-# This deploys ONLY ~/apps/DigitalLottery — it does NOT touch CarLottery.
-
 on:
   push:
     branches:
@@ -30,50 +25,10 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR="$HOME/apps/DigitalLottery"
-            VENV_PY="$APP_DIR/venv/bin/python"
-
-            echo "Starting DigitalLottery deployment..."
             cd "$APP_DIR"
-
-            if [ ! -x "$VENV_PY" ]; then
-              echo "ERROR: venv python missing at $VENV_PY"
-              echo "First-time setup: clone this repo to $APP_DIR and create venv (see DEPLOY.md)"
+            if [ ! -f .env ]; then
+              echo "ERROR: .env missing on the server. Create it from .env.example first."
               exit 1
             fi
-
-            echo "Using Python: $($VENV_PY --version)"
-
-            git fetch origin
-            if git show-ref --quiet refs/remotes/origin/main; then
-              BRANCH=main
-            elif git show-ref --quiet refs/remotes/origin/master; then
-              BRANCH=master
-            else
-              echo "Neither origin/main nor origin/master exists"
-              exit 1
-            fi
-
-            echo "Using branch: $BRANCH"
-            git reset --hard "origin/$BRANCH"
-            git log -1 --oneline
-
-            export PATH="$HOME/.local/bin:$PATH"
-            if command -v uv >/dev/null 2>&1; then
-              echo "Installing deps with uv pip..."
-              uv pip install --python "$VENV_PY" -r requirements.txt
-            elif "$VENV_PY" -m pip --version >/dev/null 2>&1; then
-              echo "Installing deps with python -m pip..."
-              "$VENV_PY" -m pip install -r requirements.txt
-            else
-              echo "Bootstrapping pip into venv..."
-              "$VENV_PY" -m ensurepip --upgrade
-              "$VENV_PY" -m pip install -r requirements.txt
-            fi
-
-            bash scripts/rebuild_frontend.sh
-
-            # Restart ONLY this app's services (do not touch carlottery-* / shared celery)
-            sudo systemctl restart digitallottery-gunicorn || true
-            sudo systemctl restart digitallottery-telegram-bot || true
-
+            bash scripts/deploy.sh
             echo "DigitalLottery deployment completed successfully"

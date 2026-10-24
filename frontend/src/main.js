@@ -8,6 +8,7 @@ import './style.css'
 
 import LotteryLayout from './views/lottery/LotteryLayout.vue'
 import HomeView from './views/lottery/HomeView.vue'
+import LandingView from './views/lottery/LandingView.vue'
 import RaffleDetailView from './views/lottery/RaffleDetailView.vue'
 import TicketsView from './views/lottery/TicketsView.vue'
 import ProfileView from './views/lottery/ProfileView.vue'
@@ -19,7 +20,7 @@ const routes = [
     path: '/',
     component: LotteryLayout,
     children: [
-      { path: '', name: 'home', component: HomeView },
+      { path: '', name: 'home', component: LandingView },
       { path: 'raffle/:id', name: 'raffle-detail', component: RaffleDetailView },
       { path: 'tickets', name: 'tickets', component: TicketsView },
       { path: 'profile', name: 'profile', component: ProfileView },

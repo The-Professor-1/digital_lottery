@@ -132,7 +132,7 @@
             </button>
           </template>
 
-          <!-- Step 3: SMS after bank chosen -->
+          <!-- Step 3: screenshot after bank chosen -->
           <template v-else-if="store.checkoutStep === 3">
             <div class="rounded-2xl bg-ink-200 border border-white/5 p-3 space-y-2">
               <p class="text-xs text-white/45">{{ t.payingTo }}</p>
@@ -154,36 +154,24 @@
               <p class="text-xs text-gold mt-1">{{ formatBirr(totalPrice()) }}</p>
             </div>
 
-            <div class="block">
-              <div class="flex items-center justify-between gap-2 mb-1">
-                <span class="text-sm text-white/80">{{ t.pasteSms }}</span>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1 rounded-lg bg-gold/15 border border-gold/30 px-2.5 py-1 text-[11px] text-gold font-semibold"
-                  @click="pasteSmsFromClipboard"
-                >
-                  <Copy :size="13" />
-                  {{ t.paste }}
-                </button>
-              </div>
-              <p class="text-xs text-white/45 mt-1 mb-2">{{ smsHint }}</p>
-              <textarea
-                ref="smsField"
-                v-model="store.receiptSms"
-                rows="6"
-                autocomplete="off"
-                autocorrect="off"
-                autocapitalize="off"
-                spellcheck="false"
-                inputmode="text"
-                class="selectable-field w-full rounded-2xl bg-ink-200 border border-white/10 px-3 py-3 text-sm text-white outline-none placeholder:text-white/30 resize-y min-h-[8rem]"
-                :placeholder="t.pasteSmsPlaceholder"
-                @input="store.submitError = ''"
-                @paste="store.submitError = ''"
-              />
+            <div>
+              <p class="text-sm text-white/80 mb-2">{{ t.paymentProof }}</p>
+              <label
+                class="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gold/50 bg-ink-200/50 py-8 px-4 cursor-pointer"
+              >
+                <Upload :size="28" class="text-gold" />
+                <span class="text-sm text-white/85">{{ t.uploadProof }}</span>
+                <span class="text-xs text-white/40">{{ t.uploadHint }}</span>
+                <span v-if="preparingReceipt" class="text-xs text-gold mt-1">
+                  {{ t.preparingImage }}
+                </span>
+                <span v-else-if="store.paymentProofName" class="text-xs text-forest mt-1">
+                  {{ store.paymentProofName }}
+                </span>
+                <input type="file" accept="image/png,image/jpeg" class="hidden" @change="onFile" />
+              </label>
             </div>
 
-            <p v-if="pasteError" class="text-xs text-amber-300">{{ pasteError }}</p>
             <p v-if="store.submitError" class="text-sm text-red-300 leading-relaxed whitespace-pre-wrap">
               {{ store.submitError }}
             </p>
@@ -204,10 +192,10 @@
                 <Clock v-else :size="32" class="text-amber-300" />
               </div>
               <h3 class="text-xl font-bold">
-                {{ store.orderVerified ? t.paymentVerified : t.manualReviewTitle }}
+                {{ store.orderVerified ? t.paymentVerified : t.receiptPendingTitle }}
               </h3>
               <p class="text-sm text-white/80 px-4 leading-relaxed">
-                {{ store.submitMessage || (store.orderVerified ? t.paymentVerifiedHint : t.manualReview) }}
+                {{ store.submitMessage || (store.orderVerified ? t.paymentVerifiedHint : t.receiptPendingHint) }}
               </p>
             </div>
           </template>
@@ -253,7 +241,7 @@
             <button
               type="button"
               class="btn-green flex-[1.4] py-3.5 text-sm"
-              :disabled="store.verifying || !(store.receiptSms || '').trim()"
+              :disabled="store.verifying || !store.paymentProofFile"
               @click="onSubmit"
             >
               {{ store.verifying ? t.checking : t.continue + ' >' }}
@@ -351,7 +339,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { X, User, Phone, Receipt, Check, Clock, Copy } from 'lucide-vue-next'
+import { X, User, Phone, Receipt, Upload, Check, Clock, Copy } from 'lucide-vue-next'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr, padNumber } from '../../data/mock'
 import {
@@ -365,22 +353,16 @@ import {
 const { t } = useI18n()
 const router = useRouter()
 const copiedId = ref('')
-const pasteError = ref('')
-const smsField = ref(null)
+const preparingReceipt = ref(false)
 let copyTimer = null
+
+const MAX_RECEIPT_DIMENSION = 2000
+const RECEIPT_JPEG_QUALITY = 0.88
+const MAX_RECEIPT_BYTES = 9 * 1024 * 1024
 
 const selectedBank = computed(() =>
   store.banks.find((b) => b.id === store.selectedBankId)
 )
-
-const providerLabel = computed(() => {
-  const name = (selectedBank.value?.name || selectedBank.value?.id || '').toLowerCase()
-  if (name.includes('tele')) return 'telebirr'
-  if (name.includes('cbe') || name.includes('commercial')) return 'CBE'
-  return 'telebirr / CBE'
-})
-
-const smsHint = computed(() => t.value.fullSmsHint(providerLabel.value))
 
 const conflictNeedMore = computed(() =>
   Math.max(0, store.quantity - (store.conflictKept?.length || 0))
@@ -418,24 +400,62 @@ async function copyAndSelectBank(bank) {
   await copyText(bank?.account, bank?.id)
 }
 
-async function pasteSmsFromClipboard() {
-  pasteError.value = ''
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img) }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read image')) }
+    img.src = url
+  })
+}
+
+async function prepareReceiptImage(file) {
+  if (!file) return file
+  const type = String(file.type || '').toLowerCase()
+  const name = String(file.name || '').toLowerCase()
+  if (!type.startsWith('image/') && !/\.(png|jpe?g|webp|bmp|gif|heic|heif)$/.test(name)) return file
   try {
-    let text = ''
-    if (navigator.clipboard?.readText) {
-      text = await navigator.clipboard.readText()
-    }
-    if (!text) {
-      pasteError.value = t.value.pasteManualHint
-      smsField.value?.focus()
+    const img = await loadImage(file)
+    const width = img.naturalWidth || img.width
+    const height = img.naturalHeight || img.height
+    if (!width || !height) return file
+    const scale = Math.min(1, MAX_RECEIPT_DIMENSION / Math.max(width, height))
+    if (scale === 1 && file.size <= 1.5 * 1024 * 1024 && type === 'image/jpeg') return file
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(width * scale))
+    canvas.height = Math.max(1, Math.round(height * scale))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', RECEIPT_JPEG_QUALITY))
+    if (!blob) return file
+    if (blob.size >= file.size && file.size <= MAX_RECEIPT_BYTES) return file
+    const base = (file.name || 'receipt').replace(/\.[^.]+$/, '') || 'receipt'
+    return new File([blob], base + '.jpg', { type: 'image/jpeg', lastModified: Date.now() })
+  } catch (e) {
+    return file
+  }
+}
+
+async function onFile(e) {
+  const original = e.target.files?.[0] || null
+  store.submitError = ''
+  store.paymentProofFile = null
+  store.paymentProofName = ''
+  if (!original) return
+  preparingReceipt.value = true
+  try {
+    const prepared = await prepareReceiptImage(original)
+    if (prepared.size > MAX_RECEIPT_BYTES) {
+      store.submitError = t.value.imageTooLarge
       return
     }
-    store.receiptSms = text
-    store.submitError = ''
-    smsField.value?.focus()
-  } catch (e) {
-    pasteError.value = t.value.pasteManualHint
-    smsField.value?.focus()
+    store.paymentProofFile = prepared
+    store.paymentProofName = prepared.name
+  } finally {
+    preparingReceipt.value = false
+    try { e.target.value = '' } catch (err) {}
   }
 }
 

@@ -16,7 +16,7 @@ import AppHeader from '../../components/lottery/AppHeader.vue'
 import BottomNav from '../../components/lottery/BottomNav.vue'
 import NumberPickerModal from '../../components/lottery/NumberPickerModal.vue'
 import CheckoutModal from '../../components/lottery/CheckoutModal.vue'
-import { store, loadPublicSettings, loadUserProfile, loadTicketsForPhone } from '../../stores/lottery'
+import { store, loadPublicSettings, loadUserProfile, loadTicketsForPhone, activateItemById } from '../../stores/lottery'
 
 let pollTimer = null
 
@@ -28,7 +28,8 @@ onMounted(async () => {
   // Poll so admin Start Draw / mode changes show up without a full refresh
   pollTimer = setInterval(() => {
     if (store.showPicker || store.showCheckout) return
-    loadPublicSettings()
+    if (store.activeItemId) activateItemById(store.activeItemId)
+    else loadPublicSettings()
   }, 4000)
 })
 

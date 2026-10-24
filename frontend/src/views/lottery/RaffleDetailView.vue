@@ -14,15 +14,14 @@
       <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">
         {{ raffle.heroTitle || store.brandName }}
       </p>
-      <h1 class="mt-3 text-white text-3xl font-extrabold leading-tight tracking-tight">
-        1ኛ እጣ {{ formatAmount(raffle.prize1st) }} ብር
-      </h1>
-      <h2 class="mt-3 text-lime-300/95 text-xl font-bold leading-snug">
-        2ኛ እጣ {{ formatAmount(raffle.prize2nd) }} ብር
-      </h2>
-      <h3 class="mt-2 text-white/80 text-base font-semibold leading-snug">
-        3ኛ እጣ {{ formatAmount(raffle.prize3rd) }} ብር
-      </h3>
+      <div class="mt-4 w-full max-w-sm">
+        <PrizeList
+          :prizes="raffle.prizes || []"
+          :prize1st="raffle.prize1st"
+          :prize2nd="raffle.prize2nd"
+          :prize3rd="raffle.prize3rd"
+        />
+      </div>
     </div>
 
     <div>
@@ -116,10 +115,11 @@
 
 <script setup>
 import { computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft, Target, Shield } from 'lucide-vue-next'
 import CountdownTimer from '../../components/lottery/CountdownTimer.vue'
 import TicketProgress from '../../components/lottery/TicketProgress.vue'
+import PrizeList from '../../components/lottery/PrizeList.vue'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr, padNumber } from '../../data/mock'
 import {
@@ -128,9 +128,11 @@ import {
   openPicker,
   openCheckoutFromSelect,
   loadPublicSettings,
+  activateItemById,
 } from '../../stores/lottery'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 const raffle = computed(() => store.raffle)
 const canBuy = computed(
@@ -139,11 +141,13 @@ const canBuy = computed(
     store.selectedNumbers.length === store.quantity
 )
 
-onMounted(() => {
-  loadPublicSettings()
+onMounted(async () => {
+  const id = route.params?.id
+  if (id) {
+    await activateItemById(id)
+  } else {
+    await loadPublicSettings()
+  }
 })
 
-function formatAmount(n) {
-  return Number(n || 0).toLocaleString('en-US')
-}
 </script>

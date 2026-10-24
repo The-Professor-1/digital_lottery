@@ -5,6 +5,8 @@ from . import lottery_views
 urlpatterns = [
     path('health/', views.health_check, name='health-check'),
     path('lottery/settings/', lottery_views.lottery_settings_public, name='lottery-settings-public'),
+    path('lottery/items/', lottery_views.lottery_items_public, name='lottery-items-public'),
+    path('lottery/items/<int:item_id>/', lottery_views.lottery_item_detail_public, name='lottery-item-detail-public'),
     path('lottery/me/', lottery_views.lottery_me, name='lottery-me'),
     path('lottery/language/', lottery_views.lottery_set_language, name='lottery-set-language'),
     path('lottery/tickets/', lottery_views.lottery_tickets, name='lottery-tickets'),

@@ -1,8 +1,12 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator
+from django.utils import timezone
 import json
 import os
+
+# In-process VAPID key cache (used by api.push_notify)
+_push_vapid_cache = {}
 
 class User(AbstractUser):
     """Custom User model for Telegram users"""
@@ -1135,7 +1139,12 @@ class LotterySettings(models.Model):
                 taken.add(int(n))
             except (TypeError, ValueError):
                 pass
-        for purchase in LotteryPurchase.objects.filter(status__in=['pending', 'verified']).only('numbers'):
+        for n in LotteryHeldNumber.objects.filter(lottery_item__isnull=True).values_list('number', flat=True):
+            try:
+                taken.add(int(n))
+            except (TypeError, ValueError):
+                pass
+        for purchase in LotteryPurchase.objects.filter(status__in=['pending', 'verified'], lottery_item__isnull=True).only('numbers'):
             for n in purchase.numbers or []:
                 try:
                     taken.add(int(n))
@@ -1212,7 +1221,7 @@ class LotterySettings(models.Model):
     def verified_taken_numbers(self):
         """Numbers from verified purchases only (real ticket owners)."""
         taken = set()
-        for purchase in LotteryPurchase.objects.filter(status='verified').only('numbers'):
+        for purchase in LotteryPurchase.objects.filter(status='verified', lottery_item__isnull=True).only('numbers'):
             for n in purchase.numbers or []:
                 try:
                     taken.add(int(n))
@@ -1229,6 +1238,265 @@ class LotterySettings(models.Model):
         return obj
 
 
+
+class LotteryItem(models.Model):
+    """One lottery shown on the landing page, with flexible prize entries."""
+    DRAW_MODE_DATE = 'date'
+    DRAW_MODE_SOLD_OUT = 'sold_out'
+    DRAW_MODE_MANUAL = 'manual'
+    DRAW_MODE_CHOICES = [
+        (DRAW_MODE_DATE, 'Date deadline'),
+        (DRAW_MODE_SOLD_OUT, 'When all tickets sold'),
+        (DRAW_MODE_MANUAL, 'Admin starts draw'),
+    ]
+
+    name = models.CharField(max_length=120, default='Digital Lottery')
+    description = models.TextField(blank=True, default='')
+    image = models.ImageField(upload_to='lottery/items/', blank=True, null=True)
+    image_url = models.CharField(max_length=500, blank=True, default='')
+    hero_title = models.CharField(max_length=160, blank=True, default='')
+    ticket_price = models.PositiveIntegerField(default=3000)
+    total_tickets = models.PositiveIntegerField(default=3500)
+    # [{'place': '1st', 'title': '1st Prize', 'amount': 100000,
+    #   'description': '', 'image_url': ''}]
+    prizes = models.JSONField(default=list, blank=True)
+    countdown_days = models.PositiveIntegerField(default=12)
+    countdown_hours = models.PositiveIntegerField(default=10)
+    countdown_minutes = models.PositiveIntegerField(default=24)
+    countdown_seconds = models.PositiveIntegerField(default=45)
+    ends_at = models.DateTimeField(null=True, blank=True)
+    draw_mode = models.CharField(max_length=20, choices=DRAW_MODE_CHOICES, default=DRAW_MODE_DATE)
+    draw_timer_seconds = models.PositiveIntegerField(default=60)
+    automatic_announcement = models.BooleanField(default=True)
+    winner_reveal_seconds = models.PositiveIntegerField(default=6)
+    next_round_minutes = models.PositiveIntegerField(default=10)
+    next_round_at = models.DateTimeField(null=True, blank=True)
+    draw_completed = models.BooleanField(default=False)
+    winner_1st = models.PositiveIntegerField(null=True, blank=True)
+    winner_2nd = models.PositiveIntegerField(null=True, blank=True)
+    winner_3rd = models.PositiveIntegerField(null=True, blank=True)
+    winner_announced_at = models.DateTimeField(null=True, blank=True)
+    winners_notified = models.BooleanField(default=False)
+    sort_order = models.PositiveIntegerField(default=0, db_index=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'lottery_items'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return f'LotteryItem {self.id} - {self.name}'
+
+    def compute_ends_at(self):
+        from datetime import timedelta
+        return timezone.now() + timedelta(
+            days=int(self.countdown_days or 0),
+            hours=int(self.countdown_hours or 0),
+            minutes=int(self.countdown_minutes or 0),
+            seconds=int(self.countdown_seconds or 0),
+        )
+
+    def uses_date_deadline(self):
+        return (self.draw_mode or self.DRAW_MODE_DATE) == self.DRAW_MODE_DATE
+
+    def save(self, *args, **kwargs):
+        reset_timer = kwargs.pop('reset_timer', False)
+        if not self.uses_date_deadline():
+            self.ends_at = None
+        elif reset_timer or not self.ends_at:
+            self.ends_at = self.compute_ends_at()
+        super().save(*args, **kwargs)
+
+    def resolved_image_url(self, request=None):
+        if self.image:
+            bust = int(self.updated_at.timestamp()) if self.updated_at else None
+            return _absolute_file_url(self.image, request, cache_bust=bust)
+        url = self.image_url or ''
+        if url and self.updated_at:
+            sep = '&' if '?' in url else '?'
+            url = f'{url}{sep}v={int(self.updated_at.timestamp())}'
+        return url
+
+    def normalized_prizes(self):
+        rows = []
+        for i, entry in enumerate(self.prizes or []):
+            if not isinstance(entry, dict):
+                continue
+            rows.append({
+                'place': str(entry.get('place') or f'{i + 1}'),
+                'title': str(entry.get('title') or entry.get('description') or ''),
+                'description': str(entry.get('description') or ''),
+                'amount': int(entry.get('amount') or 0),
+                'image_url': str(entry.get('image_url') or ''),
+            })
+        return rows
+
+    def taken_numbers_set(self):
+        taken = set()
+        for n in LotteryHeldNumber.objects.filter(lottery_item=self).values_list('number', flat=True):
+            try:
+                taken.add(int(n))
+            except (TypeError, ValueError):
+                pass
+        for nums in LotteryPurchase.objects.filter(
+            lottery_item=self, status__in=['pending', 'verified']
+        ).values_list('numbers', flat=True).iterator(chunk_size=500):
+            for n in nums or []:
+                try:
+                    taken.add(int(n))
+                except (TypeError, ValueError):
+                    pass
+        return taken
+
+    def verified_taken_numbers(self):
+        taken = set()
+        for nums in LotteryPurchase.objects.filter(
+            lottery_item=self, status='verified'
+        ).values_list('numbers', flat=True).iterator(chunk_size=500):
+            for n in nums or []:
+                try:
+                    taken.add(int(n))
+                except (TypeError, ValueError):
+                    pass
+        return sorted(taken)
+
+    def to_public_dict(self, request=None, include_taken=False):
+        taken = sorted(self.taken_numbers_set())
+        ends = self.ends_at
+        if ends is None and self.uses_date_deadline():
+            ends = self.compute_ends_at()
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'display_name': self.name,
+            'description': self.description or '',
+            'image_url': self.resolved_image_url(request),
+            'hero_title': self.hero_title or self.name,
+            'ticket_price': self.ticket_price,
+            'total_tickets': self.total_tickets,
+            'sold_count': len(taken),
+            'prizes': self.normalized_prizes(),
+            'draw_mode': self.draw_mode or self.DRAW_MODE_DATE,
+            'draw_timer_seconds': max(5, int(self.draw_timer_seconds or 60)),
+            'countdown_days': self.countdown_days,
+            'countdown_hours': self.countdown_hours,
+            'countdown_minutes': self.countdown_minutes,
+            'countdown_seconds': self.countdown_seconds,
+            'ends_at': ends.isoformat() if ends else None,
+            'ends_at_ms': int(ends.timestamp() * 1000) if ends else None,
+            'sort_order': self.sort_order,
+            'is_active': bool(self.is_active),
+            'winner_1st': self.winner_1st,
+            'winner_2nd': self.winner_2nd,
+            'winner_3rd': self.winner_3rd,
+            'winner_announced_at': self.winner_announced_at.isoformat() if self.winner_announced_at else None,
+            'draw_completed': bool(self.draw_completed),
+            'next_round_minutes': int(self.next_round_minutes or 10),
+            'next_round_at': self.next_round_at.isoformat() if self.next_round_at else None,
+            'next_round_at_ms': int(self.next_round_at.timestamp() * 1000) if self.next_round_at else None,
+            'winner_reveal_seconds': max(2, int(self.winner_reveal_seconds or 6)),
+            'winners_notified': bool(self.winners_notified),
+            'automatic_announcement': bool(self.automatic_announcement),
+        }
+        if include_taken:
+            data['taken_numbers'] = taken
+            data['verified_taken_numbers'] = self.verified_taken_numbers()
+            data['free_numbers_left'] = max(0, int(self.total_tickets or 0) - len(taken))
+        return data
+
+
+class LotteryHeldNumber(models.Model):
+    """Admin-held number with the phone/name it belongs to."""
+    lottery_item = models.ForeignKey(
+        LotteryItem, on_delete=models.CASCADE, null=True, blank=True, related_name='held_numbers'
+    )
+    number = models.PositiveIntegerField(db_index=True)
+    phone = models.CharField(max_length=32, blank=True, default='')
+    name = models.CharField(max_length=160, blank=True, default='')
+    note = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'lottery_held_numbers'
+        ordering = ['number']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['lottery_item', 'number'], name='uniq_held_item_number'
+            )
+        ]
+
+    def __str__(self):
+        return f'Held #{self.number} ({self.phone or "no phone"})'
+
+
+class LotteryWinner(models.Model):
+    """Winner announcement shown in the in-app bell; one row per winner."""
+    lottery_item = models.ForeignKey(
+        LotteryItem, on_delete=models.SET_NULL, null=True, blank=True, related_name='winners'
+    )
+    winner_number = models.CharField(max_length=16, blank=True, default='')
+    name = models.CharField(max_length=160, blank=True, default='')
+    phone = models.CharField(max_length=32, blank=True, default='')
+    lottery_label = models.CharField(max_length=160, blank=True, default='')
+    prize_name = models.CharField(max_length=160, blank=True, default='')
+    message = models.TextField(blank=True, default='')
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='lottery_wins'
+    )
+    announced_at = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'lottery_winners'
+        ordering = ['-announced_at', '-id']
+
+    def __str__(self):
+        return f'LotteryWinner {self.id} #{self.winner_number}'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'lottery_item_id': self.lottery_item_id,
+            'winning_ticket': self.winner_number or '',
+            'winner_number': self.winner_number or '',
+            'ticket_number': self.winner_number or '',
+            'name': self.name or '',
+            'phone': self.phone or '',
+            'lottery_label': self.lottery_label or '',
+            'prize_name': self.prize_name or '',
+            'message': self.message or '',
+            'announced_at': self.announced_at.isoformat() if self.announced_at else None,
+            'lottery_item_name': self.lottery_item.name if self.lottery_item_id and self.lottery_item else '',
+        }
+
+
+class WebPushSubscription(models.Model):
+    """Admin browser push subscription (Web Push API)."""
+    ROLE_CHOICES = [
+        ('main', 'Main admin'),
+        ('view', 'Second admin'),
+    ]
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, db_index=True)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, null=True, blank=True, related_name='web_push_subscriptions'
+    )
+    endpoint = models.TextField(unique=True)
+    p256dh = models.TextField()
+    auth = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'web_push_subscriptions'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'WebPush({self.role}) {self.endpoint[:48]}…'
+
+
 class LotteryPurchase(models.Model):
     """Ticket purchase / receipt verification request."""
     STATUS_CHOICES = [
@@ -1239,6 +1507,9 @@ class LotteryPurchase(models.Model):
 
     user = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name='lottery_purchases'
+    )
+    lottery_item = models.ForeignKey(
+        LotteryItem, on_delete=models.SET_NULL, null=True, blank=True, related_name='purchases'
     )
     full_name = models.CharField(max_length=160)
     phone = models.CharField(max_length=32, db_index=True)
@@ -1281,6 +1552,8 @@ class LotteryPurchase(models.Model):
             img = _absolute_file_url(self.receipt_image, request)
         return {
             'id': self.id,
+            'lottery_item_id': self.lottery_item_id,
+            'lottery_item_name': self.lottery_item.name if self.lottery_item_id and self.lottery_item else '',
             'full_name': self.full_name,
             'phone': self.phone,
             'numbers': self.numbers or [],
@@ -1348,6 +1621,8 @@ class LotteryFailedDeposit(models.Model):
     def to_admin_dict(self):
         return {
             'id': self.id,
+            'lottery_item_id': self.lottery_item_id,
+            'lottery_item_name': self.lottery_item.name if self.lottery_item_id and self.lottery_item else '',
             'full_name': self.full_name,
             'phone': self.phone,
             'numbers': self.numbers or [],

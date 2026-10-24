@@ -21,6 +21,17 @@
               <span class="rev-count">· {{ revenueCount }} verified</span>
             </span>
           </div>
+          <button
+            v-if="pushSupported"
+            type="button"
+            class="btn ghost"
+            :class="{ 'btn-on': pushEnabled }"
+            :disabled="pushBusy"
+            title="Browser notifications for new pending receipts"
+            @click="togglePush"
+          >
+            {{ pushBusy ? 'Saving…' : (pushEnabled ? 'Notifications: ON' : 'Enable notifications') }}
+          </button>
           <button type="button" class="btn ghost" @click="logout">Logout</button>
         </template>
       </div>
@@ -231,32 +242,14 @@
     </form>
 
     <!-- NUMBERS -->
-    <div v-if="loggedIn && activeTab === 'numbers'" class="panel">
-      <h2>Hold ticket (walk-in)</h2>
-      <p class="hint">
-        For buyers who call or pay in person (no Telegram). Saves a verified ticket so those numbers show as taken in the picker. Leave empty and use the normal mini-app flow otherwise.
-      </p>
-      <div class="timer-grid">
-        <label>Name <input v-model="holdName" type="text" placeholder="Full name" autocomplete="name" /></label>
-        <label>Phone <input v-model="holdPhone" type="text" placeholder="09…" autocomplete="tel" /></label>
-      </div>
-      <label>Number(s) to take
-        <input v-model="holdNumbers" type="text" placeholder="e.g. 61 or 12, 45, 90" />
-      </label>
-      <div class="actions">
-        <button type="button" class="btn primary" :disabled="holdingTicket" @click="holdTicket">
-          {{ holdingTicket ? 'Saving…' : 'Save held ticket' }}
-        </button>
-      </div>
-
-      <h2 class="subhead">Bulk blocked numbers (no owner)</h2>
-      <p class="hint">Optional: paste numbers to mark taken without a name/phone. Verified purchases stay taken automatically.</p>
-      <textarea v-model="blockedText" rows="4" class="area" placeholder="e.g. 1, 2, 15, 61" />
-      <p class="hint">Currently taken (admin + purchases): {{ form.taken_numbers?.length || 0 }}</p>
-      <button type="button" class="btn primary" :disabled="saving" @click="saveBlocked">Save blocked numbers</button>
+    <div v-if="loggedIn && activeTab === 'items'" class="panel">
+      <AdminLotteryItems />
     </div>
 
-    <!-- RECEIPTS -->
+    <div v-if="loggedIn && activeTab === 'numbers'" class="panel">
+      <AdminHeldNumbers />
+    </div>
+
     <div v-if="loggedIn && activeTab === 'receipts'" class="panel">
       <div class="row-between">
         <h2>Receipts</h2>
@@ -286,6 +279,7 @@
           <div>
             <strong>{{ p.full_name }}</strong>
             <div class="muted">{{ p.phone }} · {{ p.created_at }}</div>
+            <div v-if="p.lottery_item_name" class="muted">Lottery: {{ p.lottery_item_name }}</div>
             <div>Numbers: <b>{{ (p.numbers || []).map(n => String(n).padStart(3,'0')).join(', ') }}</b></div>
             <div>{{ formatMoney(p.amount) }} Birr · {{ p.bank_name }} {{ p.bank_account }}</div>
           </div>
@@ -428,6 +422,8 @@
 
     <!-- WINNER -->
     <div v-if="loggedIn && activeTab === 'winner'" class="panel">
+      <AdminWinnerPanel />
+      <hr style="border:none;border-top:1px solid #2a3140;margin:0.25rem 0" />
       <template v-if="showManualWinnerEntry">
         <h2>Manual draw winners</h2>
         <p class="hint">
@@ -609,7 +605,13 @@ import {
   lotteryFailedDepositAction,
 } from '../services/api'
 
+import AdminLotteryItems from './AdminLotteryItems.vue'
+import AdminHeldNumbers from './AdminHeldNumbers.vue'
+import AdminWinnerPanel from './AdminWinnerPanel.vue'
+import { pushState, initPush, enablePush, disablePush } from '../composables/usePushNotice'
+
 export default {
+  components: { AdminLotteryItems, AdminHeldNumbers, AdminWinnerPanel },
   name: 'AdminDashboard',
   props: {
     /** 'main' = /admin-dashboard ; 'view' = /admin-view */
@@ -628,6 +630,7 @@ export default {
       loginPass: '',
       loading: false,
       saving: false,
+      pushBusy: false,
       message: '',
       error: '',
       restarting: false,
@@ -736,6 +739,7 @@ export default {
     tabs() {
       const base = [
         { id: 'settings', label: 'Settings' },
+        { id: 'items', label: 'Lottery items' },
         { id: 'numbers', label: 'Numbers' },
         { id: 'receipts', label: 'Receipts' },
         { id: 'failed', label: 'Failed' },
@@ -762,6 +766,12 @@ export default {
     adminViewLoginUrl() {
       return `${this.adminViewUrl}/login`
     },
+    pushEnabled() {
+      return pushState.enabled
+    },
+    pushSupported() {
+      return pushState.supported
+    },
     showManualWinnerEntry() {
       return this.form.draw_mode === 'manual' || !this.form.automatic_announcement
     },
@@ -769,6 +779,7 @@ export default {
   mounted() {
     document.title = this.isMain ? 'Lottery Admin' : 'Admin View'
     this.init()
+    initPush()
   },
   methods: {
     async init() {
@@ -830,6 +841,23 @@ export default {
         await this.load()
       } catch (e) {
         this.error = e.response?.data?.error || 'Login failed'
+      }
+    },
+    async togglePush() {
+      if (this.pushBusy) return
+      this.pushBusy = true
+      this.error = ''
+      try {
+        if (this.pushEnabled) {
+          await disablePush()
+        } else {
+          const ok = await enablePush(this.isMain ? 'main' : 'view')
+          if (!ok) this.error = 'Notification permission is blocked in this browser. Allow notifications for this site and try again.'
+        }
+      } catch (e) {
+        this.error = (e && (e.response?.data?.error || e.message)) || 'Could not update notifications'
+      } finally {
+        this.pushBusy = false
       }
     },
     async logout() {
