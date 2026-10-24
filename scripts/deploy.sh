@@ -51,19 +51,17 @@ if command -v systemctl >/dev/null 2>&1; then
     exit 1
   fi
 
-  if ! systemctl cat digitallottery-gunicorn.service >/dev/null 2>&1; then
-    echo "First run: installing systemd units for $(id -un)..."
-    TMP_UNITS="$(mktemp -d)"
-    for unit in digitallottery-gunicorn.service digitallottery-telegram-bot.service; do
-      sed -e "s/^User=.*/User=$(id -un)/" \
-          -e "s/^Group=.*/Group=$(id -gn)/" \
-          "systemd/$unit" > "$TMP_UNITS/$unit"
-    done
-    sudo -n cp "$TMP_UNITS"/*.service /etc/systemd/system/
-    rm -rf "$TMP_UNITS"
-    sudo -n systemctl daemon-reload
-    sudo -n systemctl enable digitallottery-gunicorn digitallottery-telegram-bot
-  fi
+  echo "Installing systemd units for $(id -un)..."
+  TMP_UNITS="$(mktemp -d)"
+  for unit in digitallottery-gunicorn.service digitallottery-telegram-bot.service; do
+    sed -e "s/^User=.*/User=$(id -un)/" \
+        -e "s/^Group=.*/Group=$(id -gn)/" \
+        "systemd/$unit" > "$TMP_UNITS/$unit"
+  done
+  sudo -n cp "$TMP_UNITS"/*.service /etc/systemd/system/
+  rm -rf "$TMP_UNITS"
+  sudo -n systemctl daemon-reload
+  sudo -n systemctl enable digitallottery-gunicorn digitallottery-telegram-bot
 
   echo "Restarting services..."
   sudo -n systemctl daemon-reload || true
