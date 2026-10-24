@@ -122,6 +122,25 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now digitallottery-gunicorn digitallottery-telegram-bot
 ```
 
+The deploy user needs **passwordless sudo** for service restarts. GCP users are
+usually in `google-sudoers`; verify with:
+
+```bash
+sudo -n true && echo "passwordless sudo OK"
+```
+
+If that fails, add a narrow sudoers rule:
+
+```bash
+sudo tee /etc/sudoers.d/digitallottery-deploy >/dev/null <<'EOF'
+YOUR_USER ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload, /bin/systemctl restart digitallottery-gunicorn, /bin/systemctl restart digitallottery-telegram-bot
+EOF
+sudo chmod 440 /etc/sudoers.d/digitallottery-deploy
+```
+
+Use `command -v systemctl` to confirm the path (`/bin/systemctl` or
+`/usr/bin/systemctl`).
+
 Install nginx:
 
 ```bash

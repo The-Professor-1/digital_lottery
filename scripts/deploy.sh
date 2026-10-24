@@ -45,10 +45,15 @@ chmod -R a+rX "$ROOT/backend/media" || true
 chmod -R u+rwX "$ROOT/backend/cache" || true
 
 if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files digitallottery-gunicorn.service >/dev/null 2>&1; then
+  if ! sudo -n true >/dev/null 2>&1; then
+    echo "ERROR: passwordless sudo is required to restart the services."
+    echo "Add a sudoers rule for the deploy user (see DEPLOY.md)."
+    exit 1
+  fi
   echo "Restarting services..."
-  sudo systemctl daemon-reload || true
-  sudo systemctl restart digitallottery-gunicorn
-  sudo systemctl restart digitallottery-telegram-bot || true
+  sudo -n systemctl daemon-reload || true
+  sudo -n systemctl restart digitallottery-gunicorn
+  sudo -n systemctl restart digitallottery-telegram-bot || true
 else
   echo "systemd units not installed - restart the app manually."
 fi
