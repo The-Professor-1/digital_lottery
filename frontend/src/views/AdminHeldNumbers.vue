@@ -14,20 +14,21 @@
 
     <div class="grid-2">
       <form class="card" @submit.prevent="addOne">
-        <h3 class="subhead">Hold one number</h3>
+        <h3 class="subhead">Hold one ticket</h3>
         <label>Number <input v-model="single.number" class="admin-input" inputmode="numeric" placeholder="e.g. 061" /></label>
-        <label>Phone <input v-model="single.phone" class="admin-input" inputmode="tel" placeholder="09…" /></label>
+        <label>Phone <input v-model="single.phone" class="admin-input" inputmode="tel" placeholder="09… (kept for the next ticket)" /></label>
         <label>Name <input v-model="single.name" class="admin-input" placeholder="Optional name" /></label>
         <label>Note <input v-model="single.note" class="admin-input" placeholder="Optional note" /></label>
-        <button type="submit" class="btn primary" :disabled="busy">{{ busy ? 'Saving…' : 'Hold number' }}</button>
+        <button type="submit" class="btn primary" :disabled="busy">{{ busy ? 'Saving…' : 'Hold ticket' }}</button>
       </form>
 
       <form class="card" @submit.prevent="addBulk">
-        <h3 class="subhead">Hold many numbers</h3>
-        <label>Numbers <textarea v-model="bulk.numbers" rows="5" class="admin-input" placeholder="e.g. 12, 45, 90 or 12 45 90" /></label>
-        <label>Phone for these numbers <input v-model="bulk.phone" class="admin-input" inputmode="tel" placeholder="Optional" /></label>
-        <label>Name <input v-model="bulk.name" class="admin-input" placeholder="Optional" /></label>
-        <button type="submit" class="btn primary" :disabled="busy">{{ busy ? 'Saving…' : 'Hold all numbers' }}</button>
+        <h3 class="subhead">One person, many tickets</h3>
+        <p class="hint">Enter one phone and all tickets that belong to that person.</p>
+        <label>Phone <input v-model="bulk.phone" class="admin-input" inputmode="tel" placeholder="09…" /></label>
+        <label>Name <input v-model="bulk.name" class="admin-input" placeholder="Optional name" /></label>
+        <label>Ticket numbers <textarea v-model="bulk.numbers" rows="5" class="admin-input" placeholder="e.g. 12, 45, 90 or 12 45 90" /></label>
+        <button type="submit" class="btn primary" :disabled="busy">{{ busy ? 'Saving…' : 'Hold all tickets' }}</button>
       </form>
     </div>
 
@@ -36,24 +37,34 @@
 
     <section class="card">
       <div class="flex items-center justify-between gap-2">
-        <h3 class="subhead">Admin-held numbers ({{ held.length }})</h3>
+        <h3 class="subhead">Held tickets by phone ({{ groups.length }} phones · {{ held.length }} tickets)</h3>
         <button type="button" class="btn ghost" @click="reload">Refresh</button>
       </div>
-      <div v-if="held.length" class="table-wrap">
-        <table>
-          <thead><tr><th>#</th><th>Phone</th><th>Name</th><th>Note</th><th></th></tr></thead>
-          <tbody>
-            <tr v-for="row in held" :key="row.id">
-              <td class="num">{{ pad(row.number) }}</td>
-              <td>{{ row.phone || '—' }}</td>
-              <td>{{ row.name || '—' }}</td>
-              <td class="muted">{{ row.note || '—' }}</td>
-              <td><button type="button" class="btn danger small" @click="removeHeld(row)">Remove</button></td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="groups.length" class="space-y-2">
+        <article v-for="group in groups" :key="group.key" class="group-row">
+          <div class="group-head">
+            <div class="min-w-0">
+              <strong class="text-white">{{ group.phone || 'No phone' }}</strong>
+              <span v-if="group.name" class="muted"> · {{ group.name }}</span>
+              <p v-if="group.note" class="hint">{{ group.note }}</p>
+            </div>
+            <button type="button" class="btn ghost small" @click="addMoreForGroup(group)">+ Add more tickets</button>
+          </div>
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            <button
+              v-for="(number, index) in group.numbers"
+              :key="group.ids[index]"
+              type="button"
+              class="num-chip"
+              :title="'Remove #' + pad(number)"
+              @click="removeHeldById(group.ids[index], number)"
+            >
+              #{{ pad(number) }} ×
+            </button>
+          </div>
+        </article>
       </div>
-      <p v-else class="hint">No admin-held numbers for this lottery yet.</p>
+      <p v-else class="hint">No admin-held tickets for this lottery yet.</p>
     </section>
 
     <section class="card">
@@ -80,7 +91,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   getLotteryItemsAdmin, getHeldNumbersAdmin, addHeldNumberAdmin, bulkHeldNumbersAdmin,
   deleteHeldNumberAdmin, getLotteryPurchasesAdmin,
@@ -95,6 +106,33 @@ const error = ref('')
 const message = ref('')
 const single = reactive({ number: '', phone: '', name: '', note: '' })
 const bulk = reactive({ numbers: '', phone: '', name: '' })
+
+const groups = computed(() => {
+  const byPhone = new Map()
+  for (const row of held.value) {
+    const key = row.phone || '__no_phone__'
+    if (!byPhone.has(key)) {
+      byPhone.set(key, {
+        key,
+        phone: row.phone || '',
+        name: row.name || '',
+        note: row.note || '',
+        numbers: [],
+        ids: [],
+      })
+    }
+    const group = byPhone.get(key)
+    group.numbers.push(Number(row.number))
+    group.ids.push(row.id)
+    if (!group.name && row.name) group.name = row.name
+    if (!group.note && row.note) group.note = row.note
+  }
+  return Array.from(byPhone.values()).sort((a, b) => {
+    if (!a.phone) return 1
+    if (!b.phone) return -1
+    return a.phone.localeCompare(b.phone)
+  })
+})
 
 function pad(n) {
   return String(n).padStart(3, '0')
@@ -152,10 +190,8 @@ async function addOne() {
       name: single.name,
       note: single.note,
     })
-    message.value = 'Number held.'
+    message.value = 'Ticket held.'
     single.number = ''
-    single.phone = ''
-    single.name = ''
     single.note = ''
     await reload()
   } catch (e) {
@@ -177,10 +213,11 @@ async function addBulk() {
       phone: bulk.phone,
       name: bulk.name,
     })
-    message.value = 'Added ' + (res.added || 0) + ' number(s).'
+    const skipped = Array.isArray(res.skipped) && res.skipped.length
+      ? ' Skipped already-taken: ' + res.skipped.map(pad).join(', ')
+      : ''
+    message.value = 'Added ' + (res.added || 0) + ' ticket(s) for ' + (bulk.phone || 'this person') + '.' + skipped
     bulk.numbers = ''
-    bulk.phone = ''
-    bulk.name = ''
     await reload()
   } catch (e) {
     error.value = e.response?.data?.error || 'Could not hold numbers'
@@ -189,13 +226,20 @@ async function addBulk() {
   }
 }
 
-async function removeHeld(row) {
-  if (!confirm('Remove held number #' + pad(row.number) + '?')) return
+function addMoreForGroup(group) {
+  bulk.phone = group.phone || ''
+  bulk.name = group.name || ''
+  bulk.numbers = ''
+  message.value = 'Add more numbers for ' + (group.phone || 'this person') + ' in the form above.'
+}
+
+async function removeHeldById(id, number) {
+  if (!confirm('Remove held ticket #' + pad(number) + '?')) return
   try {
-    await deleteHeldNumberAdmin(row.id, itemId.value || null)
+    await deleteHeldNumberAdmin(id, itemId.value || null)
     await reload()
   } catch (e) {
-    error.value = e.response?.data?.error || 'Could not remove number'
+    error.value = e.response?.data?.error || 'Could not remove ticket'
   }
 }
 
@@ -219,6 +263,10 @@ label { display: block; font-size: 0.8rem; color: #d1d5db; margin-bottom: 0.45re
 .btn.danger { background: #7f1d1d; color: #fecaca; }
 .btn.small { padding: 0.3rem 0.5rem; font-size: 0.72rem; }
 .btn:disabled { opacity: 0.5; }
+.group-row { border: 1px solid #2a3140; border-radius: 10px; background: #11151c; padding: 0.7rem 0.8rem; }
+.group-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
+.num-chip { background: #064e3b; color: #6ee7b7; font-size: 0.75rem; font-weight: 700; padding: 0.25rem 0.5rem; border-radius: 6px; border: none; cursor: pointer; }
+.num-chip:hover { background: #7f1d1d; color: #fecaca; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 th, td { text-align: left; padding: 0.5rem 0.45rem; border-bottom: 1px solid #1f2937; }

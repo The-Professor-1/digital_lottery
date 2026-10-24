@@ -6,16 +6,16 @@ After=network.target
 Type=simple
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/apps/DigitalLottery/backend
+WorkingDirectory=%h/apps/DigitalLottery/backend
 
-EnvironmentFile=/home/ubuntu/apps/DigitalLottery/.env
+EnvironmentFile=%h/apps/DigitalLottery/.env
 
-Environment="PATH=/home/ubuntu/apps/DigitalLottery/venv/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/home/ubuntu/apps/DigitalLottery/backend"
+Environment="PATH=%h/apps/DigitalLottery/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=%h/apps/DigitalLottery/backend"
 Environment="DJANGO_SETTINGS_MODULE=bingo.settings"
 Environment="PYTHONUNBUFFERED=1"
 
-ExecStart=/home/ubuntu/apps/DigitalLottery/venv/bin/python manage.py runbot
+ExecStart=%h/apps/DigitalLottery/venv/bin/python manage.py runbot
 
 Restart=always
 RestartSec=10

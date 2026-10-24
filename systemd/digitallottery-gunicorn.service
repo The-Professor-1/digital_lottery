@@ -6,17 +6,17 @@ After=network.target
 Type=notify
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/apps/DigitalLottery/backend
+WorkingDirectory=%h/apps/DigitalLottery/backend
 
-EnvironmentFile=/home/ubuntu/apps/DigitalLottery/.env
+EnvironmentFile=%h/apps/DigitalLottery/.env
 
-Environment="PATH=/home/ubuntu/apps/DigitalLottery/venv/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/home/ubuntu/apps/DigitalLottery/backend"
+Environment="PATH=%h/apps/DigitalLottery/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=%h/apps/DigitalLottery/backend"
 Environment="DJANGO_SETTINGS_MODULE=bingo.settings"
 Environment="PYTHONUNBUFFERED=1"
 
-# Port 8001 — CarLottery keeps 8000 on the same EC2
-ExecStart=/home/ubuntu/apps/DigitalLottery/venv/bin/gunicorn \
+# Port 8001 — CarLottery keeps 8000 on the same VM
+ExecStart=%h/apps/DigitalLottery/venv/bin/gunicorn \
           bingo.asgi:application \
           -k uvicorn.workers.UvicornWorker \
           --workers 2 \

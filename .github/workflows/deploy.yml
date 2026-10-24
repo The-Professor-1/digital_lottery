@@ -1,4 +1,4 @@
-name: Deploy Digital Lottery
+name: Deploy Digital Lottery to Google Cloud
 
 on:
   push:
@@ -12,23 +12,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2 over SSH
+      - name: Deploy over SSH to the GCP VM
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ secrets.GCP_VM_HOST }}
+          username: ${{ secrets.GCP_VM_USER }}
+          key: ${{ secrets.GCP_VM_SSH_KEY }}
           port: 22
           timeout: 60s
           command_timeout: 30m
           script_stop: true
           script: |
             set -euo pipefail
-            APP_DIR="$HOME/apps/DigitalLottery"
+            APP_DIR="${{ secrets.GCP_VM_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="$HOME/apps/DigitalLottery"
+            fi
             cd "$APP_DIR"
+
             if [ ! -f .env ]; then
-              echo "ERROR: .env missing on the server. Create it from .env.example first."
+              echo "ERROR: .env missing at $APP_DIR/.env"
+              echo "Create it from .env.example before deploying."
               exit 1
             fi
+
             bash scripts/deploy.sh
             echo "DigitalLottery deployment completed successfully"
