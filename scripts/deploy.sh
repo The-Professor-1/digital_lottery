@@ -45,9 +45,9 @@ chmod -R a+rX "$ROOT/backend/media" || true
 chmod -R u+rwX "$ROOT/backend/cache" || true
 
 if command -v systemctl >/dev/null 2>&1; then
-  if ! sudo -n true >/dev/null 2>&1; then
+  if ! sudo -n systemctl daemon-reload >/dev/null 2>&1; then
     echo "ERROR: passwordless sudo is required to install/restart the services."
-    echo "Add a sudoers rule for the deploy user (see DEPLOY.md)."
+    echo "Run the one-time sudoers setup in DEPLOY.md, then redeploy."
     exit 1
   fi
 

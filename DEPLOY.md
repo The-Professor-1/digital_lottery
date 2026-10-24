@@ -129,17 +129,19 @@ usually in `google-sudoers`; verify with:
 sudo -n true && echo "passwordless sudo OK"
 ```
 
-If that fails, add a narrow sudoers rule:
+If that fails, grant the deploy user passwordless sudo:
 
 ```bash
-sudo tee /etc/sudoers.d/digitallottery-deploy >/dev/null <<'EOF'
-YOUR_USER ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload, /bin/systemctl restart digitallottery-gunicorn, /bin/systemctl restart digitallottery-telegram-bot
+sudo tee /etc/sudoers.d/digitallottery-deploy >/dev/null <<EOF
+$(whoami) ALL=(ALL) NOPASSWD: ALL
 EOF
 sudo chmod 440 /etc/sudoers.d/digitallottery-deploy
+sudo -n true && echo "passwordless sudo OK"
 ```
 
-Use `command -v systemctl` to confirm the path (`/bin/systemctl` or
-`/usr/bin/systemctl`).
+The deploy script installs the systemd units, runs `daemon-reload`, enables
+the services, and restarts them. A narrow sudoers rule is possible, but it must
+allow both `systemctl` and `cp` (used only for the first-time unit install).
 
 Install nginx:
 
