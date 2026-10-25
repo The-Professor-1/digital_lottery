@@ -2,7 +2,7 @@
   <div class="space-y-4">
     <div>
       <h2 class="section-title">Taken numbers &amp; phone numbers</h2>
-      <p class="hint">Hold a number for a walk-in buyer, or paste many numbers at once. Each number keeps the phone you enter.</p>
+      <p class="hint">Enter one phone and its ticket numbers. For a single walk-in ticket, enter just one number; for several tickets, separate them with commas or spaces.</p>
     </div>
 
     <label>Lottery
@@ -12,25 +12,15 @@
       </select>
     </label>
 
-    <div class="grid-2">
-      <form class="card" @submit.prevent="addOne">
-        <h3 class="subhead">Hold one ticket</h3>
-        <label>Number <input v-model="single.number" class="admin-input" inputmode="numeric" placeholder="e.g. 061" /></label>
-        <label>Phone <input v-model="single.phone" class="admin-input" inputmode="tel" placeholder="09… (kept for the next ticket)" /></label>
-        <label>Name <input v-model="single.name" class="admin-input" placeholder="Optional name" /></label>
-        <label>Note <input v-model="single.note" class="admin-input" placeholder="Optional note" /></label>
-        <button type="submit" class="btn primary" :disabled="busy">{{ busy ? 'Saving…' : 'Hold ticket' }}</button>
-      </form>
-
-      <form class="card" @submit.prevent="addBulk">
-        <h3 class="subhead">One person, many tickets</h3>
-        <p class="hint">Enter one phone and all tickets that belong to that person.</p>
-        <label>Phone <input v-model="bulk.phone" class="admin-input" inputmode="tel" placeholder="09…" /></label>
-        <label>Name <input v-model="bulk.name" class="admin-input" placeholder="Optional name" /></label>
-        <label>Ticket numbers <textarea v-model="bulk.numbers" rows="5" class="admin-input" placeholder="e.g. 12, 45, 90 or 12 45 90" /></label>
-        <button type="submit" class="btn primary" :disabled="busy">{{ busy ? 'Saving…' : 'Hold all tickets' }}</button>
-      </form>
-    </div>
+    <form class="card" @submit.prevent="addBulk">
+      <h3 class="subhead">Hold tickets for one phone</h3>
+      <p class="hint">One number is enough for a single ticket. Multiple numbers can be comma- or space-separated.</p>
+      <label>Phone <input v-model="bulk.phone" class="admin-input" inputmode="tel" placeholder="09…" /></label>
+      <label>Name <input v-model="bulk.name" class="admin-input" placeholder="Optional name" /></label>
+      <label>Ticket numbers <textarea v-model="bulk.numbers" rows="3" class="admin-input" placeholder="e.g. 12, 45, 90 or one number like 12" /></label>
+      <label>Note <input v-model="bulk.note" class="admin-input" placeholder="Optional note" /></label>
+      <button type="submit" class="btn primary" :disabled="busy">{{ busy ? 'Saving…' : 'Hold ticket(s)' }}</button>
+    </form>
 
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
@@ -93,7 +83,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  getLotteryItemsAdmin, getHeldNumbersAdmin, addHeldNumberAdmin, bulkHeldNumbersAdmin,
+  getLotteryItemsAdmin, getHeldNumbersAdmin, bulkHeldNumbersAdmin,
   deleteHeldNumberAdmin, getLotteryPurchasesAdmin,
 } from '../services/api'
 
@@ -104,8 +94,7 @@ const soldRows = ref([])
 const busy = ref(false)
 const error = ref('')
 const message = ref('')
-const single = reactive({ number: '', phone: '', name: '', note: '' })
-const bulk = reactive({ numbers: '', phone: '', name: '' })
+const bulk = reactive({ numbers: '', phone: '', name: '', note: '' })
 
 const groups = computed(() => {
   const byPhone = new Map()
@@ -177,30 +166,6 @@ async function loadSold() {
   }
 }
 
-async function addOne() {
-  if (!single.number) return
-  busy.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    await addHeldNumberAdmin({
-      lottery_item_id: itemId.value || null,
-      number: single.number,
-      phone: single.phone,
-      name: single.name,
-      note: single.note,
-    })
-    message.value = 'Ticket held.'
-    single.number = ''
-    single.note = ''
-    await reload()
-  } catch (e) {
-    error.value = e.response?.data?.error || 'Could not hold number'
-  } finally {
-    busy.value = false
-  }
-}
-
 async function addBulk() {
   if (!bulk.numbers.trim()) return
   busy.value = true
@@ -212,12 +177,14 @@ async function addBulk() {
       numbers: bulk.numbers,
       phone: bulk.phone,
       name: bulk.name,
+      note: bulk.note,
     })
     const skipped = Array.isArray(res.skipped) && res.skipped.length
       ? ' Skipped already-taken: ' + res.skipped.map(pad).join(', ')
       : ''
     message.value = 'Added ' + (res.added || 0) + ' ticket(s) for ' + (bulk.phone || 'this person') + '.' + skipped
     bulk.numbers = ''
+    bulk.note = ''
     await reload()
   } catch (e) {
     error.value = e.response?.data?.error || 'Could not hold numbers'
