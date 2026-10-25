@@ -16,6 +16,7 @@
               <option value="last_week">Last week</option>
               <option value="this_month">This month</option>
               <option value="last_month">Last month</option>
+              <option value="all">All time</option>
             </select>
             <span class="rev">{{ revenuePeriodLabel }}: <strong>{{ formatMoney(revenueAmount) }} Birr</strong>
               <span class="rev-count">· {{ revenueCount }} verified</span>
@@ -328,40 +329,6 @@
     <!-- WINNER -->
     <div v-if="loggedIn && activeTab === 'winner'" class="panel">
       <AdminWinnerPanel />
-      <hr style="border:none;border-top:1px solid #2a3140;margin:0.25rem 0" />
-      <template v-if="showManualWinnerEntry">
-        <h2>Manual draw winners</h2>
-        <p class="hint">
-          After you run the draw offline, enter the three winning numbers. Holders of those numbers get a Telegram DM (if they have Telegram). Not used when automatic announcement is on in date/sold-out mode.
-        </p>
-        <div class="timer-grid">
-          <label>1st place
-            <input v-model="manualWinner1st" type="text" inputmode="numeric" placeholder="e.g. 061" />
-          </label>
-          <label>2nd place
-            <input v-model="manualWinner2nd" type="text" inputmode="numeric" placeholder="e.g. 128" />
-          </label>
-          <label>3rd place
-            <input v-model="manualWinner3rd" type="text" inputmode="numeric" placeholder="e.g. 240" />
-          </label>
-        </div>
-        <p v-if="form.draw_completed" class="hint">
-          Current winners: 1st #{{ padWin(form.winner_1st) }} · 2nd #{{ padWin(form.winner_2nd) }} · 3rd #{{ padWin(form.winner_3rd) }}
-        </p>
-        <button type="button" class="btn primary" :disabled="savingManualWinners" @click="saveManualWinners">
-          {{ savingManualWinners ? 'Saving…' : 'Save winners &amp; send DMs' }}
-        </button>
-      </template>
-      <template v-else>
-        <h2>Announce winner</h2>
-        <p class="hint">
-          Automatic mode picks 1st/2nd/3rd in the mini-app. Use this only for a one-number broadcast if needed.
-        </p>
-        <label>Winning number <input v-model="winnerNumber" type="text" placeholder="061" /></label>
-        <label>Message <textarea v-model="winnerMessage" rows="3" class="area" placeholder="Congratulations to the winner!" /></label>
-        <p v-if="form.winner_announced_at" class="hint">Last announced: #{{ form.winner_number }} at {{ form.winner_announced_at }}</p>
-        <button type="button" class="btn primary" @click="announce">Announce winner</button>
-      </template>
     </div>
 
     <!-- DELETED (main admin only) — full archived copies from Admin View removals -->
@@ -661,6 +628,7 @@ export default {
         last_week: 'Last week',
         this_month: 'This month',
         last_month: 'Last month',
+        all: 'All time',
       }
       return labels[this.revenuePeriod] || 'Revenue'
     },

@@ -2,7 +2,7 @@
   <div class="space-y-4">
     <div>
       <h2 class="section-title">Winner announcement</h2>
-      <p class="hint">Choose a lottery item. One winner form is shown for each prize on that item. Enter each winner's phone; their Telegram account receives their specific prize.</p>
+      <p class="hint">Choose a lottery item. One winner form is shown for each prize. Enter each winner's phone; if the winner is a walk-in not found in the database, enter their winning ticket number too.</p>
     </div>
 
     <label>Lottery item
@@ -42,11 +42,11 @@
       <label>Message (optional)
         <textarea v-model="form.message" rows="2" class="admin-input" placeholder="Optional note in the bell and Telegram message" />
       </label>
-      <label class="check"><input v-model="notifyUsers" type="checkbox" /> Send Telegram notification to each winner</label>
+      <label class="check"><input v-model="notifyUsers" type="checkbox" /> Send Telegram notifications to winners and all participants</label>
 
       <div class="flex gap-2">
         <button type="button" class="btn primary" :disabled="saving" @click="announce">
-          {{ saving ? 'Saving…' : ('Save ' + winnerForms.length + ' winner(s) & notify') }}
+          {{ saving ? 'Saving…' : ('Save ' + winnerForms.length + ' winner(s), notify & close round') }}
         </button>
         <button type="button" class="btn ghost" @click="loadWinners">Refresh list</button>
       </div>
@@ -75,6 +75,26 @@
       </div>
       <p v-else class="hint">No winner announcements for this lottery yet.</p>
     </section>
+
+    <section class="card">
+      <h3 class="subhead">Closed round history ({{ rounds.length }})</h3>
+      <div v-if="rounds.length" class="table-wrap">
+        <table>
+          <thead><tr><th>Closed</th><th>Lottery</th><th>Round</th><th>Winners</th><th>Tickets</th><th>Revenue</th></tr></thead>
+          <tbody>
+            <tr v-for="round in rounds" :key="round.id">
+              <td>{{ formatWhen(round.closed_at) }}</td>
+              <td>{{ round.lottery_name || '—' }}</td>
+              <td>{{ round.round_label || '—' }}</td>
+              <td>{{ round.winner_count }}</td>
+              <td>{{ round.ticket_count }}</td>
+              <td>{{ formatMoney(round.verified_revenue) }} Birr</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else class="hint">No closed rounds for this lottery yet.</p>
+    </section>
   </div>
 </template>
 
@@ -87,6 +107,7 @@ import {
 const items = ref([])
 const itemId = ref('')
 const winners = ref([])
+const rounds = ref([])
 const winnerForms = ref([])
 const notifyUsers = ref(true)
 const saving = ref(false)
@@ -104,6 +125,15 @@ function pad(n) {
 
 function formatMoney(n) {
   return Number(n || 0).toLocaleString('en-US')
+}
+
+function formatWhen(value) {
+  if (!value) return '—'
+  try {
+    return new Date(value).toLocaleString()
+  } catch (e) {
+    return value
+  }
 }
 
 function buildWinnerForms(item) {
@@ -155,6 +185,7 @@ async function loadWinners() {
   try {
     const data = await getLotteryWinnersAdmin(itemId.value ? { lottery_item_id: itemId.value } : {})
     winners.value = data.winners || []
+    rounds.value = data.rounds || []
   } catch (e) {
     winners.value = []
   }
@@ -172,6 +203,9 @@ async function announce() {
   const missing = winnerForms.value.findIndex((w) => !String(w.phone || '').trim())
   if (missing >= 0) {
     error.value = `Enter the winner phone for ${winnerForms.value[missing].place || `prize ${missing + 1}`}`
+    return
+  }
+  if (!confirm('Save these winners, close this round, archive its receipts, and start a fresh round?')) {
     return
   }
 
@@ -194,7 +228,7 @@ async function announce() {
     })
     const savedCount = (res.winners || []).length
     const notified = Number(res.notified || 0)
-    message.value = `Saved ${savedCount} winner(s)${notified ? ` and notified ${notified} on Telegram` : ''}.`
+    message.value = `Saved ${savedCount} winner(s)${notified ? ` and notified ${notified} on Telegram` : ''}. Round closed and a fresh round is ready.`
     winnerForms.value = winnerForms.value.map((w) => ({
       ...w,
       phone: '',

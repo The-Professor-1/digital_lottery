@@ -14,7 +14,7 @@ from django.views.decorators.http import require_http_methods
 from .auth_utils import get_user_from_token, generate_guest_jwt_token
 from .models import (
     LotterySettings, LotteryPurchase, LotteryFailedDeposit, DeletedLotteryReceipt,
-    DeletedLotteryUser, LotteryItem, LotteryHeldNumber, LotteryWinner, WebPushSubscription,
+    DeletedLotteryUser, LotteryItem, LotteryHeldNumber, LotteryWinner, LotteryRound, WebPushSubscription,
 )
 
 
@@ -275,7 +275,7 @@ def lottery_tickets(request):
             | Q(user__phone_number__icontains=value)
         )
     qs = LotteryPurchase.objects.select_related('user', 'lottery_item').filter(
-        phone_query
+        phone_query, historical=False
     ).exclude(status='rejected')
     tickets = [p.to_dict(request) for p in qs[:100]]
     active = sum(1 for t in tickets if t['status'] == 'verified')
@@ -319,7 +319,7 @@ def _transaction_already_used(provider, reference, account_suffix=''):
     ref = (reference or '').strip().upper()
     if not ref:
         return False
-    if LotteryPurchase.objects.filter(transaction_ref__iexact=ref).exclude(status='rejected').exists():
+    if LotteryPurchase.objects.filter(transaction_ref__iexact=ref, historical=False).exclude(status='rejected').exists():
         return True
     if provider == 'telebirr':
         return TelebirrReceipt.objects.filter(reference__iexact=ref).exists()
@@ -499,7 +499,7 @@ def lottery_submit_purchase(request):
     receipt_hash = hashlib.sha256(
         f'{provider}:{reference}:{account_suffix}:{receipt_sms[:200]}'.encode('utf-8')
     ).hexdigest()
-    if LotteryPurchase.objects.filter(receipt_hash=receipt_hash).exists():
+    if LotteryPurchase.objects.filter(receipt_hash=receipt_hash, historical=False).exists():
         return JsonResponse({
             'error': 'ይህ ደረሰኝ ከዚህ በፊት አገልግሎት ላይ ውሏል እባክዎ አዲስ ያስገቡ፡፡ ',
             'error_code': 'already_verified',
@@ -1032,7 +1032,7 @@ def lottery_purchases_admin(request):
     period = (request.GET.get('period') or 'all').strip()
     revenue_period = (request.GET.get('revenue_period') or 'today').strip()
 
-    qs = LotteryPurchase.objects.all().select_related('user', 'lottery_item')
+    qs = LotteryPurchase.objects.filter(historical=False).select_related('user', 'lottery_item')
     if status in ('pending', 'verified', 'rejected'):
         qs = qs.filter(status=status)
     item_id = request.GET.get('lottery_item_id')
@@ -1054,8 +1054,8 @@ def lottery_purchases_admin(request):
         'revenue_period': revenue_period,
         'revenue_amount': revenue_amount,
         'revenue_count': revenue_count,
-        'pending_count': LotteryPurchase.objects.filter(status='pending').count(),
-        'verified_count': LotteryPurchase.objects.filter(status='verified').count(),
+        'pending_count': LotteryPurchase.objects.filter(status='pending', historical=False).count(),
+        'verified_count': LotteryPurchase.objects.filter(status='verified', historical=False).count(),
     })
 
 
@@ -1089,7 +1089,7 @@ def lottery_purchase_action(request, purchase_id):
                     others.add(int(n))
                 except (TypeError, ValueError):
                     pass
-            for p in LotteryPurchase.objects.filter(status='verified', lottery_item=scope_item).exclude(id=purchase.id):
+            for p in LotteryPurchase.objects.filter(status='verified', lottery_item=scope_item, historical=False).exclude(id=purchase.id):
                 for n in p.numbers or []:
                     try:
                         others.add(int(n))
@@ -1103,7 +1103,7 @@ def lottery_purchase_action(request, purchase_id):
                     others.add(int(n))
                 except (TypeError, ValueError):
                     pass
-            for p in LotteryPurchase.objects.filter(status='verified').exclude(id=purchase.id):
+            for p in LotteryPurchase.objects.filter(status='verified', historical=False).exclude(id=purchase.id):
                 for n in p.numbers or []:
                     try:
                         others.add(int(n))
@@ -1223,7 +1223,7 @@ def lottery_users_admin(request):
     users_out = []
     for u in user_qs[:300]:
         purchases = list(
-            LotteryPurchase.objects.filter(user=u).order_by('-created_at')[:50]
+            LotteryPurchase.objects.filter(user=u, historical=False).order_by('-created_at')[:50]
         )
         # Also match by phone if user not linked on older rows
         phone = (u.phone_number or '').strip()
@@ -1231,7 +1231,8 @@ def lottery_users_admin(request):
             digits = ''.join(c for c in phone if c.isdigit())
             if len(digits) >= 9:
                 extra = LotteryPurchase.objects.filter(
-                    Q(phone__icontains=digits[-9:]) | Q(phone__icontains=digits)
+                    Q(phone__icontains=digits[-9:]) | Q(phone__icontains=digits),
+                    historical=False,
                 ).exclude(user=u).order_by('-created_at')[:50]
                 purchases = purchases + list(extra)
 
@@ -1270,7 +1271,7 @@ def lottery_users_admin(request):
         })
 
     # Guests: purchases with no user link (older rows)
-    guest_qs = LotteryPurchase.objects.filter(user__isnull=True).order_by('-created_at')
+    guest_qs = LotteryPurchase.objects.filter(user__isnull=True, historical=False).order_by('-created_at')
     if q:
         guest_qs = guest_qs.filter(
             Q(phone__icontains=q) | Q(full_name__icontains=q)
@@ -1650,7 +1651,7 @@ def lottery_announce_winner(request):
             win_int = int(winner_number)
         except ValueError:
             win_int = None
-        for p in LotteryPurchase.objects.filter(status='verified').select_related('user'):
+        for p in LotteryPurchase.objects.filter(status='verified', historical=False).select_related('user'):
             if not (p.user and p.user.telegram_id):
                 continue
             nums = []
@@ -1711,11 +1712,11 @@ def lottery_send_message(request):
         users = base
     elif target in ('ticket_buyers', 'purchasers', 'ticket'):
         ids = LotteryPurchase.objects.filter(
-            status__in=['pending', 'verified']
+            status__in=['pending', 'verified'], historical=False
         ).exclude(user_id__isnull=True).values_list('user_id', flat=True).distinct()
         users = base.filter(id__in=ids)
     elif target in ('pending_deposits', 'pending', 'deposit_issues'):
-        ids = LotteryPurchase.objects.filter(status='pending').exclude(
+        ids = LotteryPurchase.objects.filter(status='pending', historical=False).exclude(
             user_id__isnull=True
         ).values_list('user_id', flat=True).distinct()
         users = base.filter(id__in=ids)
@@ -1921,7 +1922,7 @@ def _send_winner_dms(settings_obj):
         for place, win_num, prize_amt in prizes:
             if not win_num:
                 continue
-            holders = LotteryPurchase.objects.filter(status='verified').select_related('user')
+            holders = LotteryPurchase.objects.filter(status='verified', historical=False).select_related('user')
             for purchase in holders:
                 nums = []
                 for n in purchase.numbers or []:
@@ -2067,7 +2068,7 @@ def lottery_notify_winners(request):
 def _clear_round_state(settings_obj, clear_tickets=True):
     """Clear winners / draw flags and optionally all ticket purchases."""
     if clear_tickets:
-        LotteryPurchase.objects.filter(status__in=['pending', 'verified', 'rejected']).delete()
+        LotteryPurchase.objects.filter(status__in=['pending', 'verified', 'rejected'], historical=False).delete()
     settings_obj.winner_1st = None
     settings_obj.winner_2nd = None
     settings_obj.winner_3rd = None
@@ -2571,18 +2572,91 @@ def lottery_winners_admin(request):
         return JsonResponse({'error': 'Unauthorized'}, status=401)
     if request.method == 'GET':
         qs = LotteryWinner.objects.select_related('lottery_item').order_by('-announced_at', '-id')
+        rounds_qs = LotteryRound.objects.all().order_by('-closed_at', '-id')
         item_id = request.GET.get('lottery_item_id')
         if item_id:
             try:
-                qs = qs.filter(lottery_item_id=int(item_id))
+                item_id_int = int(item_id)
+                qs = qs.filter(lottery_item_id=item_id_int)
+                rounds_qs = rounds_qs.filter(lottery_item_id=item_id_int)
             except (TypeError, ValueError):
                 qs = qs.none()
-        return JsonResponse({'winners': [w.to_dict() for w in qs[:200]]})
+                rounds_qs = rounds_qs.none()
+        else:
+            rounds_qs = rounds_qs.filter(lottery_item__isnull=True)
+        return JsonResponse({
+            'winners': [w.to_dict() for w in qs[:200]],
+            'rounds': [r.to_dict() for r in rounds_qs[:100]],
+        })
     body = _json_body(request)
     if (body.get('action') or '').strip().lower() == 'delete':
         LotteryWinner.objects.filter(id=body.get('id')).delete()
         return JsonResponse({'success': True})
     return JsonResponse({'error': 'Unknown action'}, status=400)
+
+
+def _close_item_round(item, lottery_label, winners, message, now):
+    """Archive current receipts for history, free numbers, and start a fresh round."""
+    qs = LotteryPurchase.objects.filter(historical=False)
+    if item is not None:
+        qs = qs.filter(lottery_item=item)
+    else:
+        qs = qs.filter(lottery_item__isnull=True)
+    current = list(qs)
+    verified = [p for p in current if p.status == 'verified']
+    revenue = sum((p.amount or Decimal('0')) for p in verified)
+    ticket_count = sum(len(p.numbers or []) for p in verified)
+    round_obj = LotteryRound.objects.create(
+        lottery_item=item,
+        lottery_name=(item.name if item is not None else 'Global lottery'),
+        round_label=(lottery_label or (item.hero_title or item.name if item is not None else ''))[:160],
+        closed_at=now,
+        winner_count=len(winners),
+        ticket_count=ticket_count,
+        verified_revenue=revenue,
+        pending_count=sum(1 for p in current if p.status == 'pending'),
+        rejected_count=sum(1 for p in current if p.status == 'rejected'),
+        winners_snapshot=[w.to_dict() for w in winners],
+    )
+
+    for purchase in current:
+        if purchase.receipt_image:
+            try:
+                purchase.receipt_image.delete(save=False)
+            except Exception:
+                pass
+        purchase.receipt_image = None
+        # Keep the unique DB constraint satisfied while allowing the same
+        # receipt image to be used in a future round.
+        purchase.receipt_hash = f'archived-{purchase.id}-{(purchase.receipt_hash or "")[:40]}'
+        purchase.historical = True
+        purchase.closed_round = round_obj
+        purchase.save(update_fields=['receipt_image', 'receipt_hash', 'historical', 'closed_round'])
+
+    if item is not None:
+        LotteryHeldNumber.objects.filter(lottery_item=item).delete()
+        item.winner_1st = None
+        item.winner_2nd = None
+        item.winner_3rd = None
+        item.winner_announced_at = None
+        item.draw_completed = False
+        item.winners_notified = False
+        item.next_round_at = None
+        if item.uses_date_deadline():
+            item.save(reset_timer=True)
+        else:
+            item.save(clear_timer=True)
+    else:
+        LotteryHeldNumber.objects.filter(lottery_item__isnull=True).delete()
+        settings_obj = LotterySettings.get_settings()
+        settings_obj.winner_1st = None
+        settings_obj.winner_2nd = None
+        settings_obj.winner_3rd = None
+        settings_obj.winner_number = ''
+        settings_obj.winner_message = ''
+        settings_obj.winner_announced_at = None
+        settings_obj.save()
+    return round_obj
 
 
 @csrf_exempt
@@ -2626,7 +2700,7 @@ def lottery_announce_item_winner(request):
 
     prizes = item.normalized_prizes() if item is not None else []
 
-    pool = LotteryPurchase.objects.filter(status='verified').select_related('user', 'lottery_item')
+    pool = LotteryPurchase.objects.filter(status='verified', historical=False).select_related('user', 'lottery_item')
     if item is not None:
         pool = pool.filter(lottery_item=item)
     else:
@@ -2686,6 +2760,25 @@ def lottery_announce_item_winner(request):
                 return by_number[0]
         return None
 
+    from .models import User
+    def _find_user(phone):
+        wanted = _digits(phone)
+        if not wanted:
+            return None
+        last9 = wanted[-9:] if len(wanted) >= 9 else wanted
+        return User.objects.filter(
+            Q(phone_number__icontains=wanted) | Q(phone_number__icontains=last9)
+        ).order_by('-id').first()
+
+    engaged_qs = LotteryPurchase.objects.filter(
+        status__in=['pending', 'verified'], historical=False,
+    ).select_related('user', 'lottery_item')
+    if item is not None:
+        engaged_qs = engaged_qs.filter(lottery_item=item)
+    else:
+        engaged_qs = engaged_qs.filter(lottery_item__isnull=True)
+    engaged = list(engaged_qs.order_by('-created_at')[:1000])
+
     prepared = []
     for index, entry in enumerate(winner_entries):
         prize = prizes[index] if index < len(prizes) else None
@@ -2711,9 +2804,26 @@ def lottery_announce_item_winner(request):
 
         purchase = _find_purchase(phone, number)
         if purchase is None:
-            return JsonResponse({
-                'error': f'Winner {index + 1}: no verified ticket found for this phone/ticket in this lottery',
-            }, status=400)
+            if not number:
+                return JsonResponse({
+                    'error': (
+                        f'Winner {index + 1}: no verified ticket found for this phone. '
+                        'Enter the winning ticket number for this walk-in winner.'
+                    ),
+                }, status=400)
+            walkin_user = _find_user(phone)
+            walkin_name = str(entry.get('name') or '').strip() or (
+                walkin_user.first_name if walkin_user else ''
+            ) or 'Walk-in winner'
+            prepared.append({
+                'purchase': None,
+                'name': walkin_name,
+                'phone': phone,
+                'number': number,
+                'prize_display': prize_display,
+                'user': walkin_user,
+            })
+            continue
 
         if not number:
             raw_numbers = purchase.numbers or []
@@ -2772,7 +2882,8 @@ def lottery_announce_item_winner(request):
     if notify_users:
         try:
             from telegram_bot.notifications import send_notification_sync
-            from telegram_bot.receipt_messages import winner_announcement_text
+            from telegram_bot.receipt_messages import lottery_results_text, winner_announcement_text
+            specific_user_ids = set()
             for row in prepared:
                 user = row['user']
                 if not (user and user.telegram_id):
@@ -2789,15 +2900,40 @@ def lottery_announce_item_winner(request):
                         message,
                     ),
                 )
+                specific_user_ids.add(user.id)
+                notified += 1
+
+            summary = [
+                {
+                    'name': row['name'],
+                    'number': row['number'],
+                    'prize': row['prize_display'],
+                }
+                for row in prepared
+            ]
+            seen_users = set(specific_user_ids)
+            for purchase in engaged:
+                if not (purchase.user_id and purchase.user and purchase.user.telegram_id):
+                    continue
+                if purchase.user_id in seen_users:
+                    continue
+                seen_users.add(purchase.user_id)
+                send_notification_sync(
+                    purchase.user.telegram_id,
+                    lottery_results_text(purchase.user, lottery_label, summary, message),
+                )
                 notified += 1
         except Exception:
             pass
+
+    closed_round = _close_item_round(item, lottery_label, created, message, now)
 
     return JsonResponse({
         'success': True,
         'winners': [w.to_dict() for w in created],
         'winner': created[0].to_dict() if created else None,
         'notified': notified,
+        'closed_round': closed_round.to_dict(),
     })
 
 
@@ -2876,7 +3012,7 @@ def _submit_screenshot_purchase(request):
         }, status=409)
 
     receipt_hash = _file_sha256(receipt)
-    if LotteryPurchase.objects.filter(receipt_hash=receipt_hash).exists():
+    if LotteryPurchase.objects.filter(receipt_hash=receipt_hash, historical=False).exists():
         return JsonResponse({
             'error': 'This receipt image was already submitted. Use a different receipt.',
             'error_code': 'duplicate_receipt',

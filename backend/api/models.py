@@ -1149,7 +1149,7 @@ class LotterySettings(models.Model):
                 taken.add(int(n))
             except (TypeError, ValueError):
                 pass
-        for purchase in LotteryPurchase.objects.filter(status__in=['pending', 'verified'], lottery_item__isnull=True).only('numbers'):
+        for purchase in LotteryPurchase.objects.filter(status__in=['pending', 'verified'], lottery_item__isnull=True, historical=False).only('numbers'):
             for n in purchase.numbers or []:
                 try:
                     taken.add(int(n))
@@ -1347,7 +1347,7 @@ class LotteryItem(models.Model):
             except (TypeError, ValueError):
                 pass
         for nums in LotteryPurchase.objects.filter(
-            lottery_item=self, status__in=['pending', 'verified']
+            lottery_item=self, status__in=['pending', 'verified'], historical=False
         ).values_list('numbers', flat=True).iterator(chunk_size=500):
             for n in nums or []:
                 try:
@@ -1359,7 +1359,7 @@ class LotteryItem(models.Model):
     def verified_taken_numbers(self):
         taken = set()
         for nums in LotteryPurchase.objects.filter(
-            lottery_item=self, status='verified'
+            lottery_item=self, status='verified', historical=False
         ).values_list('numbers', flat=True).iterator(chunk_size=500):
             for n in nums or []:
                 try:
@@ -1379,7 +1379,7 @@ class LotteryItem(models.Model):
             'display_name': self.name,
             'description': self.description or '',
             'image_url': self.resolved_image_url(request),
-            'hero_title': self.hero_title or self.name,
+            'hero_title': self.hero_title or '',
             'ticket_price': self.ticket_price,
             'total_tickets': self.total_tickets,
             'sold_count': len(taken),
@@ -1503,6 +1503,44 @@ class WebPushSubscription(models.Model):
         return f'WebPush({self.role}) {self.endpoint[:48]}…'
 
 
+class LotteryRound(models.Model):
+    """History record created when an admin closes a lottery round."""
+    lottery_item = models.ForeignKey(
+        LotteryItem, on_delete=models.SET_NULL, null=True, blank=True, related_name='rounds'
+    )
+    lottery_name = models.CharField(max_length=160, blank=True, default='')
+    round_label = models.CharField(max_length=160, blank=True, default='')
+    closed_at = models.DateTimeField(default=timezone.now, db_index=True)
+    winner_count = models.PositiveIntegerField(default=0)
+    ticket_count = models.PositiveIntegerField(default=0)
+    verified_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    pending_count = models.PositiveIntegerField(default=0)
+    rejected_count = models.PositiveIntegerField(default=0)
+    winners_snapshot = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = 'lottery_rounds'
+        ordering = ['-closed_at', '-id']
+
+    def __str__(self):
+        return f'LotteryRound {self.id} {self.lottery_name} {self.round_label}'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'lottery_item_id': self.lottery_item_id,
+            'lottery_name': self.lottery_name or '',
+            'round_label': self.round_label or '',
+            'closed_at': self.closed_at.isoformat() if self.closed_at else None,
+            'winner_count': self.winner_count,
+            'ticket_count': self.ticket_count,
+            'verified_revenue': float(self.verified_revenue or 0),
+            'pending_count': self.pending_count,
+            'rejected_count': self.rejected_count,
+            'winners_snapshot': self.winners_snapshot or [],
+        }
+
+
 class LotteryPurchase(models.Model):
     """Ticket purchase / receipt verification request."""
     STATUS_CHOICES = [
@@ -1552,6 +1590,14 @@ class LotteryPurchase(models.Model):
     verified_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name='lottery_verifications'
     )
+    historical = models.BooleanField(
+        default=False, db_index=True,
+        help_text='Archived after round close; kept for revenue/history only',
+    )
+    closed_round = models.ForeignKey(
+        LotteryRound, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='purchases',
+    )
 
     class Meta:
         db_table = 'lottery_purchases'
@@ -1591,6 +1637,8 @@ class LotteryPurchase(models.Model):
             'transaction_ref': self.transaction_ref or '',
             'status': self.status,
             'admin_note': self.admin_note,
+            'historical': bool(self.historical),
+            'closed_round_id': self.closed_round_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'verified_at': self.verified_at.isoformat() if self.verified_at else None,
             'telegram_id': self.user.telegram_id if self.user_id and self.user else None,

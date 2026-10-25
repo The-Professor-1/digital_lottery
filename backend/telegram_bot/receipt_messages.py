@@ -136,3 +136,25 @@ def legacy_announcement_text(user, number, is_holder=False, message=''):
     if message:
         text += f'\n\n{message}'
     return text
+
+
+
+def lottery_results_text(user, lottery_label, winners, message=''):
+    """Generic results announcement for every participant of a lottery."""
+    lang = user_language(user)
+    if lang == 'en':
+        title = '🎉 Lottery results are out!'
+        lottery_label_text = f'Lottery: {lottery_label or "—"}'
+    else:
+        title = '🎉 የዕጣ ውጤት ወጥቷል!'
+        lottery_label_text = f'ሎተሪ: {lottery_label or "—"}'
+    lines = [title, '', lottery_label_text]
+    for index, winner in enumerate(winners or [], 1):
+        prize = winner.get('prize') or 'Prize'
+        number = _number(winner.get('number'))
+        name = winner.get('name') or ''
+        lines.append(f'{index}. {prize} — #{number} — {name}'.rstrip(' —'))
+    text = '\n'.join(lines)
+    if message:
+        text += f'\n\n{message}'
+    return text
