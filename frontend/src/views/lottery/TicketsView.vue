@@ -1,15 +1,15 @@
 <template>
   <div class="space-y-4 pt-2">
     <div>
-      <h1 class="text-2xl font-bold text-white">{{ t.myTickets }}</h1>
-      <p class="text-sm text-white/45 mt-0.5">{{ t.trackPurchases }}</p>
+      <h1 class="text-2xl font-bold text-content">{{ t.myTickets }}</h1>
+      <p class="text-sm text-content/45 mt-0.5">{{ t.trackPurchases }}</p>
     </div>
 
     <div class="flex gap-2">
       <input
         v-model="query"
         type="tel"
-        class="flex-1 rounded-xl bg-white text-black px-3 py-3 text-sm outline-none"
+        class="flex-1 rounded-xl bg-surface-2 border border-line px-3 py-3 text-sm text-content outline-none placeholder:text-content/35"
         placeholder="251..."
       />
       <button
@@ -23,17 +23,17 @@
     </div>
 
     <div class="grid grid-cols-3 gap-2">
-      <div class="rounded-2xl bg-forest-deep/80 border border-forest/30 p-3 text-center">
-        <p class="text-2xl font-bold text-emerald-400">{{ store.ticketStats.active }}</p>
-        <p class="text-xs text-white/60 mt-0.5">{{ t.active }}</p>
+      <div class="rounded-2xl bg-forest-dim/70 border border-forest/20 p-3 text-center shadow-card">
+        <p class="text-2xl font-bold text-forest">{{ store.ticketStats.active }}</p>
+        <p class="text-xs text-content/60 mt-0.5">{{ t.active }}</p>
       </div>
-      <div class="rounded-2xl bg-amber-950/50 border border-gold/20 p-3 text-center">
+      <div class="rounded-2xl bg-warning-bg/60 border border-warning/20 p-3 text-center shadow-card">
         <p class="text-2xl font-bold text-gold">{{ store.ticketStats.pending }}</p>
-        <p class="text-xs text-white/60 mt-0.5">{{ t.pending }}</p>
+        <p class="text-xs text-content/60 mt-0.5">{{ t.pending }}</p>
       </div>
-      <div class="rounded-2xl bg-amber-950/50 border border-gold/20 p-3 text-center">
+      <div class="rounded-2xl bg-warning-bg/60 border border-warning/20 p-3 text-center shadow-card">
         <p class="text-2xl font-bold text-gold">{{ store.ticketStats.total }}</p>
-        <p class="text-xs text-white/60 mt-0.5">{{ t.total }}</p>
+        <p class="text-xs text-content/60 mt-0.5">{{ t.total }}</p>
       </div>
     </div>
 
@@ -41,18 +41,18 @@
       <article
         v-for="ticket in store.tickets"
         :key="ticket.id"
-        class="rounded-2xl bg-ink-200 border border-white/5 p-4"
+        class="rounded-2xl bg-surface border border-line/60 p-4 shadow-card"
       >
         <div class="flex items-start justify-between gap-2">
           <div>
-            <p class="font-semibold text-white">{{ ticket.raffleName }}</p>
-            <p class="text-xs text-white/45 mt-0.5">{{ ticket.createdAt }}</p>
+            <p class="font-semibold text-content">{{ ticket.raffleName }}</p>
+            <p class="text-xs text-content/45 mt-0.5">{{ ticket.createdAt }}</p>
           </div>
           <span
             class="text-[11px] font-bold uppercase px-2 py-1 rounded-md"
             :class="
               ticket.status === 'active'
-                ? 'bg-forest/30 text-emerald-300'
+                ? 'bg-forest/30 text-forest'
                 : 'bg-gold/20 text-gold'
             "
           >
@@ -74,12 +74,12 @@
 
     <div v-else class="flex flex-col items-center text-center py-12 px-4">
       <div
-        class="w-16 h-16 rounded-2xl bg-ink-200 border border-gold/20 shadow-glow-sm flex items-center justify-center mb-4"
+        class="w-16 h-16 rounded-2xl bg-surface-2 border border-gold/20 shadow-glow-sm flex items-center justify-center mb-4"
       >
         <Ticket :size="28" class="text-gold" />
       </div>
-      <p class="text-white font-medium">{{ t.noTicketsYet }}</p>
-      <p class="text-xs text-white/40 mt-1.5">{{ t.enterPhoneHint }}</p>
+      <p class="text-content font-medium">{{ t.noTicketsYet }}</p>
+      <p class="text-xs text-content/40 mt-1.5">{{ t.enterPhoneHint }}</p>
     </div>
   </div>
 </template>

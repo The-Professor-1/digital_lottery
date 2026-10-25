@@ -1,22 +1,22 @@
 <template>
-  <div class="rounded-card overflow-hidden border border-gold/30 bg-gradient-to-b from-ink-200 via-forest-deep to-ink-100">
+  <div class="rounded-card overflow-hidden border border-gold/30 bg-hero-soft">
     <!-- Manual announcement (auto toggle off) -->
     <div v-if="phase === 'manual'" class="px-4 py-8 text-center space-y-3">
       <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">{{ t.manualAnnounceTitle }}</p>
-      <p class="text-white text-base font-semibold leading-snug">{{ t.manualAnnounceBody }}</p>
-      <p class="text-white/55 text-sm leading-relaxed">{{ t.manualAnnounceHint }}</p>
+      <p class="text-content text-base font-semibold leading-snug">{{ t.manualAnnounceBody }}</p>
+      <p class="text-content/55 text-sm leading-relaxed">{{ t.manualAnnounceHint }}</p>
     </div>
 
     <!-- Stuck: timer ended with no verified tickets -->
     <div v-else-if="phase === 'stuck'" class="px-4 py-8 text-center space-y-3">
       <p class="text-gold text-sm font-semibold tracking-wide uppercase">{{ t.drawStarting }}</p>
-      <p class="text-white text-base font-semibold">{{ t.noTicketsToDraw }}</p>
-      <p class="text-white/50 text-xs leading-relaxed">{{ t.waitingAdminRestart }}</p>
+      <p class="text-content text-base font-semibold">{{ t.noTicketsToDraw }}</p>
+      <p class="text-content/50 text-xs leading-relaxed">{{ t.waitingAdminRestart }}</p>
     </div>
 
     <!-- Final minute: timer on top + shuffle on bottom -->
     <template v-else-if="phase === 'final' || phase === 'drawing'">
-      <div class="px-4 pt-8 pb-4 text-center space-y-2 border-b border-white/5">
+      <div class="px-4 pt-8 pb-4 text-center space-y-2 border-b border-line/60">
         <p class="text-gold text-xs font-semibold tracking-[0.2em] uppercase">{{ t.drawStarting }}</p>
         <div
           class="text-gold font-extrabold tabular-nums leading-none transition-transform"
@@ -25,7 +25,7 @@
         >
           {{ displaySeconds }}
         </div>
-        <p class="text-white/60 text-sm">{{ t.secondsLeft }}</p>
+        <p class="text-content/60 text-sm">{{ t.secondsLeft }}</p>
       </div>
       <div class="px-3 py-5 space-y-3">
         <p class="text-center text-gold text-sm font-semibold">{{ t.shufflingBalls }}</p>
@@ -39,7 +39,7 @@
             {{ padNumber(ball) }}
           </span>
         </div>
-        <p v-if="!takenPool.length" class="text-center text-xs text-white/40">
+        <p v-if="!takenPool.length" class="text-center text-xs text-content/40">
           {{ t.waitingTickets }}
         </p>
       </div>
@@ -51,18 +51,18 @@
         {{ revealLabel }}
       </p>
       <div
-        class="mx-auto w-28 h-28 rounded-full flex items-center justify-center text-3xl font-extrabold text-white shadow-lg border-4 border-white/20"
+        class="mx-auto w-28 h-28 rounded-full flex items-center justify-center text-3xl font-extrabold text-white shadow-lg border-4 border-line"
         :style="{ background: ballColor(revealNumber) }"
       >
         {{ padNumber(revealNumber) }}
       </div>
-      <p class="text-center text-white/80 text-lg font-semibold">{{ revealPrizeText }}</p>
+      <p class="text-center text-content/80 text-lg font-semibold">{{ revealPrizeText }}</p>
 
-      <div v-if="revealedRows.length" class="space-y-2 pt-2 border-t border-white/10">
+      <div v-if="revealedRows.length" class="space-y-2 pt-2 border-t border-line">
         <div
           v-for="row in revealedRows"
           :key="'r' + row.place"
-          class="flex items-center gap-3 rounded-xl bg-black/25 border border-white/10 px-3 py-2 opacity-80"
+          class="flex items-center gap-3 rounded-xl bg-surface-2/70 border border-line px-3 py-2 opacity-90"
         >
           <div
             class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold text-white"
@@ -71,8 +71,8 @@
             {{ padNumber(row.number) }}
           </div>
           <div>
-            <p class="text-white text-sm font-bold">{{ row.label }}</p>
-            <p class="text-lime-300/80 text-xs">{{ formatAmount(row.prize) }} ብር</p>
+            <p class="text-content text-sm font-bold">{{ row.label }}</p>
+            <p class="text-forest/80 text-xs">{{ formatAmount(row.prize) }} ብር</p>
           </div>
         </div>
       </div>
@@ -84,7 +84,7 @@
       <div
         v-for="row in finalRows"
         :key="row.place"
-        class="flex items-center gap-3 rounded-2xl bg-black/30 border border-white/10 p-3"
+        class="flex items-center gap-3 rounded-2xl bg-surface-2/80 border border-line p-3"
       >
         <div
           class="w-14 h-14 rounded-full flex items-center justify-center text-lg font-extrabold text-white shrink-0"
@@ -93,18 +93,18 @@
           {{ padNumber(row.number) }}
         </div>
         <div class="min-w-0 text-left">
-          <p class="text-white font-bold">{{ row.label }}</p>
-          <p class="text-lime-300/90 text-sm">{{ formatAmount(row.prize) }} ብር</p>
+          <p class="text-content font-bold">{{ row.label }}</p>
+          <p class="text-forest/90 text-sm">{{ formatAmount(row.prize) }} ብር</p>
         </div>
       </div>
 
-      <div class="mt-2 rounded-2xl border border-gold/40 bg-black/35 px-4 py-4 text-center space-y-2">
+      <div class="mt-2 rounded-2xl border border-gold/30 bg-surface-2/80 px-4 py-4 text-center space-y-2">
         <template v-if="adminControlsRound">
-          <p class="text-white/70 text-xs uppercase tracking-wide">{{ t.waitingAdminNextRound }}</p>
-          <p class="text-white/55 text-sm leading-relaxed">{{ t.waitingAdminNextRoundHint }}</p>
+          <p class="text-content/70 text-xs uppercase tracking-wide">{{ t.waitingAdminNextRound }}</p>
+          <p class="text-content/55 text-sm leading-relaxed">{{ t.waitingAdminNextRoundHint }}</p>
         </template>
         <template v-else>
-          <p class="text-white/70 text-xs uppercase tracking-wide">{{ t.nextRoundIn }}</p>
+          <p class="text-content/70 text-xs uppercase tracking-wide">{{ t.nextRoundIn }}</p>
           <div class="text-gold text-3xl font-extrabold tabular-nums">
             {{ nextRoundLabel }}
           </div>

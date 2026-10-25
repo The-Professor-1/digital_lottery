@@ -1,5 +1,8 @@
 <template>
   <div class="admin-view-login">
+    <button type="button" class="login-theme" @click="toggleTheme">
+      {{ theme === 'dark' ? 'Light mode' : 'Dark mode' }}
+    </button>
     <div class="login-container">
       <h1>Admin View</h1>
       <p class="sub">Sign in to manage the lottery</p>
@@ -39,6 +42,7 @@
 
 <script>
 import { secondAdminLogin } from '../services/api'
+import { store, toggleTheme } from '../stores/lottery'
 
 export default {
   name: 'SecondAdminLogin',
@@ -50,10 +54,16 @@ export default {
       error: null,
     }
   },
+  computed: {
+    theme() {
+      return store.theme
+    },
+  },
   mounted() {
     document.title = 'Admin View'
   },
   methods: {
+    toggleTheme,
     async handleLogin() {
       this.loading = true
       this.error = null
@@ -72,30 +82,49 @@ export default {
 
 <style scoped>
 .admin-view-login {
+  position: relative;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0f1115;
+  background:
+    radial-gradient(900px 420px at 50% -10%, rgb(var(--gold) / 0.10), transparent 55%),
+    rgb(var(--app));
   padding: 20px;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Manrope', 'Noto Sans Ethiopic', 'Segoe UI', system-ui, sans-serif;
+}
+.login-theme {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border: 1px solid rgb(var(--line));
+  background: rgb(var(--surface));
+  color: rgb(var(--content));
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 .login-container {
   width: 100%;
   max-width: 400px;
-  background: #161a22;
-  border: 1px solid #2a3140;
-  border-radius: 16px;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 18px;
   padding: 1.75rem;
+  box-shadow: 0 24px 70px -38px rgb(var(--shadow) / 0.4);
 }
 h1 {
   margin: 0;
-  color: #f5a623;
-  font-size: 1.5rem;
+  color: rgb(var(--gold));
+  font-family: 'Fraunces', 'Noto Sans Ethiopic', Georgia, serif;
+  font-size: 1.65rem;
+  letter-spacing: -0.02em;
 }
 .sub {
   margin: 0.35rem 0 1.25rem;
-  color: #9ca3af;
+  color: rgb(var(--muted));
   font-size: 0.9rem;
 }
 .form-group {
@@ -104,7 +133,7 @@ h1 {
 label {
   display: block;
   font-size: 0.85rem;
-  color: #d1d5db;
+  color: rgb(var(--content) / 0.78);
   margin-bottom: 0.35rem;
 }
 .form-input {
@@ -112,9 +141,9 @@ label {
   box-sizing: border-box;
   padding: 0.7rem 0.75rem;
   border-radius: 10px;
-  border: 1px solid #334155;
-  background: #0d0d0d;
-  color: #fff;
+  border: 1px solid rgb(var(--line));
+  background: rgb(var(--surface-2));
+  color: rgb(var(--content));
 }
 .login-btn {
   width: 100%;
@@ -124,17 +153,17 @@ label {
   padding: 0.8rem 1rem;
   font-weight: 700;
   cursor: pointer;
-  background: linear-gradient(90deg, #f5a623, #ffb84d);
-  color: #111;
+  background: linear-gradient(90deg, rgb(var(--gold)), rgb(var(--gold-light)));
+  color: rgb(var(--on-gold));
 }
 .login-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 .error-message {
-  background: #3f1515;
-  border: 1px solid #7f1d1d;
-  color: #fecaca;
+  background: rgb(var(--danger-bg));
+  border: 1px solid rgb(var(--danger) / 0.25);
+  color: rgb(var(--danger-text));
   border-radius: 10px;
   padding: 0.65rem 0.75rem;
   font-size: 0.85rem;

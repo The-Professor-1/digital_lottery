@@ -151,25 +151,25 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.section-title { margin: 0; font-size: 1.05rem; color: #f5a623; }
-.hint { margin: 0.2rem 0 0; font-size: 0.8rem; color: #9ca3af; }
-.subhead { margin: 0 0 0.4rem; font-size: 0.92rem; color: #e5e7eb; }
-.card { border: 1px solid #2a3140; border-radius: 12px; background: #0d0d0d; padding: 0.85rem; }
+.section-title { margin: 0; font-size: 1.05rem; color: rgb(var(--gold)); }
+.hint { margin: 0.2rem 0 0; font-size: 0.8rem; color: rgb(var(--muted)); }
+.subhead { margin: 0 0 0.4rem; font-size: 0.92rem; color: rgb(var(--content)); }
+.card { border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); padding: 0.85rem; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
-label { display: block; font-size: 0.8rem; color: #d1d5db; margin-bottom: 0.45rem; }
-.admin-input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid #334155; background: #11151c; color: #fff; box-sizing: border-box; }
+label { display: block; font-size: 0.8rem; color: rgb(var(--content) / 0.78); margin-bottom: 0.45rem; }
+.admin-input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid rgb(var(--line)); background: rgb(var(--surface-2)); color: rgb(var(--content)); box-sizing: border-box; }
 .check { display: flex; align-items: center; gap: 0.45rem; }
-.btn { border: none; border-radius: 8px; padding: 0.55rem 0.75rem; font-weight: 600; cursor: pointer; background: #374151; color: #fff; }
-.btn.primary { background: linear-gradient(90deg, #f5a623, #ffb84d); color: #111; }
-.btn.ghost { background: transparent; border: 1px solid #4b5563; }
-.btn.danger { background: #7f1d1d; color: #fecaca; }
+.btn { border: none; border-radius: 8px; padding: 0.55rem 0.75rem; font-weight: 600; cursor: pointer; background: rgb(var(--surface-3)); color: rgb(var(--content)); }
+.btn.primary { background: linear-gradient(90deg, rgb(var(--gold)), rgb(var(--gold-light))); color: rgb(var(--on-gold)); }
+.btn.ghost { background: transparent; border: 1px solid rgb(var(--line-strong)); }
+.btn.danger { background: rgb(var(--danger-bg)); color: rgb(var(--danger-text)); }
 .btn.small { padding: 0.3rem 0.5rem; font-size: 0.72rem; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-th, td { text-align: left; padding: 0.5rem 0.45rem; border-bottom: 1px solid #1f2937; }
-th { color: #9ca3af; font-weight: 600; }
-.num { color: #f5a623; font-weight: 700; white-space: nowrap; }
-.error { color: #fecaca; font-size: 0.85rem; margin: 0; }
-.ok { color: #86efac; font-size: 0.85rem; margin: 0; }
+th, td { text-align: left; padding: 0.5rem 0.45rem; border-bottom: 1px solid rgb(var(--line)); }
+th { color: rgb(var(--muted)); font-weight: 600; }
+.num { color: rgb(var(--gold)); font-weight: 700; white-space: nowrap; }
+.error { color: rgb(var(--danger-text)); font-size: 0.85rem; margin: 0; }
+.ok { color: rgb(var(--success)); font-size: 0.85rem; margin: 0; }
 @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
 </style>

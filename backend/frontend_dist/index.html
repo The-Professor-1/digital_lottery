@@ -1,13 +1,33 @@
 <!DOCTYPE html>
-<html lang="am">
+<html lang="am" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#0d0d0d" />
+    <meta name="theme-color" content="#F7F3EB" />
+    <meta name="color-scheme" content="light dark" />
     <title>Digital Lottery</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;600;700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+Ethiopic:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // Apply the saved theme before paint to avoid a light/dark flash.
+      (function () {
+        try {
+          var saved = localStorage.getItem('gfj_theme')
+          var dark = saved === 'dark'
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+          document.documentElement.classList.toggle('dark', dark)
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script type="module" crossorigin src="/assets/index-CXaowbZn.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Dt3B-tr9.css">
+    <script type="module" crossorigin src="/assets/index-DJ6DE5e5.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-2l7kxxRJ.css">
   </head>
   <body>
     <div id="app"></div>

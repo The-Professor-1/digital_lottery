@@ -1,5 +1,5 @@
 <template>
-  <div class="app-shell" :class="store.theme === 'light' ? 'theme-light' : ''">
+  <div class="app-shell">
     <AppHeader />
     <main class="px-3 pb-28 min-h-[calc(100dvh-8rem)]">
       <RouterView />
@@ -37,10 +37,3 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>
-
-<style scoped>
-.theme-light {
-  background: #f3f4f6;
-  color: #111;
-}
-</style>

@@ -6,18 +6,18 @@
       @click.self="!store.verifying && closeCheckout()"
     >
       <div
-        class="sheet-panel w-full max-w-phone bg-ink-100 rounded-t-3xl border-t border-white/10 flex flex-col max-h-[94dvh]"
+        class="sheet-panel w-full max-w-phone bg-surface rounded-t-3xl border-t border-line flex flex-col max-h-[94dvh]"
       >
         <div class="px-4 pt-4 pb-2 flex items-start justify-between">
           <div>
-            <h2 class="text-lg font-bold text-white">{{ t.completePurchase }}</h2>
-            <p class="text-sm text-white/50 mt-0.5">
+            <h2 class="text-lg font-bold text-content">{{ t.completePurchase }}</h2>
+            <p class="text-sm text-content/50 mt-0.5">
               {{ store.checkoutStep < 4 ? t.stepOf(store.checkoutStep, 4) : t.confirmStep }}
             </p>
           </div>
           <button
             type="button"
-            class="p-1 text-white/70"
+            class="p-1 text-content/70"
             :disabled="store.verifying"
             @click="closeCheckout"
           >
@@ -30,16 +30,16 @@
             v-for="s in 4"
             :key="s"
             class="h-1.5 flex-1 rounded-full transition-colors"
-            :class="s <= store.checkoutStep ? 'bg-gold' : 'bg-ink-300'"
+            :class="s <= store.checkoutStep ? 'bg-gold' : 'bg-surface-3'"
           />
         </div>
 
         <div class="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
           <!-- Step 1: identity -->
           <template v-if="store.checkoutStep === 1">
-            <div class="rounded-2xl bg-ink-200 border border-white/5 p-4">
-              <p class="font-semibold text-white">{{ store.raffle.displayName }}</p>
-              <p class="text-sm text-white/50 mt-1">
+            <div class="rounded-2xl bg-surface-2 border border-line/60 p-4">
+              <p class="font-semibold text-content">{{ store.raffle.displayName }}</p>
+              <p class="text-sm text-content/50 mt-1">
                 {{ store.quantity }} {{ t.ticketsLabel }} × {{ formatBirr(store.raffle.ticketPrice) }}
               </p>
               <p class="text-gold text-2xl font-bold mt-2">{{ formatBirr(totalPrice()) }}</p>
@@ -55,33 +55,33 @@
             </div>
 
             <label class="block">
-              <span class="text-sm text-white/70">{{ t.fullName }}</span>
+              <span class="text-sm text-content/70">{{ t.fullName }}</span>
               <div
-                class="mt-1.5 flex items-center gap-2 rounded-xl bg-ink-200 border border-white/10 px-3 py-3"
+                class="mt-1.5 flex items-center gap-2 rounded-xl bg-surface-2 border border-line px-3 py-3"
               >
-                <User :size="18" class="text-white/40" />
+                <User :size="18" class="text-content/40" />
                 <input
                   v-model="store.fullName"
                   type="text"
                   autocomplete="name"
-                  class="selectable-field flex-1 bg-transparent outline-none text-white placeholder:text-white/30 text-sm"
+                  class="selectable-field flex-1 bg-transparent outline-none text-content placeholder:text-content/30 text-sm"
                   :placeholder="t.fullNamePlaceholder"
                 />
               </div>
             </label>
 
             <label class="block">
-              <span class="text-sm text-white/70">{{ t.phoneNumber }}</span>
+              <span class="text-sm text-content/70">{{ t.phoneNumber }}</span>
               <div
-                class="mt-1.5 flex items-center gap-2 rounded-xl bg-ink-200 border border-white/10 px-3 py-3"
+                class="mt-1.5 flex items-center gap-2 rounded-xl bg-surface-2 border border-line px-3 py-3"
               >
-                <Phone :size="18" class="text-white/40" />
+                <Phone :size="18" class="text-content/40" />
                 <input
                   v-model="store.phone"
                   type="tel"
                   inputmode="tel"
                   autocomplete="tel"
-                  class="selectable-field flex-1 bg-transparent outline-none text-white text-sm"
+                  class="selectable-field flex-1 bg-transparent outline-none text-content text-sm"
                 />
               </div>
             </label>
@@ -90,19 +90,19 @@
           <!-- Step 2: bank only -->
           <template v-else-if="store.checkoutStep === 2">
             <div>
-              <p class="text-sm text-white/85">{{ t.selectBank }}</p>
-              <p class="text-xs text-white/45 mt-1">{{ t.selectBankRequired }}</p>
+              <p class="text-sm text-content/85">{{ t.selectBank }}</p>
+              <p class="text-xs text-content/45 mt-1">{{ t.selectBankRequired }}</p>
             </div>
 
             <button
               v-for="bank in store.banks"
               :key="bank.id"
               type="button"
-              class="w-full flex items-center gap-3 rounded-2xl bg-ink-200 border p-3 text-left transition-colors"
+              class="w-full flex items-center gap-3 rounded-2xl bg-surface-2 border p-3 text-left transition-colors"
               :class="
                 store.selectedBankId === bank.id
                   ? 'border-gold/60 bg-gold/5'
-                  : 'border-white/5'
+                  : 'border-line/60'
               "
               @click="store.selectedBankId = bank.id"
             >
@@ -112,15 +112,15 @@
                 <Receipt :size="18" class="text-black" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="font-semibold text-white text-sm truncate">{{ bank.name }}</p>
-                <p class="text-xs text-white/45 truncate">{{ bank.holder }}</p>
+                <p class="font-semibold text-content text-sm truncate">{{ bank.name }}</p>
+                <p class="text-xs text-content/45 truncate">{{ bank.holder }}</p>
                 <div class="mt-1.5 flex items-center gap-2">
                   <p class="text-sm text-gold font-semibold tabular-nums selectable-field">
                     {{ bank.account }}
                   </p>
                   <button
                     type="button"
-                    class="inline-flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/15 px-2 py-1 text-[11px] text-white/85 shrink-0"
+                    class="inline-flex items-center gap-1 rounded-lg bg-content/10 hover:bg-content/15 px-2 py-1 text-[11px] text-content/85 shrink-0"
                     :title="t.copyAccount"
                     @click.stop="copyAndSelectBank(bank)"
                   >
@@ -134,17 +134,17 @@
 
           <!-- Step 3: screenshot after bank chosen -->
           <template v-else-if="store.checkoutStep === 3">
-            <div class="rounded-2xl bg-ink-200 border border-white/5 p-3 space-y-2">
-              <p class="text-xs text-white/45">{{ t.payingTo }}</p>
-              <p class="text-sm text-white font-semibold">{{ selectedBank?.name }}</p>
-              <p v-if="selectedBank?.holder" class="text-xs text-white/50">{{ selectedBank.holder }}</p>
+            <div class="rounded-2xl bg-surface-2 border border-line/60 p-3 space-y-2">
+              <p class="text-xs text-content/45">{{ t.payingTo }}</p>
+              <p class="text-sm text-content font-semibold">{{ selectedBank?.name }}</p>
+              <p v-if="selectedBank?.holder" class="text-xs text-content/50">{{ selectedBank.holder }}</p>
               <div class="flex items-center gap-2">
                 <p class="text-sm text-gold font-semibold tabular-nums selectable-field">
                   {{ selectedBank?.account }}
                 </p>
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 rounded-lg bg-white/10 hover:bg-white/15 px-2 py-1 text-[11px] text-white/85"
+                  class="inline-flex items-center gap-1 rounded-lg bg-content/10 hover:bg-content/15 px-2 py-1 text-[11px] text-content/85"
                   @click="copyText(selectedBank?.account, 'selected')"
                 >
                   <Copy :size="13" />
@@ -155,13 +155,13 @@
             </div>
 
             <div>
-              <p class="text-sm text-white/80 mb-2">{{ t.paymentProof }}</p>
+              <p class="text-sm text-content/80 mb-2">{{ t.paymentProof }}</p>
               <label
-                class="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gold/50 bg-ink-200/50 py-8 px-4 cursor-pointer"
+                class="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gold/50 bg-surface-2/50 py-8 px-4 cursor-pointer"
               >
                 <Upload :size="28" class="text-gold" />
-                <span class="text-sm text-white/85">{{ t.uploadProof }}</span>
-                <span class="text-xs text-white/40">{{ t.uploadHint }}</span>
+                <span class="text-sm text-content/85">{{ t.uploadProof }}</span>
+                <span class="text-xs text-content/40">{{ t.uploadHint }}</span>
                 <span v-if="preparingReceipt" class="text-xs text-gold mt-1">
                   {{ t.preparingImage }}
                 </span>
@@ -172,7 +172,7 @@
               </label>
             </div>
 
-            <p v-if="store.submitError" class="text-sm text-red-300 leading-relaxed whitespace-pre-wrap">
+            <p v-if="store.submitError" class="text-sm text-danger leading-relaxed whitespace-pre-wrap">
               {{ store.submitError }}
             </p>
           </template>
@@ -185,23 +185,23 @@
                 :class="
                   store.orderVerified
                     ? 'bg-forest/20 border-forest/40'
-                    : 'bg-amber-500/10 border-amber-400/40'
+                    : 'bg-warning/10 border-warning/40'
                 "
               >
                 <Check v-if="store.orderVerified" :size="32" class="text-forest" />
-                <Clock v-else :size="32" class="text-amber-300" />
+                <Clock v-else :size="32" class="text-warning" />
               </div>
               <h3 class="text-xl font-bold">
                 {{ store.orderVerified ? t.paymentVerified : t.receiptPendingTitle }}
               </h3>
-              <p class="text-sm text-white/80 px-4 leading-relaxed">
+              <p class="text-sm text-content/80 px-4 leading-relaxed">
                 {{ store.submitMessage || (store.orderVerified ? t.paymentVerifiedHint : t.receiptPendingHint) }}
               </p>
             </div>
           </template>
         </div>
 
-        <div class="p-4 border-t border-white/5 flex gap-2">
+        <div class="p-4 border-t border-line/60 flex gap-2">
           <template v-if="store.checkoutStep === 1">
             <button
               type="button"
@@ -215,7 +215,7 @@
           <template v-else-if="store.checkoutStep === 2">
             <button
               type="button"
-              class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white text-sm font-semibold"
+              class="flex-1 py-3.5 rounded-2xl border border-line text-content text-sm font-semibold"
               @click="store.checkoutStep = 1"
             >
               {{ t.back }}
@@ -232,7 +232,7 @@
           <template v-else-if="store.checkoutStep === 3">
             <button
               type="button"
-              class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white text-sm font-semibold"
+              class="flex-1 py-3.5 rounded-2xl border border-line text-content text-sm font-semibold"
               :disabled="store.verifying"
               @click="store.checkoutStep = 2"
             >
@@ -259,12 +259,12 @@
         v-if="store.verifying"
         class="absolute inset-0 z-[60] flex items-center justify-center bg-black/75 px-6"
       >
-        <div class="w-full max-w-xs rounded-2xl bg-ink-100 border border-white/10 p-6 text-center space-y-3">
+        <div class="w-full max-w-xs rounded-2xl bg-surface border border-line p-6 text-center space-y-3">
           <div
             class="mx-auto w-12 h-12 rounded-full border-2 border-gold border-t-transparent animate-spin"
           />
-          <p class="text-white font-semibold">{{ t.checking }}</p>
-          <p class="text-xs text-white/50">{{ t.checkingHint }}</p>
+          <p class="text-content font-semibold">{{ t.checking }}</p>
+          <p class="text-xs text-content/50">{{ t.checkingHint }}</p>
         </div>
       </div>
 
@@ -273,24 +273,24 @@
         class="absolute inset-0 z-[70] flex items-end justify-center bg-black/80 px-3 pb-3"
         @click.self="store.conflictDialog = false"
       >
-        <div class="w-full max-w-phone rounded-2xl bg-ink-100 border border-white/10 p-4 space-y-3 max-h-[80dvh] flex flex-col">
-          <h3 class="text-base font-bold text-white">{{ t.numbersTakenTitle }}</h3>
-          <p class="text-sm text-red-300 leading-relaxed">{{ store.conflictMessage }}</p>
+        <div class="w-full max-w-phone rounded-2xl bg-surface border border-line p-4 space-y-3 max-h-[80dvh] flex flex-col">
+          <h3 class="text-base font-bold text-content">{{ t.numbersTakenTitle }}</h3>
+          <p class="text-sm text-danger leading-relaxed">{{ store.conflictMessage }}</p>
 
           <div v-if="store.conflictKept.length" class="space-y-1.5">
-            <p class="text-xs text-white/55">{{ t.keptNumbersLabel }}</p>
+            <p class="text-xs text-content/55">{{ t.keptNumbersLabel }}</p>
             <div class="flex flex-wrap gap-1.5">
               <span
                 v-for="n in store.conflictKept"
                 :key="'k' + n"
-                class="inline-block bg-forest/40 border border-forest/50 text-white text-xs font-bold px-2 py-1 rounded-md tabular-nums"
+                class="inline-block bg-forest/40 border border-forest/50 text-content text-xs font-bold px-2 py-1 rounded-md tabular-nums"
               >
                 {{ padNumber(n) }}
               </span>
             </div>
           </div>
 
-          <p class="text-xs text-white/55">
+          <p class="text-xs text-content/55">
             {{ t.selectMore(conflictNeedMore) }}
           </p>
           <div class="flex-1 overflow-y-auto grid grid-cols-6 gap-1.5 py-1">
@@ -302,21 +302,21 @@
               :class="
                 store.conflictPicked.includes(n)
                   ? 'bg-gold text-black'
-                  : 'bg-ink-300 text-white/90'
+                  : 'bg-surface-3 text-content/90'
               "
               @click="toggleConflictPick(n)"
             >
               {{ padNumber(n) }}
             </button>
           </div>
-          <p class="text-xs text-white/50">
+          <p class="text-xs text-content/50">
             {{ store.conflictKept.length + store.conflictPicked.length }} / {{ store.quantity }}
             {{ t.selected }}
           </p>
           <div class="flex gap-2">
             <button
               type="button"
-              class="flex-1 py-3 rounded-xl border border-white/20 text-white text-sm"
+              class="flex-1 py-3 rounded-xl border border-line text-content text-sm"
               @click="store.conflictDialog = false"
             >
               {{ t.back }}

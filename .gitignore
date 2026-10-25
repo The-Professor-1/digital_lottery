@@ -88,3 +88,5 @@ frontend/.vite/
 *.tmp
 *.bak
 *~
+# Local AI design tooling
+.opencode/

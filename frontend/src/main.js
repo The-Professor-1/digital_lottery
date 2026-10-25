@@ -3,7 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { initTelegramWebApp, getInitData, getInitDataRaw } from './services/telegram'
 import { registerTelegram, updateUserPhone } from './services/api'
-import { store, loadUserProfile } from './stores/lottery'
+import { store, loadUserProfile, applyTheme } from './stores/lottery'
 import './style.css'
 
 import LotteryLayout from './views/lottery/LotteryLayout.vue'
@@ -71,6 +71,8 @@ if (isTelegramApp) {
       })
   }
 }
+
+applyTheme(store.theme)
 
 const app = createApp(App)
 app.use(router)

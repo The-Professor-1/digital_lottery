@@ -1,36 +1,56 @@
 <template>
   <div :class="compact ? 'space-y-1.5' : 'space-y-2.5'">
-    <article
-      v-for="(prize, index) in rows"
-      :key="prize.key || index"
-      class="rounded-xl border border-white/10 bg-ink-200/65 overflow-hidden"
-      :class="compact ? 'p-2.5' : 'p-3'"
-    >
-      <div class="flex items-start gap-3">
+    <template v-if="compact">
+      <article
+        v-for="(prize, index) in rows"
+        :key="prize.key || index"
+        class="rounded-xl border border-line/70 bg-surface/70 px-3 py-2 flex items-center gap-2.5"
+      >
         <img
           v-if="prize.image_url"
           :src="prize.image_url"
           :alt="prize.title || prize.place"
-          class="rounded-lg object-cover shrink-0"
-          :class="compact ? 'w-12 h-12' : 'w-20 h-20'"
+          class="w-10 h-10 rounded-lg object-cover shrink-0"
         />
         <div class="min-w-0 flex-1">
-          <p class="text-gold font-bold uppercase tracking-wide" :class="compact ? 'text-[10px]' : 'text-xs'">
-            {{ prize.place || 'Prize' }}
-          </p>
-          <p class="text-white font-semibold break-words" :class="compact ? 'text-sm' : 'text-base'">
-            {{ prize.title || prize.description || 'Prize' }}
-          </p>
-          <p v-if="prize.description && prize.description !== prize.title" class="text-xs text-white/55 mt-0.5 break-words">
+          <p class="text-gold font-bold uppercase tracking-wide text-[10px]">{{ prize.place || 'Prize' }}</p>
+          <p class="text-content font-semibold text-sm truncate">{{ prize.title || prize.description || 'Prize' }}</p>
+          <p v-if="prize.description && prize.description !== prize.title && !prize.amount" class="text-[11px] text-content/50 truncate">
             {{ prize.description }}
           </p>
-          <p v-if="prize.amount" class="text-gold font-bold mt-1" :class="compact ? 'text-sm' : 'text-lg'">
-            {{ formatAmount(prize.amount) }} Birr
-          </p>
         </div>
-      </div>
-    </article>
-    <p v-if="!rows.length" class="text-xs text-white/45">No prizes configured yet.</p>
+        <p v-if="prize.amount" class="text-gold font-bold text-sm whitespace-nowrap">
+          {{ formatAmount(prize.amount) }} <span class="text-[10px] font-semibold">Birr</span>
+        </p>
+      </article>
+    </template>
+    <template v-else>
+      <article
+        v-for="(prize, index) in rows"
+        :key="prize.key || index"
+        class="rounded-xl border border-line bg-surface-2/65 overflow-hidden p-3"
+      >
+        <div class="flex items-start gap-3">
+          <img
+            v-if="prize.image_url"
+            :src="prize.image_url"
+            :alt="prize.title || prize.place"
+            class="w-20 h-20 rounded-lg object-cover shrink-0"
+          />
+          <div class="min-w-0 flex-1">
+            <p class="text-gold font-bold uppercase tracking-wide text-xs">{{ prize.place || 'Prize' }}</p>
+            <p class="text-content font-semibold text-base break-words">{{ prize.title || prize.description || 'Prize' }}</p>
+            <p v-if="prize.description && prize.description !== prize.title" class="text-xs text-content/55 mt-0.5 break-words">
+              {{ prize.description }}
+            </p>
+            <p v-if="prize.amount" class="text-gold font-bold mt-1 text-lg">
+              {{ formatAmount(prize.amount) }} Birr
+            </p>
+          </div>
+        </div>
+      </article>
+    </template>
+    <p v-if="!rows.length" class="text-xs text-content/45">No prizes configured yet.</p>
   </div>
 </template>
 

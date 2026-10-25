@@ -1,7 +1,7 @@
 <template>
   <div class="pt-2 flex flex-col min-h-[calc(100dvh-10rem)]">
     <div
-      class="rounded-card bg-gradient-to-r from-forest-dim to-forest-deep border border-forest/25 p-4 flex items-center gap-4"
+      class="rounded-card bg-forest-strip border border-forest/25 p-4 flex items-center gap-4"
     >
       <div
         class="w-14 h-14 rounded-2xl bg-gold flex items-center justify-center shrink-0 shadow-glow-sm"
@@ -9,18 +9,18 @@
         <Phone :size="26" class="text-black" />
       </div>
       <div class="min-w-0">
-        <p class="text-sm text-white/70">{{ t.userPhone }}</p>
-        <p class="text-xl font-bold text-white tracking-wide truncate">
+        <p class="text-sm text-content/70">{{ t.userPhone }}</p>
+        <p class="text-xl font-bold text-content tracking-wide truncate">
           {{ displayPhone }}
         </p>
-        <p v-if="!store.phone" class="text-xs text-white/40 mt-1">
+        <p v-if="!store.phone" class="text-xs text-content/40 mt-1">
           {{ t.sharePhoneHint }}
         </p>
-        <p v-else class="text-xs text-emerald-300/80 mt-1">{{ t.registeredAccount }}</p>
+        <p v-else class="text-xs text-forest/80 mt-1">{{ t.registeredAccount }}</p>
       </div>
     </div>
 
-    <div class="mt-auto pt-10 pb-4 text-center text-[11px] text-white/35 leading-relaxed px-2">
+    <div class="mt-auto pt-10 pb-4 text-center text-[11px] text-content/35 leading-relaxed px-2">
       <p>© 2026 {{ store.brandName }}. All Rights Reserved.</p>
       <p class="mt-1">
         {{ t.designedBy }}

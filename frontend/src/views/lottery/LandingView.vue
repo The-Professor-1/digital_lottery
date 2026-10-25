@@ -5,15 +5,15 @@
       <div class="flex items-end justify-between gap-3">
         <div>
           <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">{{ store.brandName }}</p>
-          <h1 class="text-2xl font-extrabold text-white mt-1">{{ t.lotteries }}</h1>
+          <h1 class="text-2xl font-extrabold text-content mt-1">{{ t.lotteries }}</h1>
         </div>
-        <span class="text-xs text-white/45">{{ store.items.length }} {{ t.available }}</span>
+        <span class="text-xs text-content/45">{{ store.items.length }} {{ t.available }}</span>
       </div>
 
       <article
         v-for="item in store.items"
         :key="item.id"
-        class="rounded-card overflow-hidden bg-ink-200 border border-white/10"
+        class="rounded-card overflow-hidden bg-surface border border-line shadow-card transition-transform hover:-translate-y-0.5"
       >
         <button type="button" class="block w-full text-left" @click="openItem(item)">
           <img
@@ -28,13 +28,13 @@
                 <p class="text-gold text-[11px] font-semibold uppercase tracking-wide">
                   {{ item.hero_title || item.name }}
                 </p>
-                <h2 class="text-white text-lg font-bold truncate">{{ item.name }}</h2>
-                <p v-if="item.description" class="text-xs text-white/50 mt-1 line-clamp-2">
+                <h2 class="text-content text-lg font-bold truncate">{{ item.name }}</h2>
+                <p v-if="item.description" class="text-xs text-content/50 mt-1 line-clamp-2">
                   {{ item.description }}
                 </p>
               </div>
               <div class="text-right shrink-0">
-                <p class="text-[10px] text-white/40">{{ t.ticketPrice }}</p>
+                <p class="text-[10px] text-content/40">{{ t.ticketPrice }}</p>
                 <p class="text-gold font-bold">{{ formatBirr(item.ticket_price) }}</p>
               </div>
             </div>
