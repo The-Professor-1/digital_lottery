@@ -2609,7 +2609,7 @@ def _close_item_round(item, lottery_label, winners, message, now):
     round_obj = LotteryRound.objects.create(
         lottery_item=item,
         lottery_name=(item.name if item is not None else 'Global lottery'),
-        round_label=(lottery_label or (item.hero_title or item.name if item is not None else ''))[:160],
+        round_label=(lottery_label or (item.name if item is not None else ''))[:160],
         closed_at=now,
         winner_count=len(winners),
         ticket_count=ticket_count,
@@ -2618,6 +2618,9 @@ def _close_item_round(item, lottery_label, winners, message, now):
         rejected_count=sum(1 for p in current if p.status == 'rejected'),
         winners_snapshot=[w.to_dict() for w in winners],
     )
+    for winner in winners:
+        winner.round = round_obj
+        winner.save(update_fields=['round'])
 
     for purchase in current:
         if purchase.receipt_image:
@@ -2676,11 +2679,13 @@ def lottery_announce_item_winner(request):
         if item is None:
             return JsonResponse({'error': 'Lottery not found'}, status=404)
 
-    lottery_label = str(body.get('lottery_label') or '').strip()[:160]
-    if not lottery_label:
-        lottery_label = (item.hero_title or item.name) if item else (
-            LotterySettings.get_settings().display_name or 'Lottery'
-        )
+    if item is not None:
+        # The big name shown above the counter is the round name.
+        lottery_label = (item.name or '').strip()[:160] or 'Lottery'
+    else:
+        lottery_label = str(body.get('lottery_label') or '').strip()[:160]
+        if not lottery_label:
+            lottery_label = LotterySettings.get_settings().display_name or 'Lottery'
     message = str(body.get('message') or '').strip()
     notify_users = _as_bool(body.get('notify_users'), True)
 

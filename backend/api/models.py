@@ -1442,6 +1442,9 @@ class LotteryWinner(models.Model):
     lottery_item = models.ForeignKey(
         LotteryItem, on_delete=models.SET_NULL, null=True, blank=True, related_name='winners'
     )
+    round = models.ForeignKey(
+        'LotteryRound', on_delete=models.SET_NULL, null=True, blank=True, related_name='winners'
+    )
     winner_number = models.CharField(max_length=16, blank=True, default='')
     name = models.CharField(max_length=160, blank=True, default='')
     phone = models.CharField(max_length=32, blank=True, default='')
@@ -1465,6 +1468,7 @@ class LotteryWinner(models.Model):
         return {
             'id': self.id,
             'lottery_item_id': self.lottery_item_id,
+            'round_id': self.round_id,
             'winning_ticket': self.winner_number or '',
             'winner_number': self.winner_number or '',
             'ticket_number': self.winner_number or '',

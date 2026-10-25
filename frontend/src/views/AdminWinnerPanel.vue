@@ -36,9 +36,7 @@
         </article>
       </div>
 
-      <label>Lottery label
-        <input v-model="form.lottery_label" class="admin-input" placeholder="e.g. Round 12" />
-      </label>
+      <p class="hint">Round name: <strong>{{ selectedItem.name }}</strong></p>
       <label>Message (optional)
         <textarea v-model="form.message" rows="2" class="admin-input" placeholder="Optional note in the bell and Telegram message" />
       </label>
@@ -160,7 +158,7 @@ function buildWinnerForms(item) {
 
 function onItemChange() {
   const item = selectedItem.value
-  form.lottery_label = item ? (item.hero_title || item.name || '') : ''
+  form.lottery_label = item ? (item.name || '') : ''
   winnerForms.value = item ? buildWinnerForms(item) : []
   notifyUsers.value = true
   loadWinners()
