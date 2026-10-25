@@ -6,7 +6,20 @@
     <WinnerReveal v-if="showDrawUi" :ends-at="raffle.endsAt || 0" />
 
     <template v-else>
-      <button type="button" class="block w-full text-left" @click="$emit('open')">
+      <div
+        role="button"
+        tabindex="0"
+        class="block w-full text-left cursor-pointer"
+        @click="$emit('open')"
+        @keydown.enter="$emit('open')"
+      >
+        <img
+          v-if="raffle.image"
+          :src="raffle.image"
+          :alt="raffle.displayName || raffle.name || 'Lottery'"
+          class="w-full h-[22rem] object-cover cursor-zoom-in"
+          @click.stop="openImage"
+        />
         <div
           class="relative min-h-[200px] px-5 py-8 flex flex-col items-center justify-center text-center bg-gradient-to-br from-ink-200 via-forest-deep to-ink-100"
         >
@@ -26,7 +39,7 @@
             />
           </div>
         </div>
-      </button>
+      </div>
 
       <div class="px-4 pb-4 space-y-3 pt-3">
         <!-- Same slot: date countdown OR display name from admin -->
@@ -56,16 +69,19 @@
         </div>
       </div>
     </template>
+
+    <ImageViewer :src="viewerSrc" :alt="viewerAlt" @close="viewerSrc = ''" />
   </article>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Users } from 'lucide-vue-next'
 import CountdownTimer from './CountdownTimer.vue'
 import TicketProgress from './TicketProgress.vue'
 import WinnerReveal from './WinnerReveal.vue'
 import PrizeList from './PrizeList.vue'
+import ImageViewer from './ImageViewer.vue'
 import { useCountdown } from '../../composables/useCountdown'
 import { useI18n } from '../../composables/useI18n'
 import { store, landingText } from '../../stores/lottery'
@@ -76,6 +92,13 @@ const props = defineProps({
 defineEmits(['open', 'buy'])
 
 const { t } = useI18n()
+const viewerSrc = ref('')
+const viewerAlt = ref('')
+
+function openImage() {
+  viewerSrc.value = props.raffle.image || ''
+  viewerAlt.value = props.raffle.displayName || props.raffle.name || ''
+}
 const { remainingMs, inFinalMinute, isFinished } = useCountdown(() => props.raffle.endsAt)
 
 const autoAnnounce = computed(() => props.raffle.automaticAnnouncement !== false)

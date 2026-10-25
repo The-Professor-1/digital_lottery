@@ -64,22 +64,11 @@
     <!-- SETTINGS -->
     <form v-if="loggedIn && activeTab === 'settings'" class="panel" @submit.prevent="save">
       <section>
-        <h2>Branding & prizes</h2>
+        <h2>Branding</h2>
         <label>Brand name (header, footer, bot button)
           <input v-model="form.brand_name" type="text" required placeholder="e.g. Owner Lottery" />
         </label>
-        <label>Display name (shown instead of date countdown)
-          <input v-model="form.display_name" type="text" placeholder="e.g. Lottery name - Round 2" />
-        </label>
-        <label>Homepage title (top gold text above prizes)
-          <input v-model="form.hero_title" type="text" placeholder="Same as brand or custom" />
-        </label>
-        <div class="timer-grid">
-          <label>1ኛ እጣ (Birr) <input v-model.number="form.prize_1st" type="number" min="0" /></label>
-          <label>2ኛ እጣ (Birr) <input v-model.number="form.prize_2nd" type="number" min="0" /></label>
-          <label>3ኛ እጣ (Birr) <input v-model.number="form.prize_3rd" type="number" min="0" /></label>
-        </div>
-        <p class="hint">All owner-facing names come from these fields — nothing is hard-coded per owner.</p>
+        <p class="hint">Lottery name, homepage title, prizes, ticket price, total tickets, countdown, and draw mode are managed per lottery in the <strong>Lottery items</strong> tab.</p>
       </section>
 
       <section>
@@ -92,6 +81,9 @@
             <label>Available suffix <input v-model="form.landing_texts.available" type="text" placeholder="listed" /></label>
             <label>Ticket price label <input v-model="form.landing_texts.ticketPrice" type="text" placeholder="Ticket price" /></label>
             <label>Buy button label <input v-model="form.landing_texts.buyTicket" type="text" placeholder="Buy Ticket" /></label>
+            <label>View lottery link <input v-model="form.landing_texts.viewLottery" type="text" placeholder="View lottery" /></label>
+            <label>Empty page title <input v-model="form.landing_texts.noActiveLottery" type="text" placeholder="No active lottery" /></label>
+            <label>Empty page hint <input v-model="form.landing_texts.noActiveLotteryHint" type="text" placeholder="Please wait for an admin to add a lottery." /></label>
           </div>
           <h3 class="subhead">Prize labels</h3>
           <div class="landing-text-grid">
@@ -132,134 +124,6 @@
           <input v-model="form.verify_api_key" type="text" placeholder="Paste verifyapi.leulzenebe.pro key" autocomplete="off" />
         </label>
         <p class="hint">Used whenever a user pastes SMS for automatic verification.</p>
-      </section>
-
-      <section>
-        <h2>Draw trigger</h2>
-        <div class="mode-row">
-          <label class="mode-option">
-            <input v-model="form.draw_mode" type="radio" value="date" />
-            Date deadline
-          </label>
-          <label class="mode-option">
-            <input v-model="form.draw_mode" type="radio" value="sold_out" />
-            When all tickets sold
-          </label>
-          <label class="mode-option">
-            <input v-model="form.draw_mode" type="radio" value="manual" />
-            Admin starts when ready
-          </label>
-        </div>
-        <p class="hint">
-          Date: mini-app shows days/hours/minutes/seconds. Sold out / Admin: that timer slot shows your Display name only (no date). Restart round keeps the mode you selected here.
-        </p>
-      </section>
-
-      <section v-if="form.draw_mode === 'date'">
-        <h2>Countdown</h2>
-        <div class="timer-grid">
-          <label>Days <input v-model.number="form.countdown_days" type="number" min="0" /></label>
-          <label>Hours <input v-model.number="form.countdown_hours" type="number" min="0" /></label>
-          <label>Minutes <input v-model.number="form.countdown_minutes" type="number" min="0" /></label>
-          <label>Seconds <input v-model.number="form.countdown_seconds" type="number" min="0" /></label>
-        </div>
-      </section>
-
-      <section v-if="form.draw_mode !== 'date'">
-        <h2>Start Draw</h2>
-        <label>Pre-draw timer (seconds)
-          <input v-model.number="form.draw_timer_seconds" type="number" min="5" max="600" />
-        </label>
-        <p class="hint">
-          Users see the big countdown for this many seconds, then automatic or manual announce (below).
-          <span v-if="form.draw_mode === 'sold_out'">
-            Sold-out mode blocks Start Draw until every ticket is taken (you can force-start).
-          </span>
-          After winners, start the next round with Restart round — it does not auto-start.
-        </p>
-        <div class="start-box">
-          <button
-            type="button"
-            class="btn primary restart-btn"
-            :disabled="startingDraw || saving || restarting"
-            @click="startDraw(false)"
-          >
-            {{ startingDraw ? 'Starting…' : 'Start Draw' }}
-          </button>
-          <button
-            v-if="form.draw_mode === 'sold_out'"
-            type="button"
-            class="btn ghost"
-            :disabled="startingDraw || saving || restarting"
-            @click="startDraw(true)"
-          >
-            Force start (not sold out)
-          </button>
-        </div>
-      </section>
-
-      <section>
-        <h2>Draw &amp; next round</h2>
-        <label class="check">
-          <input v-model="form.automatic_announcement" type="checkbox" />
-          Automatic announcement
-        </label>
-        <p class="hint">
-          On: in-app shuffle and live reveal of 1st/2nd/3rd, then Telegram DMs.
-          Off: when the timer ends, users see that announcement is performed manually and the video will be released on the Telegram group.
-        </p>
-        <div class="timer-grid">
-          <label>Next round timer (minutes)
-            <input
-              v-model.number="form.next_round_minutes"
-              type="number"
-              min="1"
-              max="1440"
-              :disabled="!form.automatic_announcement || form.draw_mode !== 'date'"
-            />
-          </label>
-          <label>Winner announce interval (seconds)
-            <input
-              v-model.number="form.winner_reveal_seconds"
-              type="number"
-              min="2"
-              max="60"
-              :disabled="!form.automatic_announcement"
-            />
-          </label>
-        </div>
-        <p class="hint">
-          <template v-if="form.draw_mode === 'date'">
-            Next round: countdown under winners (default 10 min), then tickets clear and a new round starts.
-          </template>
-          <template v-else>
-            Next round: admin decides — use Restart round below after the draw.
-          </template>
-          Announce interval: how long each place (1st → 2nd → 3rd) stays on screen before the next.
-        </p>
-        <div class="restart-box">
-          <p class="hint">
-            Restart clears winners, draw state, and tickets
-            <template v-if="form.draw_mode === 'date'">, then starts a fresh countdown.</template>
-            <template v-else>, then waits until you Start Draw again.</template>
-          </p>
-          <button
-            type="button"
-            class="btn danger restart-btn"
-            :disabled="restarting || saving || startingDraw"
-            @click="restartRound"
-          >
-            {{ restarting ? 'Restarting…' : 'Restart round' }}
-          </button>
-        </div>
-      </section>
-
-      <section>
-        <h2>Tickets</h2>
-        <div class="timer-grid">
-          <label>Price <input v-model.number="form.ticket_price" type="number" min="1" /></label>
-          <label>Total tickets <input v-model.number="form.total_tickets" type="number" min="1" /></label>
-        </div>
       </section>
 
       <section>
@@ -687,6 +551,9 @@ export default {
           available: '',
           ticketPrice: '',
           buyTicket: '',
+          viewLottery: '',
+          noActiveLottery: '',
+          noActiveLotteryHint: '',
           prize1Title: '',
           prize2Title: '',
           prize3Title: '',

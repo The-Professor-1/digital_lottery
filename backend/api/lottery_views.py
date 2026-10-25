@@ -861,7 +861,8 @@ def lottery_settings_admin(request):
                     landing_raw = {}
             if isinstance(landing_raw, dict):
                 allowed_landing_keys = (
-                    'lotteries', 'available', 'ticketPrice', 'buyTicket',
+                    'lotteries', 'available', 'ticketPrice', 'buyTicket', 'viewLottery',
+                    'noActiveLottery', 'noActiveLotteryHint',
                     'prize1Title', 'prize2Title', 'prize3Title',
                     'prize1Place', 'prize2Place', 'prize3Place',
                     'timeLeft', 'days', 'hours', 'minutes', 'seconds',
@@ -1233,12 +1234,16 @@ def lottery_users_admin(request):
                 pending_nums.extend(nums)
                 pending_count += 1
 
+        username = (u.username or '').strip().lower()
         users_out.append({
             'id': u.id,
             'telegram_id': u.telegram_id,
             'phone': u.phone_number or '',
             'first_name': u.first_name or '',
             'username': u.username or '',
+            'is_guest': not u.telegram_id and (
+                username.startswith('guest_') or bool((u.phone_number or '').strip())
+            ),
             'preferred_language': u.preferred_language or '',
             'verified_numbers': sorted(set(verified_nums)),
             'pending_numbers': sorted(set(pending_nums)),
@@ -1248,8 +1253,12 @@ def lottery_users_admin(request):
             'date_joined': u.date_joined.isoformat() if getattr(u, 'date_joined', None) else None,
         })
 
-    # Guests: purchases with no user link
+    # Guests: purchases with no user link (older rows)
     guest_qs = LotteryPurchase.objects.filter(user__isnull=True).order_by('-created_at')
+    if q:
+        guest_qs = guest_qs.filter(
+            Q(phone__icontains=q) | Q(full_name__icontains=q)
+        )
     guests = {}
     for p in guest_qs[:200]:
         key = (p.phone or '').strip() or f'guest-{p.id}'

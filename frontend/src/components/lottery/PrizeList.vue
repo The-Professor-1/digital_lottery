@@ -4,42 +4,54 @@
       v-for="(prize, index) in rows"
       :key="prize.key || index"
       class="rounded-xl border border-white/10 bg-ink-200/65 overflow-hidden"
-      :class="compact ? 'p-2.5' : 'p-3'"
     >
-      <div class="flex items-start gap-3">
+      <button
+        v-if="prize.image_url"
+        type="button"
+        class="block w-full"
+        @click.stop="openViewer(prize)"
+      >
         <img
-          v-if="prize.image_url"
           :src="prize.image_url"
-          :alt="prize.title || prize.place"
-          class="rounded-lg object-cover shrink-0"
-          :class="compact ? 'w-12 h-12' : 'w-20 h-20'"
+          :alt="prizeTitle(prize)"
+          class="w-full object-cover cursor-zoom-in"
+          :class="compact ? 'h-64' : 'h-96'"
         />
-        <div class="min-w-0 flex-1">
-          <p class="text-gold font-bold uppercase tracking-wide" :class="compact ? 'text-[10px]' : 'text-xs'">
-            {{ placeLabel(prize.place) }}
-          </p>
-          <p class="text-white font-semibold break-words" :class="compact ? 'text-sm' : 'text-base'">
-            {{ prizeTitle(prize) }}
-          </p>
-          <p v-if="prize.description && prize.description !== prize.title" class="text-xs text-white/55 mt-0.5 break-words">
-            {{ prize.description }}
-          </p>
-          <p v-if="prize.amount" class="text-gold font-bold mt-1" :class="compact ? 'text-sm' : 'text-lg'">
-            {{ formatAmount(prize.amount) }} {{ t.birr }}
-          </p>
-        </div>
+      </button>
+      <div :class="compact ? 'p-2.5' : 'p-3'" class="min-w-0">
+        <p class="text-gold font-bold uppercase tracking-wide" :class="compact ? 'text-[10px]' : 'text-xs'">
+          {{ placeLabel(prize.place) }}
+        </p>
+        <p class="text-white font-semibold break-words" :class="compact ? 'text-sm' : 'text-base'">
+          {{ prizeTitle(prize) }}
+        </p>
+        <p v-if="prize.description && prize.description !== prize.title" class="text-xs text-white/55 mt-0.5 break-words">
+          {{ prize.description }}
+        </p>
+        <p v-if="prize.amount" class="text-gold font-bold mt-1" :class="compact ? 'text-sm' : 'text-lg'">
+          {{ formatAmount(prize.amount) }} {{ t.birr }}
+        </p>
       </div>
     </article>
     <p v-if="!rows.length" class="text-xs text-white/45">{{ t.noPrizes }}</p>
+    <ImageViewer :src="viewerSrc" :alt="viewerAlt" @close="viewerSrc = ''" />
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from '../../composables/useI18n'
 import { landingText } from '../../stores/lottery'
+import ImageViewer from './ImageViewer.vue'
 
 const { t } = useI18n()
+const viewerSrc = ref('')
+const viewerAlt = ref('')
+
+function openViewer(prize) {
+  viewerSrc.value = prize.image_url
+  viewerAlt.value = prizeTitle(prize)
+}
 
 const props = defineProps({
   prizes: { type: Array, default: () => [] },

@@ -39,31 +39,37 @@
       <div class="grid-2">
         <label>Ticket price <input v-model.number="form.ticket_price" type="number" min="0" class="admin-input" /></label>
         <label>Total tickets <input v-model.number="form.total_tickets" type="number" min="1" class="admin-input" /></label>
-        <label>Countdown days <input v-model.number="form.countdown_days" type="number" min="0" class="admin-input" /></label>
-        <label>Hours <input v-model.number="form.countdown_hours" type="number" min="0" class="admin-input" /></label>
-        <label>Minutes <input v-model.number="form.countdown_minutes" type="number" min="0" class="admin-input" /></label>
-        <label>Seconds <input v-model.number="form.countdown_seconds" type="number" min="0" class="admin-input" /></label>
-        <label>Sort order <input v-model.number="form.sort_order" type="number" min="0" class="admin-input" /></label>
-        <label>Draw mode
-          <select v-model="form.draw_mode" class="admin-input">
-            <option value="date">Date deadline</option>
-            <option value="sold_out">When sold out</option>
-            <option value="manual">Admin starts draw</option>
-          </select>
-        </label>
       </div>
       <label>Main image URL <input v-model="form.image_url" class="admin-input" placeholder="https://… or upload below" /></label>
       <label>Upload main image <input type="file" accept="image/*" class="admin-input" @change="imageFile = $event.target.files?.[0] || null" /></label>
       <label class="check"><input v-model="form.is_active" type="checkbox" /> Active on landing page</label>
-      <label class="check"><input v-model="form.automatic_announcement" type="checkbox" /> Automatic announcement video</label>
-      <label class="check"><input v-model="form.reset_timer" type="checkbox" /> Restart countdown from the values above</label>
+
+      <details class="advanced-box">
+        <summary>Schedule &amp; advanced</summary>
+        <div class="grid-2">
+          <label>Countdown days <input v-model.number="form.countdown_days" type="number" min="0" class="admin-input" /></label>
+          <label>Hours <input v-model.number="form.countdown_hours" type="number" min="0" class="admin-input" /></label>
+          <label>Minutes <input v-model.number="form.countdown_minutes" type="number" min="0" class="admin-input" /></label>
+          <label>Seconds <input v-model.number="form.countdown_seconds" type="number" min="0" class="admin-input" /></label>
+          <label>Sort order <input v-model.number="form.sort_order" type="number" min="0" class="admin-input" /></label>
+          <label>Draw mode
+            <select v-model="form.draw_mode" class="admin-input">
+              <option value="date">Date deadline</option>
+              <option value="sold_out">When sold out</option>
+              <option value="manual">Admin starts draw</option>
+            </select>
+          </label>
+        </div>
+        <label class="check"><input v-model="form.automatic_announcement" type="checkbox" /> Automatic announcement video</label>
+        <label class="check"><input v-model="form.reset_timer" type="checkbox" /> Restart countdown from the values above</label>
+      </details>
 
       <div class="prizes-head">
         <div>
           <h4 class="subhead">Prizes</h4>
-          <p class="hint">Add any number of prizes. Each can be text, an amount, an image, or a mix. The Place and Title are shown directly on the landing page.</p>
+          <p class="hint">The first prize fields are always shown. Use “Add another prize” for 2nd, 3rd, and more. Place and Title appear on the landing page.</p>
         </div>
-        <button type="button" class="btn ghost" @click="addPrize">+ Add prize</button>
+        <button type="button" class="btn ghost" @click="addPrize">+ Add another prize</button>
       </div>
 
       <article v-for="(prize, index) in form.prizes" :key="index" class="prize-row">
@@ -78,7 +84,7 @@
           <label>Upload image <input type="file" accept="image/*" class="admin-input" @change="uploadPrize($event, index)" /></label>
         </div>
         <img v-if="prize.image_url" :src="prize.image_url" alt="" class="prize-preview" />
-        <button type="button" class="btn danger small" @click="removePrize(index)">Remove prize</button>
+        <button v-if="index > 0" type="button" class="btn danger small" @click="removePrize(index)">Remove prize</button>
         <p v-if="uploadingPrize === index" class="hint">Uploading…</p>
       </article>
 
@@ -105,12 +111,24 @@ const error = ref('')
 const message = ref('')
 const imageFile = ref(null)
 
+function defaultPrize(index = 0) {
+  const places = ['1st', '2nd', '3rd', '4th', '5th']
+  return {
+    place: places[index] || String(index + 1),
+    title: '',
+    description: '',
+    amount: 0,
+    image_url: '',
+  }
+}
+
 function emptyForm() {
   return {
     id: '', name: '', description: '', hero_title: '', image_url: '',
     ticket_price: 3000, total_tickets: 3500, sort_order: 0,
     countdown_days: 12, countdown_hours: 10, countdown_minutes: 24, countdown_seconds: 45,
-    draw_mode: 'date', is_active: true, automatic_announcement: true, reset_timer: false, prizes: [],
+    draw_mode: 'date', is_active: true, automatic_announcement: true, reset_timer: false,
+    prizes: [defaultPrize(0)],
   }
 }
 const form = reactive(emptyForm())
@@ -127,7 +145,9 @@ async function load() {
 function edit(item) {
   Object.assign(form, emptyForm(), {
     ...item,
-    prizes: (item.prizes || []).map((p) => ({ ...p })),
+    prizes: (item.prizes || []).length
+      ? item.prizes.map((p) => ({ ...p }))
+      : [defaultPrize(0)],
   })
   imageFile.value = null
   error.value = ''
@@ -142,11 +162,12 @@ function resetForm() {
 }
 
 function addPrize() {
-  form.prizes.push({ place: String(form.prizes.length + 1), title: '', description: '', amount: 0, image_url: '' })
+  form.prizes.push(defaultPrize(form.prizes.length))
 }
 
 function removePrize(index) {
   form.prizes.splice(index, 1)
+  if (!form.prizes.length) form.prizes.push(defaultPrize(0))
 }
 
 async function uploadPrize(event, index) {
@@ -178,7 +199,13 @@ async function save() {
     fd.append('is_active', form.is_active ? 'true' : 'false')
     fd.append('automatic_announcement', form.automatic_announcement ? 'true' : 'false')
     fd.append('reset_timer', form.reset_timer ? 'true' : 'false')
-    fd.append('prizes', JSON.stringify(form.prizes || []))
+    const prizes = (form.prizes || []).filter((prize) => (
+      String(prize.title || '').trim()
+      || String(prize.description || '').trim()
+      || String(prize.image_url || '').trim()
+      || Number(prize.amount || 0) > 0
+    ))
+    fd.append('prizes', JSON.stringify(prizes))
     if (imageFile.value) fd.append('image', imageFile.value)
     const res = await saveLotteryItemAdmin(fd)
     message.value = 'Item saved.'
@@ -217,6 +244,8 @@ onMounted(load)
 .badge.on { background: #064e3b; color: #6ee7b7; }
 .badge.off { background: #3f3f46; color: #d4d4d8; }
 .form-card { display: flex; flex-direction: column; gap: 0.55rem; }
+.advanced-box { border: 1px solid #2a3140; border-radius: 10px; padding: 0.65rem; }
+.advanced-box summary { cursor: pointer; color: #f5a623; font-weight: 700; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
 label { display: block; font-size: 0.8rem; color: #d1d5db; }
 .admin-input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid #334155; background: #11151c; color: #fff; box-sizing: border-box; }

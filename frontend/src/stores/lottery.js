@@ -411,11 +411,7 @@ export async function submitOrder() {
   store.submitError = ''
   store.submitErrorKey = ''
   store.submitMessage = ''
-  const bank = store.banks.find((b) => b.id === store.selectedBankId)
-  if (!bank) {
-    store.submitErrorKey = 'chooseAccount'
-    return false
-  }
+  const bank = store.banks.find((b) => b.id === store.selectedBankId) || {}
   if (!store.paymentProofFile) {
     store.submitErrorKey = 'uploadScreenshot'
     return false

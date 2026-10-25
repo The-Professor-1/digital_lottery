@@ -8,6 +8,14 @@
       <ChevronLeft :size="18" /> {{ t.back }}
     </button>
 
+    <img
+      v-if="raffle.image"
+      :src="raffle.image"
+      :alt="raffle.displayName || raffle.name || 'Lottery'"
+      class="w-full h-[22rem] object-cover rounded-card cursor-zoom-in"
+      @click="openImage"
+    />
+
     <div
       class="relative rounded-card overflow-hidden min-h-[180px] px-5 py-7 flex flex-col items-center justify-center text-center bg-gradient-to-br from-ink-200 via-forest-deep to-ink-100 border border-forest/20"
     >
@@ -110,16 +118,19 @@
         {{ landingText('buyTicket', t.buyTicket) }}
       </button>
     </div>
+
+    <ImageViewer :src="viewerSrc" :alt="viewerAlt" @close="viewerSrc = ''" />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft, Target, Shield } from 'lucide-vue-next'
 import CountdownTimer from '../../components/lottery/CountdownTimer.vue'
 import TicketProgress from '../../components/lottery/TicketProgress.vue'
 import PrizeList from '../../components/lottery/PrizeList.vue'
+import ImageViewer from '../../components/lottery/ImageViewer.vue'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr, padNumber } from '../../data/mock'
 import {
@@ -136,6 +147,13 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const raffle = computed(() => store.raffle)
+const viewerSrc = ref('')
+const viewerAlt = ref('')
+
+function openImage() {
+  viewerSrc.value = raffle.value.image || ''
+  viewerAlt.value = raffle.value.displayName || raffle.value.name || ''
+}
 const canBuy = computed(
   () =>
     store.selectedNumbers.length > 0 &&

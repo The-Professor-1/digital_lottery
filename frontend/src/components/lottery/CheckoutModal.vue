@@ -220,10 +220,10 @@
             <button
               type="button"
               class="btn-green flex-[1.4] py-3.5 text-sm"
-              :disabled="store.verifying || !store.selectedBankId || !store.paymentProofFile"
+              :disabled="store.verifying || !store.paymentProofFile"
               @click="onSubmit"
             >
-              {{ store.verifying ? t.checking : t.submitOrder }}
+              {{ store.verifying ? t.checking : t.continue }}
             </button>
           </template>
           <template v-else>

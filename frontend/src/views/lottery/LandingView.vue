@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-4 pt-1 pb-4">
-    <HomeView v-if="store.items.length <= 1" embedded />
-    <template v-else>
+    <HomeView v-if="store.items.length === 1" embedded />
+    <template v-else-if="store.items.length > 1">
       <div class="flex items-end justify-between gap-3">
         <div>
           <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">{{ store.brandName }}</p>
@@ -15,12 +15,19 @@
         :key="item.id"
         class="rounded-card overflow-hidden bg-ink-200 border border-white/10"
       >
-        <button type="button" class="block w-full text-left" @click="openItem(item)">
+        <div
+          role="button"
+          tabindex="0"
+          class="block w-full text-left cursor-pointer"
+          @click="openItem(item)"
+          @keydown.enter="openItem(item)"
+        >
           <img
             v-if="item.image_url"
             :src="item.image_url"
             :alt="item.name"
-            class="w-full h-44 object-cover"
+            class="w-full h-[22rem] object-cover cursor-zoom-in"
+            @click.stop="openItemImage(item)"
           />
           <div class="p-4 space-y-3">
             <div class="flex items-start justify-between gap-3">
@@ -56,22 +63,30 @@
                 />
               </div>
               <span class="text-xs text-gold font-semibold inline-flex items-center gap-1 shrink-0">
-                {{ t.viewLottery }} <ChevronRight :size="14" />
+                {{ landingText('viewLottery', t.viewLottery) }} <ChevronRight :size="14" />
               </span>
             </div>
           </div>
-        </button>
+        </div>
       </article>
     </template>
+
+    <div v-else-if="store.landingLoaded" class="rounded-card bg-ink-200 border border-white/10 p-8 text-center">
+      <p class="text-white font-semibold">{{ landingText('noActiveLottery', t.noActiveLottery) }}</p>
+      <p class="text-sm text-white/45 mt-1">{{ landingText('noActiveLotteryHint', t.noActiveLotteryHint) }}</p>
+    </div>
+
+    <ImageViewer :src="viewerSrc" :alt="viewerAlt" @close="viewerSrc = ''" />
   </div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronRight } from 'lucide-vue-next'
 import HomeView from './HomeView.vue'
 import PrizeList from '../../components/lottery/PrizeList.vue'
+import ImageViewer from '../../components/lottery/ImageViewer.vue'
 import TicketProgress from '../../components/lottery/TicketProgress.vue'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr } from '../../data/mock'
@@ -79,6 +94,8 @@ import { store, loadLanding, landingText } from '../../stores/lottery'
 
 const { t } = useI18n()
 const router = useRouter()
+const viewerSrc = ref('')
+const viewerAlt = ref('')
 
 onMounted(() => {
   loadLanding()
@@ -86,5 +103,10 @@ onMounted(() => {
 
 function openItem(item) {
   router.push('/raffle/' + item.id)
+}
+
+function openItemImage(item) {
+  viewerSrc.value = item.image_url
+  viewerAlt.value = item.name || ''
 }
 </script>
