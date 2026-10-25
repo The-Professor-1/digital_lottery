@@ -308,6 +308,7 @@ export async function loadTicketsForPhone(phone = store.phone) {
       phone: t.phone,
       lotteryItemId: t.lottery_item_id ?? null,
       raffleName: t.lottery_item_name || store.raffle.displayName,
+      round: t.lottery_round || '',
       numbers: (t.numbers || []).map((n) => String(n).padStart(3, '0')),
       status: t.status === 'verified' ? 'active' : t.status,
       amount: t.amount,

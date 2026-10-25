@@ -17,7 +17,7 @@
           v-if="raffle.image"
           :src="raffle.image"
           :alt="raffle.displayName || raffle.name || 'Lottery'"
-          class="w-full h-[22rem] object-cover cursor-zoom-in"
+          class="w-full h-[13.2rem] object-cover cursor-zoom-in"
           @click.stop="openImage"
         />
         <div

@@ -26,7 +26,7 @@
             v-if="item.image_url"
             :src="item.image_url"
             :alt="item.name"
-            class="w-full h-[22rem] object-cover cursor-zoom-in"
+            class="w-full h-[13.2rem] object-cover cursor-zoom-in"
             @click.stop="openItemImage(item)"
           />
           <div class="p-4 space-y-3">

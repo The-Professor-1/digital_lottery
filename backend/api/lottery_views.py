@@ -263,8 +263,11 @@ def lottery_tickets(request):
     if len(digits) < 9:
         return JsonResponse({'tickets': [], 'active': 0, 'pending': 0, 'total': 0})
 
-    qs = LotteryPurchase.objects.filter(
-        Q(phone__icontains=digits[-9:]) | Q(phone__icontains=digits)
+    qs = LotteryPurchase.objects.select_related('user', 'lottery_item').filter(
+        Q(phone__icontains=digits[-9:])
+        | Q(phone__icontains=digits)
+        | Q(user__phone_number__icontains=digits[-9:])
+        | Q(user__phone_number__icontains=digits)
     ).exclude(status='rejected')
     tickets = [p.to_dict(request) for p in qs[:100]]
     active = sum(1 for t in tickets if t['status'] == 'verified')

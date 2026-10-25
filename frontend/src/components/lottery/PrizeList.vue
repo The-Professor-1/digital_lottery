@@ -15,7 +15,7 @@
           :src="prize.image_url"
           :alt="prizeTitle(prize)"
           class="w-full object-cover cursor-zoom-in"
-          :class="compact ? 'h-64' : 'h-96'"
+          :class="compact ? 'h-[9.6rem]' : 'h-[14.4rem]'"
         />
       </button>
       <div :class="compact ? 'p-2.5' : 'p-3'" class="min-w-0">

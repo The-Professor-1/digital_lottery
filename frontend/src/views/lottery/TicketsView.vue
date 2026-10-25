@@ -10,7 +10,8 @@
         v-model="query"
         type="tel"
         class="flex-1 rounded-xl bg-white text-black px-3 py-3 text-sm outline-none"
-        placeholder="251..."
+        placeholder="09..."
+        @keyup.enter="search"
       />
       <button
         type="button"
@@ -46,6 +47,7 @@
         <div class="flex items-start justify-between gap-2">
           <div>
             <p class="font-semibold text-white">{{ ticket.raffleName }}</p>
+            <p v-if="ticket.round" class="text-xs text-gold/80 mt-0.5">{{ ticket.round }}</p>
             <p class="text-xs text-white/45 mt-0.5">{{ ticket.createdAt }}</p>
           </div>
           <span
@@ -56,7 +58,7 @@
                 : 'bg-gold/20 text-gold'
             "
           >
-            {{ ticket.status === 'active' ? t.verified : ticket.status === 'pending' ? t.pending : ticket.status }}
+            {{ ticket.status === 'active' ? t.active : ticket.status === 'pending' ? t.pending : ticket.status }}
           </span>
         </div>
         <div class="flex flex-wrap gap-1.5 mt-3">
@@ -78,8 +80,8 @@
       >
         <Ticket :size="28" class="text-gold" />
       </div>
-      <p class="text-white font-medium">{{ t.noTicketsYet }}</p>
-      <p class="text-xs text-white/40 mt-1.5">{{ t.enterPhoneHint }}</p>
+      <p class="text-white font-medium">{{ searched ? t.noTicketsForPhone : t.noTicketsYet }}</p>
+      <p class="text-xs text-white/40 mt-1.5">{{ searched ? t.tryAnotherPhone : t.enterPhoneHint }}</p>
     </div>
   </div>
 </template>
@@ -93,6 +95,7 @@ import { store, loadTicketsForPhone } from '../../stores/lottery'
 
 const { t } = useI18n()
 const query = ref(store.phone || '')
+const searched = ref(false)
 
 watch(
   () => store.phone,
@@ -102,11 +105,13 @@ watch(
 )
 
 async function search() {
+  searched.value = true
   store.phone = query.value.replace(/\D/g, '')
   await loadTicketsForPhone(store.phone)
 }
 
 if (store.phone) {
+  searched.value = true
   loadTicketsForPhone(store.phone)
 }
 </script>
