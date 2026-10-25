@@ -10,7 +10,6 @@
 
     <div v-if="items.length" class="space-y-2">
       <article v-for="item in items" :key="item.id" class="item-row">
-        <img v-if="item.image_url" :src="item.image_url" alt="" class="item-thumb" />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 flex-wrap">
             <strong class="text-white">{{ item.name }}</strong>
@@ -32,16 +31,13 @@
     <form class="form-card" @submit.prevent="save">
       <h3 class="subhead">{{ form.id ? 'Edit item' : 'Add item' }}</h3>
       <div class="grid-2">
-        <label>Name <input v-model="form.name" class="admin-input" required placeholder="e.g. Grand Draw" /></label>
-        <label>Homepage title <input v-model="form.hero_title" class="admin-input" placeholder="Shown above prizes" /></label>
+        <label>Name (big text above counter) <input v-model="form.name" class="admin-input" required placeholder="e.g. Grand Draw" /></label>
+        <label>Page title (optional) <input v-model="form.hero_title" class="admin-input" placeholder="Leave blank to hide" /></label>
       </div>
-      <label>Description <textarea v-model="form.description" rows="2" class="admin-input" placeholder="Optional short description" /></label>
       <div class="grid-2">
         <label>Ticket price <input v-model.number="form.ticket_price" type="number" min="0" class="admin-input" /></label>
         <label>Total tickets <input v-model.number="form.total_tickets" type="number" min="1" class="admin-input" /></label>
       </div>
-      <label>Main image URL <input v-model="form.image_url" class="admin-input" placeholder="https://… or upload below" /></label>
-      <label>Upload main image <input type="file" accept="image/*" class="admin-input" @change="imageFile = $event.target.files?.[0] || null" /></label>
       <label class="check"><input v-model="form.is_active" type="checkbox" /> Active on landing page</label>
 
       <details class="advanced-box">
@@ -109,7 +105,6 @@ const saving = ref(false)
 const uploadingPrize = ref(-1)
 const error = ref('')
 const message = ref('')
-const imageFile = ref(null)
 
 function defaultPrize(index = 0) {
   const places = ['1st', '2nd', '3rd', '4th', '5th']
@@ -149,14 +144,12 @@ function edit(item) {
       ? item.prizes.map((p) => ({ ...p }))
       : [defaultPrize(0)],
   })
-  imageFile.value = null
   error.value = ''
   message.value = ''
 }
 
 function resetForm() {
   Object.assign(form, emptyForm())
-  imageFile.value = null
   error.value = ''
   message.value = ''
 }
@@ -191,7 +184,7 @@ async function save() {
   message.value = ''
   try {
     const fd = new FormData()
-    for (const key of ['id', 'name', 'description', 'hero_title', 'image_url', 'ticket_price',
+    for (const key of ['id', 'name', 'hero_title', 'ticket_price',
       'total_tickets', 'sort_order', 'countdown_days', 'countdown_hours', 'countdown_minutes',
       'countdown_seconds', 'draw_mode']) {
       if (form[key] !== '' && form[key] !== null && form[key] !== undefined) fd.append(key, form[key])
@@ -206,7 +199,6 @@ async function save() {
       || Number(prize.amount || 0) > 0
     ))
     fd.append('prizes', JSON.stringify(prizes))
-    if (imageFile.value) fd.append('image', imageFile.value)
     const res = await saveLotteryItemAdmin(fd)
     message.value = 'Item saved.'
     await load()
@@ -239,7 +231,6 @@ onMounted(load)
 .subhead { margin: 0.4rem 0 0.2rem; font-size: 0.95rem; color: #e5e7eb; }
 .item-row, .form-card, .prize-row { border: 1px solid #2a3140; border-radius: 12px; background: #0d0d0d; padding: 0.85rem; }
 .item-row { display: flex; gap: 0.75rem; align-items: center; }
-.item-thumb { width: 54px; height: 54px; border-radius: 8px; object-fit: cover; }
 .badge { font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.4rem; border-radius: 5px; text-transform: uppercase; }
 .badge.on { background: #064e3b; color: #6ee7b7; }
 .badge.off { background: #3f3f46; color: #d4d4d8; }

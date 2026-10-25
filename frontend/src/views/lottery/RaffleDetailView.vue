@@ -8,19 +8,11 @@
       <ChevronLeft :size="18" /> {{ t.back }}
     </button>
 
-    <img
-      v-if="raffle.image"
-      :src="raffle.image"
-      :alt="raffle.displayName || raffle.name || 'Lottery'"
-      class="w-full h-[13.2rem] object-cover rounded-card cursor-zoom-in"
-      @click="openImage"
-    />
-
     <div
       class="relative rounded-card overflow-hidden min-h-[180px] px-5 py-7 flex flex-col items-center justify-center text-center bg-gradient-to-br from-ink-200 via-forest-deep to-ink-100 border border-forest/20"
     >
-      <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">
-        {{ raffle.heroTitle || store.brandName }}
+      <p v-if="raffle.heroTitle" class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">
+        {{ raffle.heroTitle }}
       </p>
       <div class="mt-4 w-full max-w-sm">
         <PrizeList
@@ -33,7 +25,7 @@
     </div>
 
     <div>
-      <h1 class="text-2xl font-bold text-white">{{ raffle.displayName || raffle.name }}</h1>
+      <h1 class="text-2xl font-bold text-white">{{ raffle.name || raffle.displayName }}</h1>
       <p v-if="raffle.color" class="text-lime-400 mt-0.5">{{ raffle.color }}</p>
     </div>
 
@@ -119,18 +111,16 @@
       </button>
     </div>
 
-    <ImageViewer :src="viewerSrc" :alt="viewerAlt" @close="viewerSrc = ''" />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft, Target, Shield } from 'lucide-vue-next'
 import CountdownTimer from '../../components/lottery/CountdownTimer.vue'
 import TicketProgress from '../../components/lottery/TicketProgress.vue'
 import PrizeList from '../../components/lottery/PrizeList.vue'
-import ImageViewer from '../../components/lottery/ImageViewer.vue'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr, padNumber } from '../../data/mock'
 import {
@@ -147,13 +137,6 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const raffle = computed(() => store.raffle)
-const viewerSrc = ref('')
-const viewerAlt = ref('')
-
-function openImage() {
-  viewerSrc.value = raffle.value.image || ''
-  viewerAlt.value = raffle.value.displayName || raffle.value.name || ''
-}
 const canBuy = computed(
   () =>
     store.selectedNumbers.length > 0 &&

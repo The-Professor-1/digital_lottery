@@ -18,7 +18,7 @@ self.addEventListener('push', (event) => {
     body: data.body || '',
     tag: data.tag || 'admin-notify',
     renotify: true,
-    data: { url: data.url || '/admin-dashboard' },
+    data: { url: data.url || '/professor/dashboardofadmin' },
   }
   event.waitUntil(self.registration.showNotification(title, options))
 })
@@ -26,7 +26,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const target = new URL(
-    (event.notification.data && event.notification.data.url) || '/admin-dashboard',
+    (event.notification.data && event.notification.data.url) || '/professor/dashboardofadmin',
     self.registration.scope,
   ).href
   event.waitUntil(

@@ -13,13 +13,6 @@
         @click="$emit('open')"
         @keydown.enter="$emit('open')"
       >
-        <img
-          v-if="raffle.image"
-          :src="raffle.image"
-          :alt="raffle.displayName || raffle.name || 'Lottery'"
-          class="w-full h-[13.2rem] object-cover cursor-zoom-in"
-          @click.stop="openImage"
-        />
         <div
           class="relative min-h-[200px] px-5 py-8 flex flex-col items-center justify-center text-center bg-gradient-to-br from-ink-200 via-forest-deep to-ink-100"
         >
@@ -27,8 +20,8 @@
             class="absolute inset-0 opacity-30 pointer-events-none"
             style="background: radial-gradient(ellipse at 50% 0%, rgba(212,175,55,0.35), transparent 55%)"
           />
-          <p class="relative text-gold text-xs font-semibold tracking-[0.18em] uppercase">
-            {{ raffle.heroTitle || store.brandName }}
+          <p v-if="raffle.heroTitle" class="relative text-gold text-xs font-semibold tracking-[0.18em] uppercase">
+            {{ raffle.heroTitle }}
           </p>
           <div class="relative mt-4 w-full max-w-sm">
             <PrizeList
@@ -42,17 +35,19 @@
       </div>
 
       <div class="px-4 pb-4 space-y-3 pt-3">
-        <!-- Same slot: date countdown OR display name from admin -->
-        <CountdownTimer
-          v-if="showCountdown"
-          :ends-at="raffle.endsAt"
-        />
+        <!-- Same slot: big lottery name + date countdown OR display name from admin -->
+        <template v-if="showCountdown">
+          <h2 class="text-gold text-xl sm:text-2xl font-extrabold leading-snug tracking-tight text-center">
+            {{ raffle.name || raffle.displayName }}
+          </h2>
+          <CountdownTimer :ends-at="raffle.endsAt" />
+        </template>
         <div
           v-else
           class="rounded-2xl bg-gradient-to-b from-forest-dim to-forest-deep border border-forest/30 p-4 text-center"
         >
           <h2 class="text-gold text-xl sm:text-2xl font-extrabold leading-snug tracking-tight">
-            {{ raffle.displayName || raffle.name || store.brandName }}
+            {{ raffle.name || raffle.displayName || store.brandName }}
           </h2>
         </div>
 
@@ -70,18 +65,16 @@
       </div>
     </template>
 
-    <ImageViewer :src="viewerSrc" :alt="viewerAlt" @close="viewerSrc = ''" />
   </article>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { Users } from 'lucide-vue-next'
 import CountdownTimer from './CountdownTimer.vue'
 import TicketProgress from './TicketProgress.vue'
 import WinnerReveal from './WinnerReveal.vue'
 import PrizeList from './PrizeList.vue'
-import ImageViewer from './ImageViewer.vue'
 import { useCountdown } from '../../composables/useCountdown'
 import { useI18n } from '../../composables/useI18n'
 import { store, landingText } from '../../stores/lottery'
@@ -92,13 +85,6 @@ const props = defineProps({
 defineEmits(['open', 'buy'])
 
 const { t } = useI18n()
-const viewerSrc = ref('')
-const viewerAlt = ref('')
-
-function openImage() {
-  viewerSrc.value = props.raffle.image || ''
-  viewerAlt.value = props.raffle.displayName || props.raffle.name || ''
-}
 const { remainingMs, inFinalMinute, isFinished } = useCountdown(() => props.raffle.endsAt)
 
 const autoAnnounce = computed(() => props.raffle.automaticAnnouncement !== false)

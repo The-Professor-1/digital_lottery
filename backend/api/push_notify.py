@@ -16,7 +16,7 @@ _VAPID_FILE_LOCK = threading.Lock()
 _VAPID_FILE_NAME = 'vapid_keys.json'
 
 _ROLE_PANEL_URL = {
-    'main': '/admin-dashboard?tab=receipts',
+    'main': '/professor/dashboardofadmin?tab=receipts',
     'view': '/admin-view?tab=receipts',
 }
 

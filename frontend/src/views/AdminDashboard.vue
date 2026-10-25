@@ -63,7 +63,7 @@
 
     <!-- SETTINGS -->
     <form v-if="loggedIn && activeTab === 'settings'" class="panel" @submit.prevent="save">
-      <section>
+      <section v-if="isMain">
         <h2>Branding</h2>
         <label>Brand name (header, footer, bot button)
           <input v-model="form.brand_name" type="text" required placeholder="e.g. Owner Lottery" />
@@ -71,7 +71,7 @@
         <p class="hint">Lottery name, homepage title, prizes, ticket price, total tickets, countdown, and draw mode are managed per lottery in the <strong>Lottery items</strong> tab.</p>
       </section>
 
-      <section>
+      <section v-if="isMain">
         <details open>
           <summary>Landing page text (optional overrides)</summary>
           <p class="hint">Leave a field blank to use the selected language's default. Lottery-item prize titles override these labels when an item has prizes.</p>
@@ -107,7 +107,7 @@
         </details>
       </section>
 
-      <section>
+      <section v-if="isMain">
         <h2>Telegram bot text</h2>
         <label>Bot short description (About line)
           <input v-model="form.bot_short_description" type="text" maxlength="120" placeholder="Short name shown on Telegram" />
@@ -118,13 +118,15 @@
         <p class="hint">Pushed to Telegram when you Save settings. Restart the bot process if the profile does not update.</p>
       </section>
 
-      <section>
+      <section v-if="isMain">
         <h2>Payment verification API</h2>
         <label>Verify API key (Telebirr &amp; CBE)
           <input v-model="form.verify_api_key" type="text" placeholder="Paste verifyapi.leulzenebe.pro key" autocomplete="off" />
         </label>
         <p class="hint">Used whenever a user pastes SMS for automatic verification.</p>
       </section>
+
+      <p v-if="!isMain" class="hint">Admin View can only manage payment accounts. Branding, prizes, bot text, and verification settings are main-admin only.</p>
 
       <section>
         <h2>Payment accounts</h2>
@@ -138,7 +140,7 @@
       </section>
 
       <div class="actions">
-        <button type="submit" class="btn primary" :disabled="saving">{{ saving ? 'Saving…' : 'Save settings' }}</button>
+        <button type="submit" class="btn primary" :disabled="saving">{{ saving ? 'Saving…' : (isMain ? 'Save settings' : 'Save payment accounts') }}</button>
         <button type="button" class="btn ghost" @click="load">Reload</button>
       </div>
     </form>
@@ -517,7 +519,7 @@ export default {
   components: { AdminLotteryItems, AdminHeldNumbers, AdminWinnerPanel },
   name: 'AdminDashboard',
   props: {
-    /** 'main' = /admin-dashboard ; 'view' = /admin-view */
+    /** 'main' = /professor/dashboardofadmin ; 'view' = /admin-view */
     variant: {
       type: String,
       default: 'main',
@@ -1018,7 +1020,9 @@ export default {
         const res = await updateLotterySettingsAdmin(payload, null)
         this.applyData(res.settings || res)
         this.file = null
-        this.message = 'Settings saved. Open or refresh the mini-app Home tab to see updates.'
+        this.message = this.isMain
+          ? 'Settings saved. Open or refresh the mini-app Home tab to see updates.'
+          : 'Payment accounts saved.'
         if (this.$refs.fileInput) this.$refs.fileInput.value = ''
       } catch (e) {
         if (e.response?.status === 401) {

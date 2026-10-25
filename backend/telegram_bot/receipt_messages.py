@@ -114,7 +114,7 @@ def winner_announcement_text(user, lottery_label, name, phone, number, prize_nam
         f'ስም: {name or "—"}\n'
         f'ስልክ: {phone or "—"}\n'
         f'አሸናፊ ቲኬት: #{_number(number)}\n'
-        f'ሽልማት: {prize_name or "—"}'
+        f'ዕጣ: {prize_name or "—"}'
     )
     if message:
         text += f'\n\n{message}'

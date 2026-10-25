@@ -156,7 +156,7 @@ export function applyItemToRaffle(item) {
     id: item.id,
     name: item.name || item.display_name || store.raffle.name,
     displayName: item.display_name || item.name || store.raffle.displayName,
-    heroTitle: item.hero_title || item.name || store.brandName,
+    heroTitle: item.hero_title || '',
     description: item.description || '',
     image: item.image_url || '',
     prizes,

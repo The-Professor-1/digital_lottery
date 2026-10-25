@@ -774,6 +774,11 @@ def lottery_settings_admin(request):
     settings_obj = LotterySettings.get_settings()
 
     if request.method == 'GET':
+        if _is_second_admin_only(request):
+            return JsonResponse({
+                'brand_name': settings_obj.brand_name,
+                'payment_accounts': settings_obj.payment_accounts or [],
+            })
         data = settings_obj.to_public_dict(request)
         data['car_image_url_raw'] = settings_obj.car_image_url or ''
         data['admin_blocked_numbers'] = settings_obj.admin_blocked_numbers or []
@@ -796,6 +801,20 @@ def lottery_settings_admin(request):
             accounts_raw = data.get('payment_accounts')
             blocked_raw = data.get('admin_blocked_numbers')
             landing_raw = data.get('landing_texts')
+
+        if _is_second_admin_only(request):
+            account_list = _clean_payment_accounts(accounts_raw)
+            if account_list is not None:
+                settings_obj.payment_accounts = account_list
+                settings_obj.save(update_fields=['payment_accounts'])
+            return JsonResponse({
+                'success': True,
+                'limited_access': True,
+                'settings': {
+                    'brand_name': settings_obj.brand_name,
+                    'payment_accounts': settings_obj.payment_accounts or [],
+                },
+            })
 
         str_fields = [
             'brand_name', 'car_name', 'car_color', 'car_image_url', 'display_name',
@@ -889,23 +908,9 @@ def lottery_settings_admin(request):
                 settings_obj.landing_texts = cleaned_landing
 
         if accounts_raw is not None:
-            if isinstance(accounts_raw, str):
-                try:
-                    accounts_raw = json.loads(accounts_raw)
-                except (json.JSONDecodeError, ValueError):
-                    accounts_raw = None
-            if isinstance(accounts_raw, list):
-                cleaned = []
-                for i, acc in enumerate(accounts_raw):
-                    if not isinstance(acc, dict):
-                        continue
-                    cleaned.append({
-                        'id': str(acc.get('id') or f'acc-{i+1}'),
-                        'name': str(acc.get('name') or '').strip(),
-                        'holder': str(acc.get('holder') or '').strip(),
-                        'account': str(acc.get('account') or '').strip(),
-                    })
-                settings_obj.payment_accounts = cleaned
+            account_list = _clean_payment_accounts(accounts_raw)
+            if account_list is not None:
+                settings_obj.payment_accounts = account_list
 
         if blocked_raw is not None:
             if isinstance(blocked_raw, str):
@@ -2302,6 +2307,27 @@ def _as_bool(value, default=False):
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
+def _clean_payment_accounts(raw):
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else []
+        except (json.JSONDecodeError, ValueError):
+            return None
+    if not isinstance(raw, list):
+        return None
+    cleaned = []
+    for i, acc in enumerate(raw):
+        if not isinstance(acc, dict):
+            continue
+        cleaned.append({
+            'id': str(acc.get('id') or f'acc-{i + 1}'),
+            'name': str(acc.get('name') or '').strip(),
+            'holder': str(acc.get('holder') or '').strip(),
+            'account': str(acc.get('account') or '').strip(),
+        })
+    return cleaned
+
+
 def _normalize_prizes(raw):
     if isinstance(raw, str):
         try:
@@ -2562,7 +2588,7 @@ def lottery_winners_admin(request):
 @csrf_exempt
 @require_http_methods(['POST'])
 def lottery_announce_item_winner(request):
-    """Create an in-app winner entry and optionally DM all verified item buyers."""
+    """Create one in-app winner entry per prize and notify each winner by phone."""
     if not _is_admin(request):
         return JsonResponse({'error': 'Unauthorized'}, status=401)
     body = _json_body(request)
@@ -2576,67 +2602,170 @@ def lottery_announce_item_winner(request):
         if item is None:
             return JsonResponse({'error': 'Lottery not found'}, status=404)
 
-    number = str(body.get('winning_ticket') or body.get('winner_number') or '').strip()
-    if not number:
-        return JsonResponse({'error': 'Winning ticket is required'}, status=400)
-    name = str(body.get('name') or '').strip()
-    phone = ''.join(c for c in str(body.get('phone') or '') if c.isdigit())
     lottery_label = str(body.get('lottery_label') or '').strip()[:160]
-    prize_name = str(body.get('prize_name') or '').strip()[:160]
+    if not lottery_label:
+        lottery_label = (item.hero_title or item.name) if item else (
+            LotterySettings.get_settings().display_name or 'Lottery'
+        )
     message = str(body.get('message') or '').strip()
     notify_users = _as_bool(body.get('notify_users'), True)
 
-    pool = LotteryPurchase.objects.filter(status='verified').select_related('user')
+    raw_winners = body.get('winners')
+    if isinstance(raw_winners, list):
+        winner_entries = [w for w in raw_winners if isinstance(w, dict)]
+    else:
+        # Backward-compatible single-winner payload.
+        winner_entries = [{
+            'winning_ticket': body.get('winning_ticket') or body.get('winner_number'),
+            'name': body.get('name'),
+            'phone': body.get('phone'),
+            'prize_name': body.get('prize_name'),
+        }]
+    if not winner_entries:
+        return JsonResponse({'error': 'At least one winner is required'}, status=400)
+
+    prizes = item.normalized_prizes() if item is not None else []
+
+    pool = LotteryPurchase.objects.filter(status='verified').select_related('user', 'lottery_item')
     if item is not None:
         pool = pool.filter(lottery_item=item)
     else:
         pool = pool.filter(lottery_item__isnull=True)
-    try:
-        number_int = int(number)
-    except (TypeError, ValueError):
-        number_int = None
-    winner_purchase = None
-    if number_int is not None:
-        for candidate in pool.order_by('-verified_at', '-id').iterator(chunk_size=200):
+    pool = list(pool.order_by('-verified_at', '-id')[:500])
+
+    def _digits(value):
+        return ''.join(c for c in str(value or '') if c.isdigit())
+
+    def _phone_matches(purchase, phone):
+        wanted = _digits(phone)
+        if not wanted:
+            return False
+        values = [purchase.phone or '']
+        if purchase.user_id and purchase.user:
+            values.append(purchase.user.phone_number or '')
+        wanted_last9 = wanted[-9:] if len(wanted) >= 9 else wanted
+        for raw in values:
+            saved = _digits(raw)
+            if not saved:
+                continue
+            saved_last9 = saved[-9:] if len(saved) >= 9 else saved
+            if wanted == saved or wanted in saved or saved in wanted:
+                return True
+            if wanted_last9 and saved_last9 and wanted_last9 == saved_last9:
+                return True
+        return False
+
+    def _has_number(purchase, number):
+        try:
+            wanted = int(str(number).strip())
+        except (TypeError, ValueError):
+            return False
+        for raw in purchase.numbers or []:
             try:
-                if number_int in [int(n) for n in (candidate.numbers or [])]:
-                    winner_purchase = candidate
-                    break
+                if int(raw) == wanted:
+                    return True
             except (TypeError, ValueError):
                 continue
-    if winner_purchase is None and (item is not None or notify_users):
-        winner_purchase = pool.order_by('-verified_at', '-id').first()
+        return False
 
-    if not name and winner_purchase:
-        name = (winner_purchase.full_name or '')
-    if not phone and winner_purchase:
-        phone = winner_purchase.phone or ''
-    if not lottery_label:
-        lottery_label = item.name if item else (LotterySettings.get_settings().display_name or 'Lottery')
-    if not prize_name:
-        if item and item.normalized_prizes():
-            prize_name = item.normalized_prizes()[0].get('title') or item.name
-        else:
-            prize_name = item.name if item else (LotterySettings.get_settings().display_name or '')
+    def _find_purchase(phone, number):
+        if phone:
+            by_phone = [p for p in pool if _phone_matches(p, phone)]
+            if number:
+                both = [p for p in by_phone if _has_number(p, number)]
+                if both:
+                    return both[0]
+                by_number = [p for p in pool if _has_number(p, number)]
+                if by_number:
+                    return by_number[0]
+            if by_phone:
+                return by_phone[0]
+        elif number:
+            by_number = [p for p in pool if _has_number(p, number)]
+            if by_number:
+                return by_number[0]
+        return None
 
-    winner = LotteryWinner.objects.create(
-        lottery_item=item,
-        winner_number=number,
-        name=name,
-        phone=phone,
-        lottery_label=lottery_label,
-        prize_name=prize_name,
-        message=message,
-        user=winner_purchase.user if winner_purchase and winner_purchase.user_id else None,
-        announced_at=timezone.now(),
-    )
+    prepared = []
+    for index, entry in enumerate(winner_entries):
+        prize = prizes[index] if index < len(prizes) else None
+        prize_title = str(entry.get('prize_name') or '').strip()
+        if not prize_title:
+            prize_title = (
+                (prize.get('title') or prize.get('place')) if prize else (item.name if item else 'Prize')
+            )
+        try:
+            prize_amount = int(prize.get('amount') or 0) if prize else 0
+        except (TypeError, ValueError):
+            prize_amount = 0
+        prize_display = prize_title or 'Prize'
+        if prize_amount > 0 and 'Birr' not in prize_display:
+            prize_display = f'{prize_display} — {prize_amount:,} Birr'
+
+        phone = _digits(entry.get('phone'))
+        number = str(entry.get('winning_ticket') or '').strip()
+        if not phone and not number:
+            return JsonResponse({
+                'error': f'Winner {index + 1}: enter the winner phone or winning ticket',
+            }, status=400)
+
+        purchase = _find_purchase(phone, number)
+        if purchase is None:
+            return JsonResponse({
+                'error': f'Winner {index + 1}: no verified ticket found for this phone/ticket in this lottery',
+            }, status=400)
+
+        if not number:
+            raw_numbers = purchase.numbers or []
+            if not raw_numbers:
+                return JsonResponse({
+                    'error': f'Winner {index + 1}: this buyer has no ticket numbers',
+                }, status=400)
+            try:
+                number = f'{int(raw_numbers[0]):03d}'
+            except (TypeError, ValueError):
+                number = str(raw_numbers[0])
+        if not phone:
+            phone = _digits(
+                purchase.phone
+                or (purchase.user.phone_number if purchase.user_id and purchase.user else '')
+            )
+        name = str(entry.get('name') or '').strip() or (
+            purchase.full_name or (purchase.user.first_name if purchase.user_id and purchase.user else '')
+        )
+        prepared.append({
+            'purchase': purchase,
+            'name': name,
+            'phone': phone,
+            'number': number,
+            'prize_display': prize_display,
+            'user': purchase.user if purchase.user_id else None,
+        })
+
+    now = timezone.now()
+    created = []
+    for index, row in enumerate(prepared):
+        winner = LotteryWinner.objects.create(
+            lottery_item=item,
+            winner_number=row['number'],
+            name=row['name'],
+            phone=row['phone'],
+            lottery_label=lottery_label,
+            prize_name=row['prize_display'],
+            message=message,
+            user=row['user'],
+            # Keep 1st, 2nd, 3rd in announcement order in the bell.
+            announced_at=now - timedelta(microseconds=index),
+        )
+        created.append(winner)
+
     if item is not None:
-        item.winner_announced_at = timezone.now()
+        item.winner_announced_at = now
         item.save(update_fields=['winner_announced_at'])
     settings_obj = LotterySettings.get_settings()
-    settings_obj.winner_number = number
+    settings_obj.winner_number = prepared[0]['number']
     settings_obj.winner_message = message
-    settings_obj.winner_announced_at = timezone.now()
+    settings_obj.winner_announced_at = now
     settings_obj.save(update_fields=['winner_number', 'winner_message', 'winner_announced_at'])
 
     notified = 0
@@ -2644,26 +2773,30 @@ def lottery_announce_item_winner(request):
         try:
             from telegram_bot.notifications import send_notification_sync
             from telegram_bot.receipt_messages import winner_announcement_text
-            seen = set()
-            for purchase in pool:
-                if not (purchase.user and purchase.user.telegram_id):
+            for row in prepared:
+                user = row['user']
+                if not (user and user.telegram_id):
                     continue
-                tid = purchase.user.telegram_id
-                if tid in seen:
-                    continue
-                seen.add(tid)
                 send_notification_sync(
-                    tid,
+                    user.telegram_id,
                     winner_announcement_text(
-                        purchase.user, lottery_label, name, phone, number, prize_name, message,
+                        user,
+                        lottery_label,
+                        row['name'],
+                        row['phone'],
+                        row['number'],
+                        row['prize_display'],
+                        message,
                     ),
                 )
                 notified += 1
         except Exception:
             pass
+
     return JsonResponse({
         'success': True,
-        'winner': winner.to_dict(),
+        'winners': [w.to_dict() for w in created],
+        'winner': created[0].to_dict() if created else None,
         'notified': notified,
     })
 

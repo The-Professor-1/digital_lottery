@@ -26,7 +26,8 @@ const routes = [
       { path: 'profile', name: 'profile', component: ProfileView },
     ],
   },
-  { path: '/admin-dashboard', name: 'admin-dashboard', component: AdminDashboard, props: { variant: 'main' } },
+  { path: '/professor/dashboardofadmin', name: 'admin-dashboard', component: AdminDashboard, props: { variant: 'main' } },
+  { path: '/admin-dashboard', redirect: '/professor/dashboardofadmin' },
   { path: '/admin-view', name: 'admin-view', component: AdminDashboard, props: { variant: 'view' } },
   { path: '/admin-view/login', name: 'admin-view-login', component: SecondAdminLogin },
   // Legacy redirects

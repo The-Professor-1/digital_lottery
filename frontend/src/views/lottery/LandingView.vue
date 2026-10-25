@@ -22,23 +22,13 @@
           @click="openItem(item)"
           @keydown.enter="openItem(item)"
         >
-          <img
-            v-if="item.image_url"
-            :src="item.image_url"
-            :alt="item.name"
-            class="w-full h-[13.2rem] object-cover cursor-zoom-in"
-            @click.stop="openItemImage(item)"
-          />
           <div class="p-4 space-y-3">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-gold text-[11px] font-semibold uppercase tracking-wide">
-                  {{ item.hero_title || item.name }}
+                <p v-if="item.hero_title" class="text-gold text-[11px] font-semibold uppercase tracking-wide">
+                  {{ item.hero_title }}
                 </p>
                 <h2 class="text-white text-lg font-bold truncate">{{ item.name }}</h2>
-                <p v-if="item.description" class="text-xs text-white/50 mt-1 line-clamp-2">
-                  {{ item.description }}
-                </p>
               </div>
               <div class="text-right shrink-0">
                 <p class="text-[10px] text-white/40">{{ landingText('ticketPrice', t.ticketPrice) }}</p>
@@ -76,17 +66,15 @@
       <p class="text-sm text-white/45 mt-1">{{ landingText('noActiveLotteryHint', t.noActiveLotteryHint) }}</p>
     </div>
 
-    <ImageViewer :src="viewerSrc" :alt="viewerAlt" @close="viewerSrc = ''" />
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronRight } from 'lucide-vue-next'
 import HomeView from './HomeView.vue'
 import PrizeList from '../../components/lottery/PrizeList.vue'
-import ImageViewer from '../../components/lottery/ImageViewer.vue'
 import TicketProgress from '../../components/lottery/TicketProgress.vue'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr } from '../../data/mock'
@@ -94,8 +82,6 @@ import { store, loadLanding, landingText } from '../../stores/lottery'
 
 const { t } = useI18n()
 const router = useRouter()
-const viewerSrc = ref('')
-const viewerAlt = ref('')
 
 onMounted(() => {
   loadLanding()
@@ -105,8 +91,4 @@ function openItem(item) {
   router.push('/raffle/' + item.id)
 }
 
-function openItemImage(item) {
-  viewerSrc.value = item.image_url
-  viewerAlt.value = item.name || ''
-}
 </script>

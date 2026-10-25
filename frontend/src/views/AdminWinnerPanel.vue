@@ -2,30 +2,57 @@
   <div class="space-y-4">
     <div>
       <h2 class="section-title">Winner announcement</h2>
-      <p class="hint">Fill the winner details once. They appear in the in-app bell and can be sent to every verified buyer of the selected lottery on Telegram.</p>
+      <p class="hint">Choose a lottery item. One winner form is shown for each prize on that item. Enter each winner's phone; their Telegram account receives their specific prize.</p>
     </div>
 
-    <label>Lottery
+    <label>Lottery item
       <select v-model="itemId" class="admin-input" @change="onItemChange">
-        <option value="">Main lottery (global)</option>
+        <option value="">Select lottery item</option>
         <option v-for="item in items" :key="item.id" :value="String(item.id)">{{ item.name }}</option>
       </select>
     </label>
 
-    <div class="grid-2">
-      <label>Lottery label <input v-model="form.lottery_label" class="admin-input" placeholder="e.g. Round 12" /></label>
-      <label>Winning ticket <input v-model="form.winning_ticket" class="admin-input" inputmode="numeric" placeholder="061" /></label>
-      <label>Winner name <input v-model="form.name" class="admin-input" placeholder="Winner name" /></label>
-      <label>Winner phone <input v-model="form.phone" class="admin-input" inputmode="tel" placeholder="09…" /></label>
-      <label>Prize / lottery name <input v-model="form.prize_name" class="admin-input" placeholder="Auto from selected item" /></label>
-    </div>
-    <label>Message (optional) <textarea v-model="form.message" rows="2" class="admin-input" placeholder="Optional note in the bell" /></label>
-    <label class="check"><input v-model="notifyUsers" type="checkbox" /> Send Telegram notification to verified buyers</label>
+    <template v-if="selectedItem">
+      <div class="winner-prize-list">
+        <article v-for="(winner, index) in winnerForms" :key="index" class="winner-prize-card">
+          <div class="row-between">
+            <div class="min-w-0">
+              <p class="prize-place">{{ winner.place || ('Prize ' + (index + 1)) }}</p>
+              <p class="prize-title">{{ winner.prize_name || 'Prize' }}</p>
+            </div>
+            <span v-if="winner.amount" class="prize-amount">{{ formatMoney(winner.amount) }} Birr</span>
+          </div>
+          <div class="grid-2">
+            <label>Winner phone
+              <input v-model="winner.phone" class="admin-input" inputmode="tel" placeholder="09…" />
+            </label>
+            <label>Winner name (optional)
+              <input v-model="winner.name" class="admin-input" placeholder="Auto from phone" />
+            </label>
+          </div>
+          <label>Winning ticket (optional — auto from phone)
+            <input v-model="winner.winning_ticket" class="admin-input" inputmode="numeric" placeholder="Auto from buyer's tickets" />
+          </label>
+        </article>
+      </div>
 
-    <div class="flex gap-2">
-      <button type="button" class="btn primary" :disabled="saving" @click="announce">{{ saving ? 'Saving…' : (notifyUsers ? 'Announce &amp; notify' : 'Save app notification') }}</button>
-      <button type="button" class="btn ghost" @click="loadWinners">Refresh list</button>
-    </div>
+      <label>Lottery label
+        <input v-model="form.lottery_label" class="admin-input" placeholder="e.g. Round 12" />
+      </label>
+      <label>Message (optional)
+        <textarea v-model="form.message" rows="2" class="admin-input" placeholder="Optional note in the bell and Telegram message" />
+      </label>
+      <label class="check"><input v-model="notifyUsers" type="checkbox" /> Send Telegram notification to each winner</label>
+
+      <div class="flex gap-2">
+        <button type="button" class="btn primary" :disabled="saving" @click="announce">
+          {{ saving ? 'Saving…' : ('Save ' + winnerForms.length + ' winner(s) & notify') }}
+        </button>
+        <button type="button" class="btn ghost" @click="loadWinners">Refresh list</button>
+      </div>
+    </template>
+    <p v-else class="hint">Select a lottery item to load its prizes.</p>
+
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="ok">{{ message }}</p>
 
@@ -52,7 +79,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   getLotteryItemsAdmin, announceItemWinner, getLotteryWinnersAdmin, deleteLotteryWinnerAdmin,
 } from '../services/api'
@@ -60,30 +87,52 @@ import {
 const items = ref([])
 const itemId = ref('')
 const winners = ref([])
-const notifyUsers = ref(false)
+const winnerForms = ref([])
+const notifyUsers = ref(true)
 const saving = ref(false)
 const error = ref('')
 const message = ref('')
-const form = reactive({
-  lottery_label: '', winning_ticket: '', name: '', phone: '', prize_name: '', message: '',
-})
+const form = reactive({ lottery_label: '', message: '' })
+
+const selectedItem = computed(
+  () => items.value.find((it) => String(it.id) === String(itemId.value)) || null
+)
 
 function pad(n) {
   return String(n || '').padStart(3, '0')
 }
 
-function selectedItem() {
-  return items.value.find((it) => String(it.id) === String(itemId.value)) || null
+function formatMoney(n) {
+  return Number(n || 0).toLocaleString('en-US')
+}
+
+function buildWinnerForms(item) {
+  const prizes = Array.isArray(item?.prizes) ? item.prizes : []
+  if (!prizes.length) {
+    return [{
+      place: '',
+      prize_name: item?.name || 'Prize',
+      amount: 0,
+      phone: '',
+      name: '',
+      winning_ticket: '',
+    }]
+  }
+  return prizes.map((prize, index) => ({
+    place: prize.place || `Prize ${index + 1}`,
+    prize_name: prize.title || prize.description || prize.place || `Prize ${index + 1}`,
+    amount: Number(prize.amount || 0),
+    phone: '',
+    name: '',
+    winning_ticket: '',
+  }))
 }
 
 function onItemChange() {
-  notifyUsers.value = !!itemId.value
-  const item = selectedItem()
-  if (item) {
-    if (!form.lottery_label) form.lottery_label = item.name || ''
-    const firstPrize = (item.prizes || [])[0]
-    if (!form.prize_name) form.prize_name = firstPrize?.title || firstPrize?.description || item.name || ''
-  }
+  const item = selectedItem.value
+  form.lottery_label = item ? (item.hero_title || item.name || '') : ''
+  winnerForms.value = item ? buildWinnerForms(item) : []
+  notifyUsers.value = true
   loadWinners()
 }
 
@@ -91,7 +140,12 @@ async function loadItems() {
   try {
     const data = await getLotteryItemsAdmin()
     items.value = data.items || []
-    if (itemId.value) notifyUsers.value = true
+    if (!itemId.value && items.value.length) {
+      itemId.value = String(items.value[0].id)
+      onItemChange()
+    } else if (itemId.value) {
+      onItemChange()
+    }
   } catch (e) {
     error.value = e.response?.data?.error || 'Could not load lottery items'
   }
@@ -107,28 +161,49 @@ async function loadWinners() {
 }
 
 async function announce() {
-  if (!form.winning_ticket.trim()) {
-    error.value = 'Winning ticket is required'
+  if (!itemId.value) {
+    error.value = 'Select a lottery item'
     return
   }
+  if (!winnerForms.value.length) {
+    error.value = 'This lottery has no prizes to announce'
+    return
+  }
+  const missing = winnerForms.value.findIndex((w) => !String(w.phone || '').trim())
+  if (missing >= 0) {
+    error.value = `Enter the winner phone for ${winnerForms.value[missing].place || `prize ${missing + 1}`}`
+    return
+  }
+
   saving.value = true
   error.value = ''
   message.value = ''
   try {
+    const payloadWinners = winnerForms.value.map((w) => ({
+      phone: w.phone,
+      name: w.name,
+      winning_ticket: w.winning_ticket,
+      prize_name: w.prize_name,
+    }))
     const res = await announceItemWinner({
-      lottery_item_id: itemId.value || null,
-      ...form,
+      lottery_item_id: itemId.value,
+      lottery_label: form.lottery_label,
+      message: form.message,
       notify_users: notifyUsers.value,
+      winners: payloadWinners,
     })
-    const count = Number(res.notified || 0)
-    message.value = count ? 'Saved and sent to ' + count + ' buyer(s).' : 'Saved in the in-app bell.'
-    form.winning_ticket = ''
-    form.name = ''
-    form.phone = ''
-    form.message = ''
+    const savedCount = (res.winners || []).length
+    const notified = Number(res.notified || 0)
+    message.value = `Saved ${savedCount} winner(s)${notified ? ` and notified ${notified} on Telegram` : ''}.`
+    winnerForms.value = winnerForms.value.map((w) => ({
+      ...w,
+      phone: '',
+      name: '',
+      winning_ticket: '',
+    }))
     await loadWinners()
   } catch (e) {
-    error.value = e.response?.data?.error || 'Could not announce winner'
+    error.value = e.response?.data?.error || 'Could not announce winners'
   } finally {
     saving.value = false
   }
@@ -155,6 +230,12 @@ onMounted(async () => {
 .hint { margin: 0.2rem 0 0; font-size: 0.8rem; color: #9ca3af; }
 .subhead { margin: 0 0 0.4rem; font-size: 0.92rem; color: #e5e7eb; }
 .card { border: 1px solid #2a3140; border-radius: 12px; background: #0d0d0d; padding: 0.85rem; }
+.winner-prize-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.winner-prize-card { border: 1px solid #334155; border-radius: 12px; background: #11151c; padding: 0.85rem; display: flex; flex-direction: column; gap: 0.55rem; }
+.prize-place { margin: 0; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #f5a623; font-weight: 700; }
+.prize-title { margin: 0.15rem 0 0; font-size: 0.95rem; color: #fff; font-weight: 700; }
+.prize-amount { color: #f5a623; font-weight: 700; font-size: 0.85rem; white-space: nowrap; }
+.row-between { display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
 label { display: block; font-size: 0.8rem; color: #d1d5db; margin-bottom: 0.45rem; }
 .admin-input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid #334155; background: #11151c; color: #fff; box-sizing: border-box; }
