@@ -260,14 +260,22 @@ def lottery_set_language(request):
 def lottery_tickets(request):
     phone = (request.GET.get('phone') or '').strip()
     digits = ''.join(c for c in phone if c.isdigit())
-    if len(digits) < 9:
+    if len(digits) < 6:
         return JsonResponse({'tickets': [], 'active': 0, 'pending': 0, 'total': 0})
 
+    # Accept local/short numbers exactly as entered, and compare the last 9
+    # digits for international formats (e.g. 09… vs 251…).
+    lookup_values = {digits}
+    if len(digits) >= 9:
+        lookup_values.add(digits[-9:])
+    phone_query = Q()
+    for value in lookup_values:
+        phone_query |= (
+            Q(phone__icontains=value)
+            | Q(user__phone_number__icontains=value)
+        )
     qs = LotteryPurchase.objects.select_related('user', 'lottery_item').filter(
-        Q(phone__icontains=digits[-9:])
-        | Q(phone__icontains=digits)
-        | Q(user__phone_number__icontains=digits[-9:])
-        | Q(user__phone_number__icontains=digits)
+        phone_query
     ).exclude(status='rejected')
     tickets = [p.to_dict(request) for p in qs[:100]]
     active = sum(1 for t in tickets if t['status'] == 'verified')
