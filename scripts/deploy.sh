@@ -52,10 +52,13 @@ if command -v systemctl >/dev/null 2>&1; then
   fi
 
   echo "Installing systemd units for $(id -un)..."
+  HOME_DIR="$(getent passwd "$(id -un)" | cut -d: -f6)"
+  if [ -z "$HOME_DIR" ]; then HOME_DIR="$HOME"; fi
   TMP_UNITS="$(mktemp -d)"
   for unit in digitallottery-gunicorn.service digitallottery-telegram-bot.service; do
     sed -e "s/^User=.*/User=$(id -un)/" \
         -e "s/^Group=.*/Group=$(id -gn)/" \
+        -e "s#%h#$HOME_DIR#g" \
         "systemd/$unit" > "$TMP_UNITS/$unit"
   done
   sudo -n cp "$TMP_UNITS"/*.service /etc/systemd/system/
