@@ -62,7 +62,7 @@
         >
           {{
             complete
-              ? t.continueWithAmount(store.selectedNumbers.length, formatBirr(totalAmount, t.value.birr))
+              ? t.continueWithAmount(store.selectedNumbers.length, formatBirr(totalAmount, t.birr))
               : t.selectAtLeastOne
           }}
         </button>

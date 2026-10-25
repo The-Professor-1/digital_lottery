@@ -162,9 +162,9 @@ const takenPool = computed(() => {
 const finalRows = computed(() => {
   const r = drawResult.value || {}
   return [
-    { place: 1, label: '1ኛ እጣ', number: r.winner_1st, prize: r.prize_1st },
-    { place: 2, label: '2ኛ እጣ', number: r.winner_2nd, prize: r.prize_2nd },
-    { place: 3, label: '3ኛ እጣ', number: r.winner_3rd, prize: r.prize_3rd },
+    { place: 1, label: t.value.firstPrize, number: r.winner_1st, prize: r.prize_1st },
+    { place: 2, label: t.value.secondPrize, number: r.winner_2nd, prize: r.prize_2nd },
+    { place: 3, label: t.value.thirdPrize, number: r.winner_3rd, prize: r.prize_3rd },
   ].filter((x) => x.number)
 })
 
@@ -273,9 +273,9 @@ async function runDrawAndReveal() {
 
   stopShuffleLoop()
   const rows = [
-    { place: 1, label: '1ኛ እጣ', number: drawResult.value.winner_1st, prize: drawResult.value.prize_1st },
-    { place: 2, label: '2ኛ እጣ', number: drawResult.value.winner_2nd, prize: drawResult.value.prize_2nd },
-    { place: 3, label: '3ኛ እጣ', number: drawResult.value.winner_3rd, prize: drawResult.value.prize_3rd },
+    { place: 1, label: t.value.firstPrize, number: drawResult.value.winner_1st, prize: drawResult.value.prize_1st },
+    { place: 2, label: t.value.secondPrize, number: drawResult.value.winner_2nd, prize: drawResult.value.prize_2nd },
+    { place: 3, label: t.value.thirdPrize, number: drawResult.value.winner_3rd, prize: drawResult.value.prize_3rd },
   ].filter((r) => r.number)
 
   phase.value = 'reveal'
