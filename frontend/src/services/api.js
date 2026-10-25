@@ -335,6 +335,11 @@ export async function announceItemWinner(payload) {
   return response.data
 }
 
+export async function clearLotteryHistoryAdmin() {
+  const response = await api.post('/admin-dashboard/lottery-clear-history/')
+  return response.data
+}
+
 export async function deleteLotteryWinnerAdmin(id) {
   const response = await api.post('/admin-dashboard/lottery-winners/', { action: 'delete', id })
   return response.data

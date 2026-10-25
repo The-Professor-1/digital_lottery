@@ -203,7 +203,7 @@ async function announce() {
     error.value = `Enter the winner phone for ${winnerForms.value[missing].place || `prize ${missing + 1}`}`
     return
   }
-  if (!confirm('Save these winners, close this round, archive its receipts, and start a fresh round?')) {
+  if (!confirm('Save these winners, close this round, archive its receipts, and hide this lottery until you create a new item?')) {
     return
   }
 
@@ -226,7 +226,7 @@ async function announce() {
     })
     const savedCount = (res.winners || []).length
     const notified = Number(res.notified || 0)
-    message.value = `Saved ${savedCount} winner(s)${notified ? ` and notified ${notified} on Telegram` : ''}. Round closed and a fresh round is ready.`
+    message.value = `Saved ${savedCount} winner(s)${notified ? ` and notified ${notified} on Telegram` : ''}. Round closed. The lottery was hidden; add a new item to start the next round.`
     winnerForms.value = winnerForms.value.map((w) => ({
       ...w,
       phone: '',

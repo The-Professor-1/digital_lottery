@@ -140,6 +140,16 @@
         <button type="button" class="btn ghost" @click="addAccount">+ Add account</button>
       </section>
 
+      <section v-if="isMain" class="danger-zone">
+        <h2>Clear test history</h2>
+        <p class="hint">
+          Permanently clears all lottery items, receipts, rounds, winners, revenue history, held numbers, failed deposits, archived records, receipt images, and test receipt references. Use this once before starting live production.
+        </p>
+        <button type="button" class="btn danger" :disabled="clearingHistory" @click="clearAllHistory">
+          {{ clearingHistory ? 'Clearing…' : 'Clear all lottery history' }}
+        </button>
+      </section>
+
       <div class="actions">
         <button type="submit" class="btn primary" :disabled="saving">{{ saving ? 'Saving…' : (isMain ? 'Save settings' : 'Save payment accounts') }}</button>
         <button type="button" class="btn ghost" @click="load">Reload</button>
@@ -472,6 +482,7 @@ import {
   getLotteryUsersAdmin,
   deleteLotteryUser,
   getLotteryDeletedAdmin,
+  clearLotteryHistoryAdmin,
   sendLotteryMessage,
   getLotteryFailedDepositsAdmin,
   lotteryFailedDepositAction,
@@ -599,6 +610,7 @@ export default {
       accessStoredPassword: '',
       accessHasPassword: false,
       accessSaving: false,
+      clearingHistory: false,
       users: [],
       usersQuery: '',
       usersLoading: false,
@@ -950,6 +962,25 @@ export default {
         this.error = e.response?.data?.error || 'Could not start draw'
       } finally {
         this.startingDraw = false
+      }
+    },
+    async clearAllHistory() {
+      const answer = window.prompt(
+        'This permanently deletes ALL lottery items, receipts, rounds, winners, revenue history, held numbers, failed deposits, archived records, receipt images, and test receipt references. Type CLEAR to continue.'
+      )
+      if (answer !== 'CLEAR') return
+      this.clearingHistory = true
+      this.message = ''
+      this.error = ''
+      try {
+        const res = await clearLotteryHistoryAdmin()
+        const c = res.cleared || {}
+        this.message = `All lottery history cleared. Purchases: ${c.purchases || 0}, rounds: ${c.rounds || 0}, winners: ${c.winners || 0}, items: ${c.items || 0}.`
+        await this.load()
+      } catch (e) {
+        this.error = e.response?.data?.error || 'Could not clear lottery history'
+      } finally {
+        this.clearingHistory = false
       }
     },
     async save() {
@@ -1320,6 +1351,7 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 .area { resize: vertical; }
 .timer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 .landing-text-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+.danger-zone { border: 1px solid #7f1d1d; background: rgba(127, 29, 29, 0.12); border-radius: 12px; padding: 1rem; }
 summary { cursor: pointer; color: #f5a623; font-weight: 700; }
 @media (min-width: 640px) { .timer-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .mode-row { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.5rem; }

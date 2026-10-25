@@ -2566,6 +2566,76 @@ def lottery_held_numbers_admin(request):
 
 
 @csrf_exempt
+@require_http_methods(['POST'])
+def lottery_clear_history_admin(request):
+    """Main-admin only: wipe all lottery data and reset revenue/history for production."""
+    if not _is_main_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+    from django.conf import settings as dj_settings
+    from .models import (
+        BroadcastMessage, CbeReceipt, DeletedLotteryReceipt, DeletedLotteryUser,
+        LotteryFailedDeposit, LotteryHeldNumber, LotteryItem, LotteryPurchase,
+        LotteryRound, LotteryWinner, TelebirrReceipt,
+    )
+
+    counts = {
+        'purchases': LotteryPurchase.objects.count(),
+        'rounds': LotteryRound.objects.count(),
+        'winners': LotteryWinner.objects.count(),
+        'items': LotteryItem.objects.count(),
+        'held_numbers': LotteryHeldNumber.objects.count(),
+        'failed_deposits': LotteryFailedDeposit.objects.count(),
+        'deleted_receipts': DeletedLotteryReceipt.objects.count(),
+        'deleted_users': DeletedLotteryUser.objects.count(),
+        'telebirr_receipts': TelebirrReceipt.objects.count(),
+        'cbe_receipts': CbeReceipt.objects.count(),
+        'broadcasts': BroadcastMessage.objects.count(),
+    }
+
+    DeletedLotteryReceipt.objects.all().delete()
+    DeletedLotteryUser.objects.all().delete()
+    LotteryFailedDeposit.objects.all().delete()
+    LotteryHeldNumber.objects.all().delete()
+    LotteryWinner.objects.all().delete()
+    LotteryRound.objects.all().delete()
+    LotteryPurchase.objects.all().delete()
+    LotteryItem.objects.all().delete()
+    TelebirrReceipt.objects.all().delete()
+    CbeReceipt.objects.all().delete()
+    BroadcastMessage.objects.all().delete()
+
+    settings_obj = LotterySettings.get_settings()
+    settings_obj.winner_1st = None
+    settings_obj.winner_2nd = None
+    settings_obj.winner_3rd = None
+    settings_obj.winner_number = ''
+    settings_obj.winner_message = ''
+    settings_obj.winner_announced_at = None
+    settings_obj.draw_completed = False
+    settings_obj.winners_notified = False
+    settings_obj.next_round_at = None
+    settings_obj.sold_count = 0
+    settings_obj.admin_blocked_numbers = []
+    settings_obj.save(clear_timer=True)
+
+    media_root = getattr(dj_settings, 'MEDIA_ROOT', '') or ''
+    for subdir in ('receipts', 'items', 'cars', 'prizes'):
+        directory = os.path.join(media_root, 'lottery', subdir)
+        if not os.path.isdir(directory):
+            continue
+        for name in os.listdir(directory):
+            path = os.path.join(directory, name)
+            if os.path.isfile(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+    return JsonResponse({'success': True, 'cleared': counts})
+
+
+@csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def lottery_winners_admin(request):
     if not _is_admin(request):
@@ -2645,10 +2715,10 @@ def _close_item_round(item, lottery_label, winners, message, now):
         item.draw_completed = False
         item.winners_notified = False
         item.next_round_at = None
-        if item.uses_date_deadline():
-            item.save(reset_timer=True)
-        else:
-            item.save(clear_timer=True)
+        # Close out this lottery item. The landing page stays empty until the
+        # admin adds a new item/round.
+        item.is_active = False
+        item.save(clear_timer=True)
     else:
         LotteryHeldNumber.objects.filter(lottery_item__isnull=True).delete()
         settings_obj = LotterySettings.get_settings()
