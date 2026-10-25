@@ -2,126 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Digital Lottery theme tokens — light-first, warm and restrained. */
-:root,
-[data-theme='light'] {
-  --app: 247 243 235;          /* warm ivory */
-  --surface: 255 252 247;      /* card / sheet */
-  --surface-2: 242 236 226;    /* nested surface */
-  --surface-3: 232 224 211;    /* chips / input wells */
-  --card: 255 255 255;
-  --content: 38 33 27;         /* charcoal */
-  --muted: 107 98 88;
-  --line: 222 214 202;
-  --line-strong: 196 185 169;
-  --gold: 138 90 10;           /* deep muted gold */
-  --gold-light: 180 122 24;
-  --gold-dark: 105 66 6;
-  --forest: 30 107 74;
-  --forest-light: 45 138 97;
-  --forest-dim: 226 240 232;
-  --forest-deep: 241 248 243;
-  --on-gold: 28 25 23;
-  --on-forest: 255 255 255;
-  --success: 22 101 52;
-  --success-bg: 220 252 231;
-  --danger: 185 28 28;
-  --danger-bg: 254 226 226;
-  --danger-text: 153 27 27;
-  --warning: 146 64 14;
-  --warning-bg: 254 243 199;
-  --info: 30 64 175;
-  --info-bg: 219 234 254;
-  --shadow: 44 37 28;
-  --scrim: 20 18 15;
-}
-
-[data-theme='dark'],
-.dark {
-  --app: 17 15 13;
-  --surface: 27 24 21;
-  --surface-2: 37 32 28;
-  --surface-3: 50 43 36;
-  --card: 31 28 24;
-  --content: 245 241 233;
-  --muted: 174 164 151;
-  --line: 60 53 45;
-  --line-strong: 84 75 63;
-  --gold: 227 179 65;
-  --gold-light: 246 204 105;
-  --gold-dark: 184 138 40;
-  --forest: 110 231 168;
-  --forest-light: 147 243 191;
-  --forest-dim: 15 61 42;
-  --forest-deep: 10 46 31;
-  --on-gold: 24 20 16;
-  --on-forest: 11 31 20;
-  --success: 134 239 172;
-  --success-bg: 5 46 26;
-  --danger: 248 113 113;
-  --danger-bg: 63 21 21;
-  --danger-text: 254 202 202;
-  --warning: 252 211 77;
-  --warning-bg: 120 53 15;
-  --info: 147 197 253;
-  --info-bg: 30 58 95;
-  --shadow: 0 0 0;
-  --scrim: 0 0 0;
+:root {
+  --bg: #0d0d0d;
+  --gold: #f5a623;
+  --gold-light: #ffb84d;
+  --forest: #1e8e5a;
 }
 
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
-}
-
-html {
-  min-height: 100%;
-  background: rgb(var(--app));
-  color: rgb(var(--content));
-  color-scheme: light;
-}
-
-html[data-theme='dark'],
-html.dark {
-  color-scheme: dark;
-}
-
-body {
-  margin: 0;
-  min-height: 100%;
-  overflow-x: hidden;
-  background:
-    radial-gradient(1100px 520px at 50% -12%, rgb(var(--gold) / 0.10), transparent 55%),
-    rgb(var(--app));
-  color: rgb(var(--content));
-  font-family: 'Manrope', 'Noto Sans Ethiopic', 'Segoe UI', system-ui, sans-serif;
-  font-feature-settings: 'ss01' on, 'cv11' on;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-
-#app {
-  min-height: 100vh;
-  min-height: 100dvh;
-}
-
-h1,
-h2,
-h3,
-h4,
-.font-display {
-  font-family: 'Fraunces', 'Noto Sans Ethiopic', Georgia, serif;
-  letter-spacing: -0.018em;
-}
-
-::selection {
-  background: rgb(var(--gold) / 0.25);
-  color: rgb(var(--content));
-}
-
-:focus-visible {
-  outline: 2px solid rgb(var(--gold));
-  outline-offset: 2px;
 }
 
 /* Allow native select/copy/paste in form fields (Telegram WebView) */
@@ -134,76 +24,46 @@ textarea.selectable-field {
   pointer-events: auto !important;
 }
 
-/* Mobile shell on desktop: warm paper on the outside, app surface inside. */
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: #fff;
+  font-family: 'Segoe UI', 'Noto Sans Ethiopic', system-ui, sans-serif;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+/* Mobile shell on desktop */
 .app-shell {
-  max-width: 440px;
+  max-width: 420px;
   margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh;
-  background: rgb(var(--app));
+  background: #0d0d0d;
   position: relative;
-  box-shadow:
-    0 0 0 1px rgb(var(--line) / 0.7),
-    0 30px 80px -34px rgb(var(--shadow) / 0.38);
-}
-
-@media (min-width: 640px) {
-  .app-shell {
-    margin-top: 18px;
-    margin-bottom: 18px;
-    min-height: calc(100dvh - 36px);
-    border-radius: 30px;
-    overflow: hidden;
-  }
+  box-shadow: 0 0 0 1px #1a1a1a;
 }
 
 .btn-gold {
-  @apply bg-gradient-to-r from-gold to-gold-light text-on-gold font-bold rounded-2xl
+  @apply bg-gradient-to-r from-gold to-gold-light text-black font-bold rounded-2xl
     shadow-glow active:scale-[0.98] transition-transform disabled:opacity-40
     disabled:shadow-none disabled:cursor-not-allowed;
 }
 
 .btn-green {
-  @apply bg-gradient-to-r from-forest to-forest-light text-on-forest font-bold rounded-2xl
-    shadow-soft active:scale-[0.98] transition-transform disabled:opacity-40
-    disabled:shadow-none disabled:cursor-not-allowed;
+  @apply bg-gradient-to-r from-forest to-emerald-400 text-white font-bold rounded-2xl
+    shadow-[0_0_20px_rgba(30,142,90,0.4)] active:scale-[0.98] transition-transform
+    disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed;
 }
 
 .btn-gold-outline {
   @apply border-2 border-gold text-gold font-semibold rounded-2xl
     bg-transparent active:scale-[0.98] transition-transform;
-}
-
-.btn-gold-outline:hover,
-.btn-green:hover,
-.btn-gold:hover {
-  filter: brightness(1.03);
-}
-
-/* Theme-aware decorative backgrounds */
-.bg-hero {
-  background:
-    radial-gradient(130% 100% at 12% 0%, rgb(var(--gold) / 0.16), transparent 48%),
-    radial-gradient(120% 90% at 96% 4%, rgb(var(--forest) / 0.12), transparent 48%),
-    linear-gradient(140deg, rgb(var(--surface)) 0%, rgb(var(--app)) 56%, rgb(var(--forest-deep)) 100%);
-}
-
-.bg-hero-soft {
-  background:
-    radial-gradient(120% 90% at 10% 0%, rgb(var(--gold) / 0.12), transparent 46%),
-    linear-gradient(135deg, rgb(var(--surface)) 0%, rgb(var(--surface-2)) 52%, rgb(var(--forest-deep)) 100%);
-}
-
-.bg-forest-panel {
-  background: linear-gradient(180deg, rgb(var(--forest-dim)) 0%, rgb(var(--forest-deep)) 100%);
-}
-
-.bg-forest-strip {
-  background: linear-gradient(120deg, rgb(var(--forest-dim)) 0%, rgb(var(--surface-2)) 52%, rgb(var(--forest-deep)) 100%);
-}
-
-.bg-progress {
-  background: linear-gradient(90deg, rgb(var(--forest)) 0%, rgb(var(--forest-light)) 100%);
 }
 
 .sheet-enter-active,
@@ -231,34 +91,6 @@ textarea.selectable-field {
   width: 3px;
 }
 .no-scrollbar::-webkit-scrollbar-thumb {
-  background: rgb(var(--gold) / 0.4);
+  background: #f5a62366;
   border-radius: 4px;
-}
-
-/* Smooth theme changes without making every animation feel slow. */
-body,
-.app-shell,
-header,
-nav,
-main,
-button,
-input,
-textarea,
-select {
-  transition:
-    background-color 0.24s ease,
-    border-color 0.24s ease,
-    color 0.24s ease,
-    box-shadow 0.24s ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
 }

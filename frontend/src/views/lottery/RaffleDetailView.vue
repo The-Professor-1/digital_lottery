@@ -2,14 +2,14 @@
   <div class="space-y-4 pt-1 pb-4">
     <button
       type="button"
-      class="inline-flex items-center gap-1 text-sm text-content/60 -mt-1"
+      class="inline-flex items-center gap-1 text-sm text-white/60 -mt-1"
       @click="router.back()"
     >
       <ChevronLeft :size="18" /> {{ t.back }}
     </button>
 
     <div
-      class="relative rounded-card overflow-hidden min-h-[180px] px-5 py-7 flex flex-col items-center justify-center text-center bg-hero-soft border border-forest/20"
+      class="relative rounded-card overflow-hidden min-h-[180px] px-5 py-7 flex flex-col items-center justify-center text-center bg-gradient-to-br from-ink-200 via-forest-deep to-ink-100 border border-forest/20"
     >
       <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">
         {{ raffle.heroTitle || store.brandName }}
@@ -25,9 +25,8 @@
     </div>
 
     <div>
-      <h1 class="text-2xl font-bold text-content">{{ raffle.displayName || raffle.name }}</h1>
-      <p v-if="raffle.color" class="text-forest mt-0.5">{{ raffle.color }}</p>
-      <p v-if="raffle.description" class="text-sm text-content/55 mt-1 leading-relaxed">{{ raffle.description }}</p>
+      <h1 class="text-2xl font-bold text-white">{{ raffle.displayName || raffle.name }}</h1>
+      <p v-if="raffle.color" class="text-lime-400 mt-0.5">{{ raffle.color }}</p>
     </div>
 
     <CountdownTimer
@@ -37,7 +36,7 @@
     />
     <div
       v-else
-      class="rounded-2xl bg-forest-panel border border-forest/30 p-4 text-center"
+      class="rounded-2xl bg-gradient-to-b from-forest-dim to-forest-deep border border-forest/30 p-4 text-center"
     >
       <p class="text-gold text-xl font-extrabold">
         {{ raffle.displayName || raffle.name || store.brandName }}
@@ -51,13 +50,13 @@
 
     <div class="flex items-center justify-between gap-3 py-1">
       <div>
-        <p class="text-sm text-content/50">{{ t.ticketPrice }}</p>
+        <p class="text-sm text-white/50">{{ t.ticketPrice }}</p>
         <p class="text-gold text-xl font-bold">{{ formatBirr(raffle.ticketPrice) }}</p>
       </div>
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="w-10 h-10 rounded-xl bg-surface-3 text-content text-xl font-bold"
+          class="w-10 h-10 rounded-xl bg-ink-300 text-white text-xl font-bold"
           @click="setQuantity(store.quantity - 1)"
         >
           −
@@ -74,7 +73,7 @@
     </div>
 
     <div v-if="store.selectedNumbers.length" class="space-y-2">
-      <p class="text-sm text-content/70">{{ t.selectedNumbersLabel }}</p>
+      <p class="text-sm text-white/70">{{ t.selectedNumbersLabel }}</p>
       <div class="flex flex-wrap gap-1.5">
         <span
           v-for="n in store.selectedNumbers"
@@ -103,7 +102,7 @@
         :class="
           canBuy
             ? 'btn-green'
-            : 'bg-forest/20 text-content/60 border border-forest/30 cursor-not-allowed shadow-none'
+            : 'bg-forest/45 text-white/85 border border-forest/50 cursor-not-allowed shadow-none'
         "
         @click="openCheckoutFromSelect"
       >

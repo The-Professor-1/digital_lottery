@@ -13,7 +13,7 @@
         <img v-if="item.image_url" :src="item.image_url" alt="" class="item-thumb" />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 flex-wrap">
-            <strong class="text-content">{{ item.name }}</strong>
+            <strong class="text-white">{{ item.name }}</strong>
             <span class="badge" :class="item.is_active ? 'on' : 'off'">{{ item.is_active ? 'Active' : 'Hidden' }}</span>
           </div>
           <p class="hint">
@@ -207,30 +207,30 @@ onMounted(load)
 </script>
 
 <style scoped>
-.section-title { margin: 0; font-size: 1.05rem; color: rgb(var(--gold)); }
-.hint { margin: 0.2rem 0 0; font-size: 0.8rem; color: rgb(var(--muted)); }
-.subhead { margin: 0.4rem 0 0.2rem; font-size: 0.95rem; color: rgb(var(--content)); }
-.item-row, .form-card, .prize-row { border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); padding: 0.85rem; }
+.section-title { margin: 0; font-size: 1.05rem; color: #f5a623; }
+.hint { margin: 0.2rem 0 0; font-size: 0.8rem; color: #9ca3af; }
+.subhead { margin: 0.4rem 0 0.2rem; font-size: 0.95rem; color: #e5e7eb; }
+.item-row, .form-card, .prize-row { border: 1px solid #2a3140; border-radius: 12px; background: #0d0d0d; padding: 0.85rem; }
 .item-row { display: flex; gap: 0.75rem; align-items: center; }
 .item-thumb { width: 54px; height: 54px; border-radius: 8px; object-fit: cover; }
 .badge { font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.4rem; border-radius: 5px; text-transform: uppercase; }
-.badge.on { background: rgb(var(--success-bg)); color: rgb(var(--success)); }
-.badge.off { background: rgb(var(--surface-3)); color: rgb(var(--muted)); }
+.badge.on { background: #064e3b; color: #6ee7b7; }
+.badge.off { background: #3f3f46; color: #d4d4d8; }
 .form-card { display: flex; flex-direction: column; gap: 0.55rem; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
-label { display: block; font-size: 0.8rem; color: rgb(var(--content) / 0.78); }
-.admin-input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid rgb(var(--line)); background: rgb(var(--surface-2)); color: rgb(var(--content)); box-sizing: border-box; }
+label { display: block; font-size: 0.8rem; color: #d1d5db; }
+.admin-input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid #334155; background: #11151c; color: #fff; box-sizing: border-box; }
 .check { display: flex; align-items: center; gap: 0.45rem; }
 .prizes-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
-.prize-row { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.5rem; background: rgb(var(--surface-2)); }
-.prize-preview { width: 100%; max-height: 170px; object-fit: contain; border-radius: 8px; background: rgb(var(--surface)); }
-.btn { border: none; border-radius: 8px; padding: 0.55rem 0.75rem; font-weight: 600; cursor: pointer; background: rgb(var(--surface-3)); color: rgb(var(--content)); }
-.btn.primary { background: linear-gradient(90deg, rgb(var(--gold)), rgb(var(--gold-light))); color: rgb(var(--on-gold)); }
-.btn.ghost { background: transparent; border: 1px solid rgb(var(--line-strong)); }
-.btn.danger { background: rgb(var(--danger-bg)); color: rgb(var(--danger-text)); }
+.prize-row { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.5rem; background: #11151c; }
+.prize-preview { width: 100%; max-height: 170px; object-fit: contain; border-radius: 8px; background: #0d0d0d; }
+.btn { border: none; border-radius: 8px; padding: 0.55rem 0.75rem; font-weight: 600; cursor: pointer; background: #374151; color: #fff; }
+.btn.primary { background: linear-gradient(90deg, #f5a623, #ffb84d); color: #111; }
+.btn.ghost { background: transparent; border: 1px solid #4b5563; }
+.btn.danger { background: #7f1d1d; color: #fecaca; }
 .btn.small { padding: 0.35rem 0.55rem; font-size: 0.75rem; align-self: flex-start; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.error { color: rgb(var(--danger-text)); font-size: 0.85rem; margin: 0; }
-.ok { color: rgb(var(--success)); font-size: 0.85rem; margin: 0; }
+.error { color: #fecaca; font-size: 0.85rem; margin: 0; }
+.ok { color: #86efac; font-size: 0.85rem; margin: 0; }
 @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
 </style>

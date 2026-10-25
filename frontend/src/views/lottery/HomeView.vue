@@ -2,7 +2,6 @@
   <div :key="store.homeRefreshKey" class="space-y-4 pt-1">
     <HeroCard
       :raffle="store.raffle"
-      @open="startBuy"
       @buy="startBuy"
     />
   </div>

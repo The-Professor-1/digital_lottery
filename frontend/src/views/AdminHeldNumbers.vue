@@ -44,7 +44,7 @@
         <article v-for="group in groups" :key="group.key" class="group-row">
           <div class="group-head">
             <div class="min-w-0">
-              <strong class="text-content">{{ group.phone || 'No phone' }}</strong>
+              <strong class="text-white">{{ group.phone || 'No phone' }}</strong>
               <span v-if="group.name" class="muted"> · {{ group.name }}</span>
               <p v-if="group.note" class="hint">{{ group.note }}</p>
             </div>
@@ -250,30 +250,30 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.section-title { margin: 0; font-size: 1.05rem; color: rgb(var(--gold)); }
-.hint { margin: 0.2rem 0 0; font-size: 0.8rem; color: rgb(var(--muted)); }
-.subhead { margin: 0 0 0.4rem; font-size: 0.92rem; color: rgb(var(--content)); }
-.card { border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); padding: 0.85rem; }
+.section-title { margin: 0; font-size: 1.05rem; color: #f5a623; }
+.hint { margin: 0.2rem 0 0; font-size: 0.8rem; color: #9ca3af; }
+.subhead { margin: 0 0 0.4rem; font-size: 0.92rem; color: #e5e7eb; }
+.card { border: 1px solid #2a3140; border-radius: 12px; background: #0d0d0d; padding: 0.85rem; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
-label { display: block; font-size: 0.8rem; color: rgb(var(--content) / 0.78); margin-bottom: 0.45rem; }
-.admin-input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid rgb(var(--line)); background: rgb(var(--surface-2)); color: rgb(var(--content)); box-sizing: border-box; }
-.btn { border: none; border-radius: 8px; padding: 0.55rem 0.75rem; font-weight: 600; cursor: pointer; background: rgb(var(--surface-3)); color: rgb(var(--content)); }
-.btn.primary { background: linear-gradient(90deg, rgb(var(--gold)), rgb(var(--gold-light))); color: rgb(var(--on-gold)); }
-.btn.ghost { background: transparent; border: 1px solid rgb(var(--line-strong)); }
-.btn.danger { background: rgb(var(--danger-bg)); color: rgb(var(--danger-text)); }
+label { display: block; font-size: 0.8rem; color: #d1d5db; margin-bottom: 0.45rem; }
+.admin-input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.55rem 0.65rem; border-radius: 8px; border: 1px solid #334155; background: #11151c; color: #fff; box-sizing: border-box; }
+.btn { border: none; border-radius: 8px; padding: 0.55rem 0.75rem; font-weight: 600; cursor: pointer; background: #374151; color: #fff; }
+.btn.primary { background: linear-gradient(90deg, #f5a623, #ffb84d); color: #111; }
+.btn.ghost { background: transparent; border: 1px solid #4b5563; }
+.btn.danger { background: #7f1d1d; color: #fecaca; }
 .btn.small { padding: 0.3rem 0.5rem; font-size: 0.72rem; }
 .btn:disabled { opacity: 0.5; }
-.group-row { border: 1px solid rgb(var(--line)); border-radius: 10px; background: rgb(var(--surface-2)); padding: 0.7rem 0.8rem; }
+.group-row { border: 1px solid #2a3140; border-radius: 10px; background: #11151c; padding: 0.7rem 0.8rem; }
 .group-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
-.num-chip { background: rgb(var(--success-bg)); color: rgb(var(--success)); font-size: 0.75rem; font-weight: 700; padding: 0.25rem 0.5rem; border-radius: 6px; border: none; cursor: pointer; }
-.num-chip:hover { background: rgb(var(--danger-bg)); color: rgb(var(--danger-text)); }
+.num-chip { background: #064e3b; color: #6ee7b7; font-size: 0.75rem; font-weight: 700; padding: 0.25rem 0.5rem; border-radius: 6px; border: none; cursor: pointer; }
+.num-chip:hover { background: #7f1d1d; color: #fecaca; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-th, td { text-align: left; padding: 0.5rem 0.45rem; border-bottom: 1px solid rgb(var(--line)); }
-th { color: rgb(var(--muted)); font-weight: 600; }
-.num { color: rgb(var(--gold)); font-weight: 700; white-space: nowrap; }
-.muted { color: rgb(var(--muted)); }
-.error { color: rgb(var(--danger-text)); font-size: 0.85rem; margin: 0; }
-.ok { color: rgb(var(--success)); font-size: 0.85rem; margin: 0; }
+th, td { text-align: left; padding: 0.5rem 0.45rem; border-bottom: 1px solid #1f2937; }
+th { color: #9ca3af; font-weight: 600; }
+.num { color: #f5a623; font-weight: 700; white-space: nowrap; }
+.muted { color: #9ca3af; }
+.error { color: #fecaca; font-size: 0.85rem; margin: 0; }
+.ok { color: #86efac; font-size: 0.85rem; margin: 0; }
 @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
 </style>

@@ -1,16 +1,16 @@
 <template>
   <div>
     <div class="flex items-center justify-between text-xs mb-1.5">
-      <span class="text-content/70">{{ soldCount.toLocaleString() }} {{ t.sold }}</span>
+      <span class="text-white/70">{{ soldCount.toLocaleString() }} {{ t.sold }}</span>
       <span class="text-forest font-semibold">{{ percent }}% {{ t.filled }}</span>
     </div>
-    <div class="h-1.5 rounded-full bg-content/10 overflow-hidden">
+    <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
       <div
-        class="h-full rounded-full bg-progress transition-all duration-500"
+        class="h-full rounded-full bg-gradient-to-r from-forest to-emerald-400 transition-all duration-500"
         :style="{ width: `${percent}%` }"
       />
     </div>
-    <p v-if="showRemaining" class="text-[11px] text-content/45 mt-1.5">
+    <p v-if="showRemaining" class="text-[11px] text-white/45 mt-1.5">
       {{ remaining.toLocaleString() }} {{ t.remainingTickets }}
     </p>
   </div>

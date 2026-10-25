@@ -7,19 +7,8 @@ import {
 
 const THEME_KEY = 'gfj_theme'
 
-export function applyTheme(theme = store.theme) {
-  if (typeof document === 'undefined') return
-  const next = theme === 'dark' ? 'dark' : 'light'
-  const root = document.documentElement
-  root.dataset.theme = next
-  root.classList.toggle('dark', next === 'dark')
-  root.style.colorScheme = next
-  const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', next === 'dark' ? '#12100E' : '#F7F3EB')
-}
-
 export const store = reactive({
-  theme: localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light',
+  theme: localStorage.getItem(THEME_KEY) || 'dark',
   brandName: 'Digital Lottery',
   banks: defaultBanks.map((b) => ({ ...b })),
   phone: '',
@@ -303,7 +292,6 @@ export function totalPrice() {
 export function toggleTheme() {
   store.theme = store.theme === 'dark' ? 'light' : 'dark'
   localStorage.setItem(THEME_KEY, store.theme)
-  applyTheme(store.theme)
 }
 
 export function setQuantity(q) {

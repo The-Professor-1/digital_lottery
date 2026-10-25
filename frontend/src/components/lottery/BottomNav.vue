@@ -3,7 +3,7 @@
     class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-phone z-40 px-3 pb-3 pt-1 pointer-events-none"
   >
     <div
-      class="pointer-events-auto flex items-stretch justify-around bg-surface/95 border border-line rounded-2xl backdrop-blur-xl px-2 py-1.5 shadow-soft"
+      class="pointer-events-auto flex items-stretch justify-around bg-ink-100/95 border border-white/10 rounded-2xl backdrop-blur-md px-2 py-1.5 shadow-lg"
     >
       <button
         v-for="item in items"
@@ -13,7 +13,7 @@
         :class="
           isActive(item.to)
             ? 'text-gold bg-gold/10 shadow-glow-sm border border-gold/40'
-            : 'text-content/60 border border-transparent'
+            : 'text-white/45 border border-transparent'
         "
         @click="onTab(item)"
       >

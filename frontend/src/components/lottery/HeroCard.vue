@@ -1,6 +1,6 @@
 <template>
   <article
-    class="rounded-card overflow-hidden bg-hero border border-forest/20"
+    class="rounded-card overflow-hidden bg-gradient-to-b from-forest-dim via-forest-deep to-ink-100 border border-forest/20"
   >
     <!-- Draw / final minute takeover -->
     <WinnerReveal v-if="showDrawUi" :ends-at="raffle.endsAt || 0" />
@@ -8,38 +8,27 @@
     <template v-else>
       <button type="button" class="block w-full text-left" @click="$emit('open')">
         <div
-          class="relative min-h-[160px] px-4 py-5 flex flex-col items-center justify-center text-center bg-transparent"
+          class="relative min-h-[200px] px-5 py-8 flex flex-col items-center justify-center text-center bg-gradient-to-br from-ink-200 via-forest-deep to-ink-100"
         >
           <div
             class="absolute inset-0 opacity-30 pointer-events-none"
-            style="background: radial-gradient(ellipse at 50% 0%, rgb(var(--gold) / 0.18), transparent 55%)"
+            style="background: radial-gradient(ellipse at 50% 0%, rgba(212,175,55,0.35), transparent 55%)"
           />
           <p class="relative text-gold text-xs font-semibold tracking-[0.18em] uppercase">
             {{ raffle.heroTitle || store.brandName }}
           </p>
-          <div class="relative mt-3 w-full max-w-sm">
+          <div class="relative mt-4 w-full max-w-sm">
             <PrizeList
               :prizes="raffle.prizes || []"
               :prize1st="raffle.prize1st"
               :prize2nd="raffle.prize2nd"
               :prize3rd="raffle.prize3rd"
-              compact
             />
           </div>
         </div>
       </button>
 
       <div class="px-4 pb-4 space-y-3 pt-3">
-        <div class="flex items-center gap-3">
-          <div class="flex items-center gap-1.5 text-content/70 text-sm">
-            <Users :size="16" />
-            <span>{{ raffle.participants }}</span>
-          </div>
-          <button type="button" class="btn-gold flex-1 py-3 text-sm" @click="$emit('buy')">
-            {{ t.buyTicket }}
-          </button>
-        </div>
-
         <!-- Same slot: date countdown OR display name from admin -->
         <CountdownTimer
           v-if="showCountdown"
@@ -47,7 +36,7 @@
         />
         <div
           v-else
-          class="rounded-2xl bg-forest-panel border border-forest/30 p-4 text-center"
+          class="rounded-2xl bg-gradient-to-b from-forest-dim to-forest-deep border border-forest/30 p-4 text-center"
         >
           <h2 class="text-gold text-xl sm:text-2xl font-extrabold leading-snug tracking-tight">
             {{ raffle.displayName || raffle.name || store.brandName }}
@@ -55,6 +44,16 @@
         </div>
 
         <TicketProgress :sold-count="raffle.soldCount" :total-tickets="raffle.totalTickets" />
+
+        <div class="flex items-center gap-3 pt-1">
+          <div class="flex items-center gap-1.5 text-white/70 text-sm">
+            <Users :size="16" />
+            <span>{{ raffle.participants }}</span>
+          </div>
+          <button type="button" class="btn-gold flex-1 py-3 text-sm" @click="$emit('buy')">
+            {{ t.buyTicket }}
+          </button>
+        </div>
       </div>
     </template>
   </article>
