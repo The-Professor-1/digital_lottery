@@ -74,7 +74,7 @@ function getToken() {
   return urlParams.get('token') || localStorage.getItem('auth_token')
 }
 
-function setToken(token) {
+export function setToken(token) {
   localStorage.setItem('auth_token', token)
 }
 

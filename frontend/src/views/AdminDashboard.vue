@@ -43,6 +43,10 @@
     </div>
     <div v-if="message" class="banner ok">{{ message }}</div>
     <div v-if="error" class="banner error">{{ error }}</div>
+    <div v-if="loggedIn && pendingCount && activeTab !== 'receipts'" class="banner notice">
+      <strong>{{ pendingCount }}</strong> receipt{{ pendingCount === 1 ? '' : 's' }} waiting for review.
+      <button type="button" class="linkish" @click="reviewReceipts">Review receipts</button>
+    </div>
 
     <nav v-if="loggedIn" class="tabs">
       <button
@@ -53,6 +57,7 @@
         @click="switchTab(tab.id)"
       >
         {{ tab.label }}
+        <span v-if="tab.id === 'receipts' && pendingCount" class="tab-count">{{ pendingCount }}</span>
       </button>
     </nav>
 
@@ -280,12 +285,13 @@
             <strong>{{ p.full_name }}</strong>
             <div class="muted">{{ p.phone }} · {{ p.created_at }}</div>
             <div v-if="p.lottery_item_name" class="muted">Lottery: {{ p.lottery_item_name }}</div>
+            <div v-if="p.lottery_round" class="muted">Round: {{ p.lottery_round }}</div>
             <div>Numbers: <b>{{ (p.numbers || []).map(n => String(n).padStart(3,'0')).join(', ') }}</b></div>
             <div>{{ formatMoney(p.amount) }} Birr · {{ p.bank_name }} {{ p.bank_account }}</div>
           </div>
           <span class="badge" :class="p.status">{{ p.status }}</span>
         </div>
-        <a v-if="p.receipt_image_url" :href="p.receipt_image_url" target="_blank" class="receipt-link">Open receipt image</a>
+        <a v-if="p.receipt_image_url" :href="p.receipt_image_url" target="_blank" rel="noopener" class="receipt-open">Open receipt image</a>
         <pre v-if="p.receipt_sms" class="sms-box">{{ p.receipt_sms }}</pre>
         <div v-if="p.transaction_ref" class="muted">Ref: {{ p.transaction_ref }} · {{ p.payment_provider }}</div>
         <div v-if="p.status === 'pending'" class="actions">
@@ -685,6 +691,7 @@ export default {
       revenueCount: 0,
       pendingCount: 0,
       verifiedCount: 0,
+      receiptPollTimer: null,
       winnerNumber: '',
       winnerMessage: '',
       manualWinner1st: '',
@@ -780,6 +787,10 @@ export default {
     document.title = this.isMain ? 'Lottery Admin' : 'Admin View'
     this.init()
     initPush()
+    this.receiptPollTimer = setInterval(this.pollPendingReceipts, 15000)
+  },
+  beforeUnmount() {
+    if (this.receiptPollTimer) clearInterval(this.receiptPollTimer)
   },
   methods: {
     async init() {
@@ -792,6 +803,25 @@ export default {
     },
     formatMoney(n) {
       return Number(n || 0).toLocaleString('en-US')
+    },
+    reviewReceipts() {
+      this.switchTab('receipts')
+    },
+    async pollPendingReceipts() {
+      if (!this.loggedIn) return
+      try {
+        const data = await getLotteryPurchasesAdmin({
+          status: 'pending',
+          period: 'all',
+          revenue_period: this.revenuePeriod,
+        })
+        const nextCount = data.pending_count || 0
+        const grew = nextCount > this.pendingCount
+        this.pendingCount = nextCount
+        if (grew && this.activeTab === 'receipts') await this.loadPurchases()
+      } catch (e) {
+        // Keep the last known count; a transient poll failure is not actionable.
+      }
     },
     switchTab(id) {
       this.activeTab = id
@@ -1448,6 +1478,8 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 .banner { padding: 0.75rem 1rem; border-radius: 10px; margin-bottom: 1rem; font-size: 0.9rem; }
 .banner.ok { background: #052e1a; border: 1px solid #1e8e5a; color: #86efac; }
 .banner.error { background: #3f1515; border: 1px solid #7f1d1d; color: #fecaca; }
+.banner.notice { background: #1a1408; border: 1px solid #f5a623; color: #fde68a; }
+.tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.35rem; height: 1.35rem; margin-left: 0.4rem; padding: 0 0.3rem; border-radius: 999px; background: #dc2626; color: #fff; font-size: 0.72rem; font-weight: 700; }
 .linkish { background: none; border: none; color: #f5a623; text-decoration: underline; cursor: pointer; }
 .modal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex;
@@ -1468,6 +1500,13 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 .tombstone { opacity: 0.85; border-style: dashed; }
 .subhead { margin: 1.25rem 0 0.5rem; font-size: 1rem; color: #cbd5e1; }
 .receipt-link { color: #f5a623; font-size: 0.85rem; }
+.receipt-open {
+  display: flex; width: 100%; align-items: center; justify-content: center;
+  margin-top: 0.75rem; padding: 0.8rem 1rem; border-radius: 10px;
+  background: #1a1f2a; border: 1px solid #4b5563; color: #f5a623;
+  font-size: 0.95rem; font-weight: 700; text-decoration: none;
+}
+.receipt-open:hover { border-color: #f5a623; background: #221b0b; }
 .sms-box {
   margin-top: 0.5rem;
   padding: 0.65rem 0.75rem;

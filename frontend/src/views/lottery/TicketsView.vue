@@ -68,7 +68,7 @@
             #{{ n }}
           </span>
         </div>
-        <p class="text-gold font-semibold mt-2 text-sm">{{ formatBirr(ticket.amount) }}</p>
+        <p class="text-gold font-semibold mt-2 text-sm">{{ formatBirr(ticket.amount, t.birr) }}</p>
       </article>
     </div>
 

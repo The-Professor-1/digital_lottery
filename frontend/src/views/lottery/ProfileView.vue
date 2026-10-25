@@ -21,7 +21,7 @@
     </div>
 
     <div class="mt-auto pt-10 pb-4 text-center text-[11px] text-white/35 leading-relaxed px-2">
-      <p>© 2026 {{ store.brandName }}. All Rights Reserved.</p>
+      <p>© 2026 {{ store.brandName }}. {{ t.footer }}</p>
       <p class="mt-1">
         {{ t.designedBy }}
       </p>

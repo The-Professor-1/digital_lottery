@@ -89,6 +89,6 @@ export function padNumber(n) {
   return String(n).padStart(3, '0')
 }
 
-export function formatBirr(n) {
-  return `${Number(n).toLocaleString('en-US')} Birr`
+export function formatBirr(n, currency = 'Birr') {
+  return `${Number(n).toLocaleString('en-US')} ${currency}`
 }

@@ -11,7 +11,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
-from .auth_utils import get_user_from_token
+from .auth_utils import get_user_from_token, generate_guest_jwt_token
 from .models import (
     LotterySettings, LotteryPurchase, LotteryFailedDeposit, DeletedLotteryReceipt,
     DeletedLotteryUser, LotteryItem, LotteryHeldNumber, LotteryWinner, WebPushSubscription,
@@ -2721,9 +2721,19 @@ def _submit_screenshot_purchase(request):
     bank_name = (request.POST.get('bank_name') or '').strip()
     bank_holder = (request.POST.get('bank_holder') or '').strip()
     bank_account = (request.POST.get('bank_account') or '').strip()
+    item_name = (
+        (item.name or '') if item is not None
+        else (settings_obj.display_name or settings_obj.brand_name or '')
+    )
+    round_name = (
+        (item.hero_title or item.name or '') if item is not None
+        else (settings_obj.hero_title or settings_obj.display_name or settings_obj.brand_name or '')
+    )
     purchase = LotteryPurchase.objects.create(
         user=user,
         lottery_item=item,
+        lottery_item_name_snapshot=item_name,
+        lottery_round_snapshot=round_name,
         full_name=full_name,
         phone=phone,
         numbers=numbers,
@@ -2740,11 +2750,16 @@ def _submit_screenshot_purchase(request):
         receipt_sms='',
         status='pending',
     )
+    guest_token = generate_guest_jwt_token(user)
     if user.telegram_id:
         try:
             from telegram_bot.notifications import send_notification_sync
             nums = ', '.join(str(n).zfill(3) for n in numbers)
-            send_notification_sync(user.telegram_id, f'📥 Receipt received. Waiting for admin approval.\n\nTickets: {nums}')
+            lines = ['📥 Receipt received. Waiting for admin approval.', f'Lottery: {item_name or "—"}']
+            if round_name:
+                lines.append(f'Round: {round_name}')
+            lines.append(f'Tickets: {nums}')
+            send_notification_sync(user.telegram_id, '\n'.join(lines))
         except Exception:
             pass
     return JsonResponse({
@@ -2753,6 +2768,9 @@ def _submit_screenshot_purchase(request):
         'manual_review': True,
         'message_key': 'receiptPendingHint',
         'message': 'Receipt received. An admin will verify it shortly.',
+        'guest_token': guest_token,
+        'guest_phone': phone,
+        'guest_name': full_name,
         'purchase': purchase.to_dict(request),
     })
 

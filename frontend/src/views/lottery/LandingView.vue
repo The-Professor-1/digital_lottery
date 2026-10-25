@@ -35,7 +35,7 @@
               </div>
               <div class="text-right shrink-0">
                 <p class="text-[10px] text-white/40">{{ t.ticketPrice }}</p>
-                <p class="text-gold font-bold">{{ formatBirr(item.ticket_price) }}</p>
+                <p class="text-gold font-bold">{{ formatBirr(item.ticket_price, t.birr) }}</p>
               </div>
             </div>
 

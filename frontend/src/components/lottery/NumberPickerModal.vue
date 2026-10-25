@@ -28,7 +28,7 @@
           <span class="w-3.5 h-3.5 rounded bg-ink-300" /> {{ t.open }}
         </span>
         <span class="ml-auto text-gold font-semibold tabular-nums">
-          {{ formatBirr(totalAmount) }}
+          {{ formatBirr(totalAmount, t.birr) }}
         </span>
       </div>
 
@@ -62,7 +62,7 @@
         >
           {{
             complete
-              ? t.continueWithAmount(store.selectedNumbers.length, formatBirr(totalAmount))
+              ? t.continueWithAmount(store.selectedNumbers.length, formatBirr(totalAmount, t.value.birr))
               : t.selectAtLeastOne
           }}
         </button>

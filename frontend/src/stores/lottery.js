@@ -2,10 +2,13 @@ import { reactive } from 'vue'
 import { featuredRaffle, padNumber, banks as defaultBanks } from '../data/mock'
 import {
   getLotterySettings, getLotteryItems, getLotteryItemDetail, getLotteryMe,
-  getLotteryTickets, submitLotteryPurchase,
+  getLotteryTickets, submitLotteryPurchase, setToken,
 } from '../services/api'
 
 const THEME_KEY = 'gfj_theme'
+const GUEST_NAME_KEY = 'gfj_guest_name'
+const GUEST_PHONE_KEY = 'gfj_guest_phone'
+const GUEST_TOKEN_KEY = 'gfj_guest_token'
 
 export const store = reactive({
   theme: localStorage.getItem(THEME_KEY) || 'dark',
@@ -28,11 +31,13 @@ export const store = reactive({
   orderDone: false,
   orderVerified: false,
   submitError: '',
+  submitErrorKey: '',
   submitMessage: '',
   submitting: false,
   verifying: false,
   conflictDialog: false,
   conflictMessage: '',
+  conflictMessageKey: '',
   conflictAvailable: [],
   conflictKept: [],
   conflictPicked: [],
@@ -60,8 +65,9 @@ export function applyPublicSettings(data) {
       document.title = data.brand_name
     }
   }
-  if (store.activeItemId) {
-    // Keep the per-item raffle selected by the landing page.
+  if (store.activeItemId || store.items.length) {
+    // Keep the per-item raffle selected by the landing page. Global settings are
+    // only a fallback for installations with no lottery items.
     if (Array.isArray(data.payment_accounts) && data.payment_accounts.length) {
       store.banks = data.payment_accounts.map((a, i) => ({
         id: a.id || 'acc-' + i,
@@ -140,11 +146,11 @@ export function applyItemToRaffle(item) {
     displayName: item.display_name || item.name || store.raffle.displayName,
     heroTitle: item.hero_title || item.name || store.brandName,
     description: item.description || '',
-    image: item.image_url || store.raffle.image,
+    image: item.image_url || '',
     prizes,
-    prize1st: prizes[0]?.amount ?? store.raffle.prize1st ?? 0,
-    prize2nd: prizes[1]?.amount ?? store.raffle.prize2nd ?? 0,
-    prize3rd: prizes[2]?.amount ?? store.raffle.prize3rd ?? 0,
+    prize1st: prizes[0]?.amount ?? 0,
+    prize2nd: prizes[1]?.amount ?? 0,
+    prize3rd: prizes[2]?.amount ?? 0,
     ticketPrice: item.ticket_price ?? store.raffle.ticketPrice,
     totalTickets: item.total_tickets ?? store.raffle.totalTickets,
     soldCount: item.sold_count ?? 0,
@@ -248,6 +254,32 @@ export async function loadUserProfile() {
   }
 }
 
+export function saveGuestSession({ name, phone, token } = {}) {
+  try {
+    if (name) localStorage.setItem(GUEST_NAME_KEY, String(name))
+    if (phone) localStorage.setItem(GUEST_PHONE_KEY, String(phone).replace(/\D/g, ''))
+    if (token) {
+      localStorage.setItem(GUEST_TOKEN_KEY, String(token))
+      setToken(token)
+    }
+  } catch (e) {
+    // localStorage can be unavailable in private browsing.
+  }
+}
+
+export function restoreGuestSession() {
+  try {
+    const name = localStorage.getItem(GUEST_NAME_KEY) || ''
+    const phone = localStorage.getItem(GUEST_PHONE_KEY) || ''
+    const token = localStorage.getItem(GUEST_TOKEN_KEY) || ''
+    if (name) store.fullName = name
+    if (phone) store.phone = String(phone).replace(/\D/g, '')
+    if (token && !localStorage.getItem('auth_token')) setToken(token)
+  } catch (e) {
+    // Ignore storage failures.
+  }
+}
+
 export async function loadTicketsForPhone(phone = store.phone) {
   if (!phone) {
     store.tickets = []
@@ -339,8 +371,10 @@ export function openCheckoutFromSelect() {
   store.orderDone = false
   store.orderVerified = false
   store.submitError = ''
+  store.submitErrorKey = ''
   store.submitMessage = ''
   store.conflictDialog = false
+  store.conflictMessageKey = ''
   store.paymentProofFile = null
   store.paymentProofName = ''
   store.showCheckout = true
@@ -353,18 +387,22 @@ export function closeCheckout() {
   store.submitting = false
   store.verifying = false
   store.conflictDialog = false
+  store.submitError = ''
+  store.submitErrorKey = ''
+  store.conflictMessageKey = ''
 }
 
 export async function submitOrder() {
   store.submitError = ''
+  store.submitErrorKey = ''
   store.submitMessage = ''
   const bank = store.banks.find((b) => b.id === store.selectedBankId)
   if (!bank) {
-    store.submitError = 'Please choose a payment account'
+    store.submitErrorKey = 'chooseAccount'
     return false
   }
   if (!store.paymentProofFile) {
-    store.submitError = 'Please upload the payment screenshot'
+    store.submitErrorKey = 'uploadScreenshot'
     return false
   }
 
@@ -390,12 +428,21 @@ export async function submitOrder() {
     if (res.manual_review && !res.verified) {
       store.orderVerified = false
     }
+    const guestPhone = String(res.guest_phone || store.phone || '').replace(/\D/g, '')
+    if (guestPhone) store.phone = guestPhone
+    if (res.guest_token) {
+      saveGuestSession({
+        name: res.guest_name || store.fullName,
+        phone: guestPhone,
+        token: res.guest_token,
+      })
+    }
     if (store.activeItemId) {
       await activateItemById(store.activeItemId)
     } else {
       await loadPublicSettings()
     }
-    await loadTicketsForPhone(store.phone)
+    await loadTicketsForPhone(guestPhone)
     return true
   } catch (e) {
     const data = e.response?.data || {}
@@ -405,14 +452,26 @@ export async function submitOrder() {
       const kept = Array.isArray(data.kept)
         ? data.kept.map(Number)
         : store.selectedNumbers.filter((n) => !taken.includes(Number(n)))
-      store.conflictMessage = data.error || 'Some numbers were taken'
+      store.conflictMessage = data.error || ''
+      store.conflictMessageKey = 'numbersTakenMessage'
       store.conflictAvailable = data.available || []
       store.conflictKept = kept
       store.conflictPicked = []
       store.conflictDialog = true
       return false
     }
-    store.submitError = data.error || e.message || 'Could not submit. Try again.'
+    const errorKeys = {
+      missing_fields: 'namePhoneRequired',
+      missing_numbers: 'selectAtLeastOne',
+      missing_receipt: 'receiptRequired',
+      screenshot_required: 'receiptRequired',
+      duplicate_receipt: 'duplicateReceipt',
+    }
+    if (errorKeys[code]) {
+      store.submitErrorKey = errorKeys[code]
+    } else {
+      store.submitError = data.error || e.message || ''
+    }
     return false
   } finally {
     store.submitting = false
@@ -434,8 +493,10 @@ export function finishOrder() {
   store.paymentProofName = ''
   store.paidFromAccount = ''
   store.submitError = ''
+  store.submitErrorKey = ''
   store.submitMessage = ''
   store.conflictDialog = false
+  store.conflictMessageKey = ''
   store.conflictAvailable = []
   store.conflictKept = []
   store.conflictPicked = []

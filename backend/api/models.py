@@ -1511,6 +1511,14 @@ class LotteryPurchase(models.Model):
     lottery_item = models.ForeignKey(
         LotteryItem, on_delete=models.SET_NULL, null=True, blank=True, related_name='purchases'
     )
+    lottery_item_name_snapshot = models.CharField(
+        max_length=160, blank=True, default='',
+        help_text='Item name captured when this receipt was submitted',
+    )
+    lottery_round_snapshot = models.CharField(
+        max_length=160, blank=True, default='',
+        help_text='Round/home-page title captured when this receipt was submitted',
+    )
     full_name = models.CharField(max_length=160)
     phone = models.CharField(max_length=32, db_index=True)
     numbers = models.JSONField(default=list, help_text='Selected lottery numbers as ints')
@@ -1550,10 +1558,18 @@ class LotteryPurchase(models.Model):
         img = ''
         if self.receipt_image:
             img = _absolute_file_url(self.receipt_image, request)
+        current_item = self.lottery_item if self.lottery_item_id and self.lottery_item else None
+        item_name = self.lottery_item_name_snapshot or (current_item.name if current_item else '')
+        round_name = self.lottery_round_snapshot or (
+            (current_item.hero_title or current_item.name) if current_item else ''
+        )
         return {
             'id': self.id,
             'lottery_item_id': self.lottery_item_id,
-            'lottery_item_name': self.lottery_item.name if self.lottery_item_id and self.lottery_item else '',
+            'lottery_item_name': item_name,
+            'lottery_round': round_name,
+            'lottery_item_name_snapshot': self.lottery_item_name_snapshot or '',
+            'lottery_round_snapshot': self.lottery_round_snapshot or '',
             'full_name': self.full_name,
             'phone': self.phone,
             'numbers': self.numbers or [],

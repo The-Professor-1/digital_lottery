@@ -3,7 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { initTelegramWebApp, getInitData, getInitDataRaw } from './services/telegram'
 import { registerTelegram, updateUserPhone } from './services/api'
-import { store, loadUserProfile } from './stores/lottery'
+import { store, loadUserProfile, restoreGuestSession } from './stores/lottery'
 import './style.css'
 
 import LotteryLayout from './views/lottery/LotteryLayout.vue'
@@ -41,6 +41,8 @@ const router = createRouter({
     return { top: 0 }
   },
 })
+
+restoreGuestSession()
 
 const isTelegramApp = initTelegramWebApp()
 

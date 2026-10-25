@@ -18,6 +18,18 @@ def generate_jwt_token(user):
     return token
 
 
+def generate_guest_jwt_token(user):
+    """Long-lived token for a direct (non-Telegram) buyer who checked out by phone."""
+    payload = {
+        'user_id': user.id,
+        'telegram_id': user.telegram_id,
+        'guest': True,
+        'exp': datetime.utcnow() + timedelta(days=30),
+        'iat': datetime.utcnow(),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
 def verify_jwt_token(token):
     """Verify and decode JWT token"""
     try:

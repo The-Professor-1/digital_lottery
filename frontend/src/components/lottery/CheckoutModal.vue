@@ -12,7 +12,7 @@
           <div>
             <h2 class="text-lg font-bold text-white">{{ t.completePurchase }}</h2>
             <p class="text-sm text-white/50 mt-0.5">
-              {{ store.checkoutStep < 4 ? t.stepOf(store.checkoutStep, 4) : t.confirmStep }}
+              {{ store.checkoutStep < 3 ? t.stepOf(store.checkoutStep, 3) : t.confirmStep }}
             </p>
           </div>
           <button
@@ -27,7 +27,7 @@
 
         <div class="px-4 pb-3 flex gap-1.5">
           <div
-            v-for="s in 4"
+            v-for="s in 3"
             :key="s"
             class="h-1.5 flex-1 rounded-full transition-colors"
             :class="s <= store.checkoutStep ? 'bg-gold' : 'bg-ink-300'"
@@ -40,9 +40,9 @@
             <div class="rounded-2xl bg-ink-200 border border-white/5 p-4">
               <p class="font-semibold text-white">{{ store.raffle.displayName }}</p>
               <p class="text-sm text-white/50 mt-1">
-                {{ store.quantity }} {{ t.ticketsLabel }} × {{ formatBirr(store.raffle.ticketPrice) }}
+                {{ store.quantity }} {{ t.ticketsLabel }} × {{ formatBirr(store.raffle.ticketPrice, t.birr) }}
               </p>
-              <p class="text-gold text-2xl font-bold mt-2">{{ formatBirr(totalPrice()) }}</p>
+              <p class="text-gold text-2xl font-bold mt-2">{{ formatBirr(totalPrice(), t.birr) }}</p>
               <div class="flex flex-wrap gap-1.5 mt-3">
                 <span
                   v-for="n in store.selectedNumbers"
@@ -87,7 +87,7 @@
             </label>
           </template>
 
-          <!-- Step 2: bank only -->
+          <!-- Step 2: accounts + screenshot -->
           <template v-else-if="store.checkoutStep === 2">
             <div>
               <p class="text-sm text-white/85">{{ t.selectBank }}</p>
@@ -130,11 +130,7 @@
                 </div>
               </div>
             </button>
-          </template>
-
-          <!-- Step 3: screenshot after bank chosen -->
-          <template v-else-if="store.checkoutStep === 3">
-            <div class="rounded-2xl bg-ink-200 border border-white/5 p-3 space-y-2">
+            <div v-if="selectedBank" class="rounded-2xl bg-ink-200 border border-white/5 p-3 space-y-2">
               <p class="text-xs text-white/45">{{ t.payingTo }}</p>
               <p class="text-sm text-white font-semibold">{{ selectedBank?.name }}</p>
               <p v-if="selectedBank?.holder" class="text-xs text-white/50">{{ selectedBank.holder }}</p>
@@ -151,7 +147,7 @@
                   {{ copiedId === 'selected' ? t.copied : t.copy }}
                 </button>
               </div>
-              <p class="text-xs text-gold mt-1">{{ formatBirr(totalPrice()) }}</p>
+              <p class="text-xs text-gold mt-1">{{ formatBirr(totalPrice(), t.birr) }}</p>
             </div>
 
             <div>
@@ -172,12 +168,12 @@
               </label>
             </div>
 
-            <p v-if="store.submitError" class="text-sm text-red-300 leading-relaxed whitespace-pre-wrap">
-              {{ store.submitError }}
+            <p v-if="store.submitError || store.submitErrorKey" class="text-sm text-red-300 leading-relaxed whitespace-pre-wrap">
+              {{ store.submitErrorKey ? t[store.submitErrorKey] : store.submitError }}
             </p>
           </template>
 
-          <!-- Step 4: result -->
+          <!-- Step 3: result -->
           <template v-else>
             <div class="text-center py-8 space-y-3">
               <div
@@ -195,7 +191,7 @@
                 {{ store.orderVerified ? t.paymentVerified : t.receiptPendingTitle }}
               </h3>
               <p class="text-sm text-white/80 px-4 leading-relaxed">
-                {{ store.submitMessage || (store.orderVerified ? t.paymentVerifiedHint : t.receiptPendingHint) }}
+                {{ store.orderVerified ? t.paymentVerifiedHint : t.receiptPendingHint }}
               </p>
             </div>
           </template>
@@ -216,6 +212,7 @@
             <button
               type="button"
               class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white text-sm font-semibold"
+              :disabled="store.verifying"
               @click="store.checkoutStep = 1"
             >
               {{ t.back }}
@@ -223,28 +220,10 @@
             <button
               type="button"
               class="btn-green flex-[1.4] py-3.5 text-sm"
-              :disabled="!store.selectedBankId"
-              @click="store.checkoutStep = 3"
-            >
-              {{ t.continue }} &gt;
-            </button>
-          </template>
-          <template v-else-if="store.checkoutStep === 3">
-            <button
-              type="button"
-              class="flex-1 py-3.5 rounded-2xl border border-white/20 text-white text-sm font-semibold"
-              :disabled="store.verifying"
-              @click="store.checkoutStep = 2"
-            >
-              {{ t.back }}
-            </button>
-            <button
-              type="button"
-              class="btn-green flex-[1.4] py-3.5 text-sm"
-              :disabled="store.verifying || !store.paymentProofFile"
+              :disabled="store.verifying || !store.selectedBankId || !store.paymentProofFile"
               @click="onSubmit"
             >
-              {{ store.verifying ? t.checking : t.continue + ' >' }}
+              {{ store.verifying ? t.checking : t.submitOrder }}
             </button>
           </template>
           <template v-else>
@@ -275,7 +254,7 @@
       >
         <div class="w-full max-w-phone rounded-2xl bg-ink-100 border border-white/10 p-4 space-y-3 max-h-[80dvh] flex flex-col">
           <h3 class="text-base font-bold text-white">{{ t.numbersTakenTitle }}</h3>
-          <p class="text-sm text-red-300 leading-relaxed">{{ store.conflictMessage }}</p>
+          <p class="text-sm text-red-300 leading-relaxed">{{ store.conflictMessageKey ? t[store.conflictMessageKey] : store.conflictMessage }}</p>
 
           <div v-if="store.conflictKept.length" class="space-y-1.5">
             <p class="text-xs text-white/55">{{ t.keptNumbersLabel }}</p>
@@ -441,6 +420,7 @@ async function prepareReceiptImage(file) {
 async function onFile(e) {
   const original = e.target.files?.[0] || null
   store.submitError = ''
+  store.submitErrorKey = ''
   store.paymentProofFile = null
   store.paymentProofName = ''
   if (!original) return
@@ -449,6 +429,7 @@ async function onFile(e) {
     const prepared = await prepareReceiptImage(original)
     if (prepared.size > MAX_RECEIPT_BYTES) {
       store.submitError = t.value.imageTooLarge
+      store.submitErrorKey = ''
       return
     }
     store.paymentProofFile = prepared
@@ -461,7 +442,7 @@ async function onFile(e) {
 
 async function onSubmit() {
   const ok = await submitOrder()
-  if (ok) store.checkoutStep = 4
+  if (ok) store.checkoutStep = 3
 }
 
 function toggleConflictPick(n) {
@@ -484,7 +465,7 @@ async function applyConflictAndRetry() {
   store.conflictKept = []
   store.conflictMessage = ''
   const ok = await submitOrder()
-  if (ok) store.checkoutStep = 4
+  if (ok) store.checkoutStep = 3
 }
 
 function onDone() {

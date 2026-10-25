@@ -168,9 +168,12 @@ def notify_admins_new_pending(purchase):
         purchase.user.username if purchase.user_id and purchase.user else ''
     )
     phone = (purchase.phone or '').strip()
-    item_name = ''
-    if purchase.lottery_item_id and purchase.lottery_item:
+    item_name = (getattr(purchase, 'lottery_item_name_snapshot', '') or '').strip()
+    if not item_name and purchase.lottery_item_id and purchase.lottery_item:
         item_name = purchase.lottery_item.name or ''
+    round_name = (getattr(purchase, 'lottery_round_snapshot', '') or '').strip()
+    if not round_name and purchase.lottery_item_id and purchase.lottery_item:
+        round_name = purchase.lottery_item.hero_title or purchase.lottery_item.name or ''
     amount = float(purchase.amount or 0)
 
     parts = ['New pending receipt']
@@ -180,6 +183,8 @@ def notify_admins_new_pending(purchase):
         parts.append(phone)
     if item_name:
         parts.append(item_name)
+    if round_name:
+        parts.append(f'Round: {round_name}')
     if amount:
         parts.append(f'{amount:,.0f} Birr')
     body = ' · '.join(parts)

@@ -24,7 +24,7 @@
         </button>
         <div
           v-if="langOpen"
-          class="absolute right-0 mt-1 w-36 rounded-xl bg-ink-200 border border-white/10 shadow-lg overflow-hidden z-40"
+          class="absolute right-0 mt-1 w-40 rounded-xl bg-ink-200 border border-white/10 shadow-lg overflow-hidden z-40"
         >
           <button
             v-for="opt in langOptions"

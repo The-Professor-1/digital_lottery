@@ -72,7 +72,7 @@
           </div>
           <div>
             <p class="text-white text-sm font-bold">{{ row.label }}</p>
-            <p class="text-lime-300/80 text-xs">{{ formatAmount(row.prize) }} ብር</p>
+            <p class="text-lime-300/80 text-xs">{{ formatAmount(row.prize) }} {{ t.birr }}</p>
           </div>
         </div>
       </div>
@@ -94,7 +94,7 @@
         </div>
         <div class="min-w-0 text-left">
           <p class="text-white font-bold">{{ row.label }}</p>
-          <p class="text-lime-300/90 text-sm">{{ formatAmount(row.prize) }} ብር</p>
+          <p class="text-lime-300/90 text-sm">{{ formatAmount(row.prize) }} {{ t.birr }}</p>
         </div>
       </div>
 
@@ -293,7 +293,7 @@ async function runDrawAndReveal() {
     const row = rows[i]
     revealLabel.value = row.label
     revealNumber.value = row.number
-    revealPrizeText.value = `${formatAmount(row.prize)} ብር`
+    revealPrizeText.value = `${formatAmount(row.prize)} ${t.value.birr}`
     // keep prior reveals in the list below (not including current until next)
     if (i > 0) {
       revealedRows.value = rows.slice(0, i)

@@ -51,7 +51,7 @@
     <div class="flex items-center justify-between gap-3 py-1">
       <div>
         <p class="text-sm text-white/50">{{ t.ticketPrice }}</p>
-        <p class="text-gold text-xl font-bold">{{ formatBirr(raffle.ticketPrice) }}</p>
+        <p class="text-gold text-xl font-bold">{{ formatBirr(raffle.ticketPrice, t.birr) }}</p>
       </div>
       <div class="flex items-center gap-2">
         <button
