@@ -94,28 +94,56 @@ def winner_dm_text(user, place, number, amount):
     )
 
 
-def winner_announcement_text(user, lottery_label, name, phone, number, prize_name, message=''):
+def _place_text(lang, place):
+    raw = str(place or '').strip()
+    normalized = raw.lower()
+    if normalized in ('1', '1st', 'first'):
+        return '1st' if lang == 'en' else '1ኛ'
+    if normalized in ('2', '2nd', 'second'):
+        return '2nd' if lang == 'en' else '2ኛ'
+    if normalized in ('3', '3rd', 'third'):
+        return '3rd' if lang == 'en' else '3ኛ'
+    return raw
+
+
+def _winner_lines(winners):
+    lines = []
+    for index, winner in enumerate(winners or [], 1):
+        order = winner.get('order') or index
+        prize = winner.get('prize') or 'Prize'
+        number = _number(winner.get('number'))
+        name = winner.get('name') or ''
+        line = f'{order}. {prize} — #{number} — {name}'.rstrip(' —')
+        lines.append(line)
+    return lines
+
+
+def winner_announcement_text(user, lottery_label, place_label, number, prize_name, other_winners=None, message=''):
     lang = user_language(user)
+    place_text = _place_text(lang, place_label)
     if lang == 'en':
-        text = (
-            '🏆 Winner announced!\n\n'
-            f'Lottery: {lottery_label}\n'
-            f'Name: {name or "—"}\n'
-            f'Phone: {phone or "—"}\n'
-            f'Winning ticket: #{_number(number)}\n'
-            f'Prize: {prize_name or "—"}'
-        )
-        if message:
-            text += f'\n\n{message}'
-        return text
-    text = (
-        '🏆 አሸናፊ ተገለጸ!\n\n'
-        f'ሎተሪ: {lottery_label}\n'
-        f'ስም: {name or "—"}\n'
-        f'ስልክ: {phone or "—"}\n'
-        f'አሸናፊ ቲኬት: #{_number(number)}\n'
-        f'ዕጣ: {prize_name or "—"}'
-    )
+        title = f'🏆 You Won {place_text} Prize!' if place_text else '🏆 You Won Prize!'
+        lines = [
+            title,
+            '',
+            f'Lottery: {lottery_label or "—"}',
+            f'Winning ticket: #{_number(number)}',
+            f'Prize: {prize_name or "—"}',
+        ]
+        if other_winners:
+            lines.extend(['', 'Other winners:', *_winner_lines(other_winners)])
+    else:
+        title = f'🏆 {place_text} ዕጣ ደርሶታል!' if place_text else '🏆 ዕጣ ደርሶታል!'
+        lines = [
+            title,
+            '',
+            f'ሎተሪ: {lottery_label or "—"}',
+            f'አሸናፊ ቲኬት: #{_number(number)}',
+            f'ዕጣ: {prize_name or "—"}',
+        ]
+        if other_winners:
+            lines.extend(['', 'ሌሎች አሸናፊዎች:', *_winner_lines(other_winners)])
+    text = '\n'.join(lines)
     if message:
         text += f'\n\n{message}'
     return text
@@ -149,11 +177,7 @@ def lottery_results_text(user, lottery_label, winners, message=''):
         title = '🎉 የዕጣ ውጤት ወጥቷል!'
         lottery_label_text = f'ሎተሪ: {lottery_label or "—"}'
     lines = [title, '', lottery_label_text]
-    for index, winner in enumerate(winners or [], 1):
-        prize = winner.get('prize') or 'Prize'
-        number = _number(winner.get('number'))
-        name = winner.get('name') or ''
-        lines.append(f'{index}. {prize} — #{number} — {name}'.rstrip(' —'))
+    lines.extend(_winner_lines(winners))
     text = '\n'.join(lines)
     if message:
         text += f'\n\n{message}'

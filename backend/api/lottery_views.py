@@ -2794,6 +2794,7 @@ def lottery_announce_item_winner(request):
         prize_display = prize_title or 'Prize'
         if prize_amount > 0 and 'Birr' not in prize_display:
             prize_display = f'{prize_display} — {prize_amount:,} Birr'
+        prize_place = str((prize.get('place') if prize else '') or (index + 1)).strip()
 
         phone = _digits(entry.get('phone'))
         number = str(entry.get('winning_ticket') or '').strip()
@@ -2821,6 +2822,7 @@ def lottery_announce_item_winner(request):
                 'phone': phone,
                 'number': number,
                 'prize_display': prize_display,
+                'place_label': prize_place,
                 'user': walkin_user,
             })
             continue
@@ -2849,6 +2851,7 @@ def lottery_announce_item_winner(request):
             'phone': phone,
             'number': number,
             'prize_display': prize_display,
+            'place_label': prize_place,
             'user': purchase.user if purchase.user_id else None,
         })
 
@@ -2878,39 +2881,44 @@ def lottery_announce_item_winner(request):
     settings_obj.winner_announced_at = now
     settings_obj.save(update_fields=['winner_number', 'winner_message', 'winner_announced_at'])
 
+    summary = [
+        {
+            'order': index + 1,
+            'name': row['name'],
+            'number': row['number'],
+            'prize': row['prize_display'],
+        }
+        for index, row in enumerate(prepared)
+    ]
+
     notified = 0
     if notify_users:
         try:
             from telegram_bot.notifications import send_notification_sync
             from telegram_bot.receipt_messages import lottery_results_text, winner_announcement_text
             specific_user_ids = set()
-            for row in prepared:
+            for index, row in enumerate(prepared):
                 user = row['user']
                 if not (user and user.telegram_id):
                     continue
+                other_winners = [
+                    winner for other_index, winner in enumerate(summary) if other_index != index
+                ]
                 send_notification_sync(
                     user.telegram_id,
                     winner_announcement_text(
                         user,
                         lottery_label,
-                        row['name'],
-                        row['phone'],
+                        row['place_label'],
                         row['number'],
                         row['prize_display'],
+                        other_winners,
                         message,
                     ),
                 )
                 specific_user_ids.add(user.id)
                 notified += 1
 
-            summary = [
-                {
-                    'name': row['name'],
-                    'number': row['number'],
-                    'prize': row['prize_display'],
-                }
-                for row in prepared
-            ]
             seen_users = set(specific_user_ids)
             for purchase in engaged:
                 if not (purchase.user_id and purchase.user and purchase.user.telegram_id):
