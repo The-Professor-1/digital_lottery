@@ -776,6 +776,7 @@ def lottery_settings_admin(request):
             data = request.POST.dict()
             accounts_raw = data.get('payment_accounts')
             blocked_raw = data.get('admin_blocked_numbers')
+            landing_raw = data.get('landing_texts')
         else:
             try:
                 data = json.loads(request.body) if request.body else {}
@@ -783,6 +784,7 @@ def lottery_settings_admin(request):
                 data = {}
             accounts_raw = data.get('payment_accounts')
             blocked_raw = data.get('admin_blocked_numbers')
+            landing_raw = data.get('landing_texts')
 
         str_fields = [
             'brand_name', 'car_name', 'car_color', 'car_image_url', 'display_name',
@@ -850,6 +852,29 @@ def lottery_settings_admin(request):
             settings_obj.countdown_seconds,
         )
         mode_changed = old_mode != (settings_obj.draw_mode or LotterySettings.DRAW_MODE_DATE)
+
+        if landing_raw is not None:
+            if isinstance(landing_raw, str):
+                try:
+                    landing_raw = json.loads(landing_raw)
+                except (json.JSONDecodeError, ValueError):
+                    landing_raw = {}
+            if isinstance(landing_raw, dict):
+                allowed_landing_keys = (
+                    'lotteries', 'available', 'ticketPrice', 'buyTicket',
+                    'prize1Title', 'prize2Title', 'prize3Title',
+                    'prize1Place', 'prize2Place', 'prize3Place',
+                    'timeLeft', 'days', 'hours', 'minutes', 'seconds',
+                    'sold', 'remainingTickets',
+                )
+                cleaned_landing = {}
+                for key in allowed_landing_keys:
+                    if key not in landing_raw:
+                        continue
+                    value = str(landing_raw.get(key) or '').strip()[:200]
+                    if value:
+                        cleaned_landing[key] = value
+                settings_obj.landing_texts = cleaned_landing
 
         if accounts_raw is not None:
             if isinstance(accounts_raw, str):
@@ -1100,13 +1125,13 @@ def lottery_purchase_action(request, purchase_id):
 
         if purchase.user_id and purchase.user and purchase.user.telegram_id:
             nums = ', '.join(str(n).zfill(3) for n in (purchase.numbers or []))
-            msg = (
-                f'ክፍያው ልክ መሆኑ ተረጋግጧል!\n\n'
-                f'የእጣ ቁጥርዎች: {nums}\n'
-            )
             try:
                 from telegram_bot.notifications import send_notification_sync
-                send_notification_sync(purchase.user.telegram_id, msg)
+                from telegram_bot.receipt_messages import receipt_verified_text
+                send_notification_sync(
+                    purchase.user.telegram_id,
+                    receipt_verified_text(purchase.user, nums),
+                )
             except Exception:
                 pass
 
@@ -1114,12 +1139,13 @@ def lottery_purchase_action(request, purchase_id):
 
     if action == 'reject':
         if purchase.user_id and purchase.user and purchase.user.telegram_id:
-            msg = '❌ የክፍያ ጥያቄዎ ተቀባይነት አላገኘም እባክዎ እንደገና በትክክል ይሞክሩ.'
-            if note:
-                msg += f'\n\nNote: {note}'
             try:
                 from telegram_bot.notifications import send_notification_sync
-                send_notification_sync(purchase.user.telegram_id, msg)
+                from telegram_bot.receipt_messages import receipt_rejected_text
+                send_notification_sync(
+                    purchase.user.telegram_id,
+                    receipt_rejected_text(purchase.user, note),
+                )
             except Exception:
                 pass
 
@@ -1591,12 +1617,10 @@ def lottery_announce_winner(request):
     settings_obj.winner_announced_at = timezone.now()
     settings_obj.save(reset_timer=False)
 
-    announce = message or f'🎉 አሸናፊዎች ታውቀዋል! አሸናፊ ቁጥር: {winner_number}'
-    full_msg = f'{announce}\n\nአሸናፊ ቁጥር: {str(winner_number).zfill(3)}'
-
     notified = 0
     try:
         from telegram_bot.notifications import send_notification_sync
+        from telegram_bot.receipt_messages import legacy_announcement_text
         try:
             win_int = int(winner_number)
         except ValueError:
@@ -1610,10 +1634,11 @@ def lottery_announce_winner(request):
                     nums.append(int(n))
                 except (TypeError, ValueError):
                     pass
-            if win_int is not None and win_int in nums:
-                send_notification_sync(p.user.telegram_id, f'🏆 እንኳን ደስ አለዎት!\n\n{full_msg}')
-            else:
-                send_notification_sync(p.user.telegram_id, full_msg)
+            is_holder = win_int is not None and win_int in nums
+            send_notification_sync(
+                p.user.telegram_id,
+                legacy_announcement_text(p.user, winner_number, is_holder=is_holder, message=message),
+            )
             notified += 1
     except Exception:
         pass
@@ -1822,9 +1847,10 @@ def lottery_failed_deposit_action(request, failed_id):
         nums = ', '.join(str(n).zfill(3) for n in numbers)
         try:
             from telegram_bot.notifications import send_notification_sync
+            from telegram_bot.receipt_messages import receipt_verified_text
             send_notification_sync(
                 failed.user.telegram_id,
-                f'✅ ክፍያው ልክ መሆኑ ተረጋግጧል!\n\nየእጣ ቁጥርዎች: {nums}',
+                receipt_verified_text(failed.user, nums),
             )
         except Exception:
             pass
@@ -1859,14 +1885,15 @@ def _draw_response(settings_obj, notified=0, already_drawn=False):
 def _send_winner_dms(settings_obj):
     """Send Telegram DMs to holders of winning numbers. Returns count notified."""
     prizes = [
-        (1, settings_obj.winner_1st, int(settings_obj.prize_1st or 0), '1ኛ እጣ'),
-        (2, settings_obj.winner_2nd, int(settings_obj.prize_2nd or 0), '2ኛ እጣ'),
-        (3, settings_obj.winner_3rd, int(settings_obj.prize_3rd or 0), '3ኛ እጣ'),
+        (1, settings_obj.winner_1st, int(settings_obj.prize_1st or 0)),
+        (2, settings_obj.winner_2nd, int(settings_obj.prize_2nd or 0)),
+        (3, settings_obj.winner_3rd, int(settings_obj.prize_3rd or 0)),
     ]
     notified = 0
     try:
         from telegram_bot.notifications import send_notification_sync
-        for place, win_num, prize_amt, place_label in prizes:
+        from telegram_bot.receipt_messages import winner_dm_text
+        for place, win_num, prize_amt in prizes:
             if not win_num:
                 continue
             holders = LotteryPurchase.objects.filter(status='verified').select_related('user')
@@ -1881,13 +1908,10 @@ def _send_winner_dms(settings_obj):
                     continue
                 if not (purchase.user and purchase.user.telegram_id):
                     continue
-                msg = (
-                    f'🏆 እንኳን ደስ አለዎት!\n\n'
-                    f'{place}ኛ እጣ አሸንፈዋል!\n'
-                    f'አሸናፊ ቁጥር: {str(win_num).zfill(3)}\n'
-                    f'ገንዘብ: {prize_amt:,} ብር\n\n'
+                ok, _ = send_notification_sync(
+                    purchase.user.telegram_id,
+                    winner_dm_text(purchase.user, place, win_num, prize_amt),
                 )
-                ok, _ = send_notification_sync(purchase.user.telegram_id, msg)
                 if ok:
                     notified += 1
     except Exception as e:
@@ -2300,6 +2324,7 @@ def lottery_items_public(request):
         'brand_name': settings_obj.brand_name,
         'display_name': settings_obj.display_name,
         'payment_accounts': settings_obj.payment_accounts or [],
+        'landing_texts': settings_obj.landing_texts or {},
         'items': [it.to_public_dict(request) for it in items],
         'winners': [w.to_dict() for w in winners],
     })
@@ -2315,6 +2340,7 @@ def lottery_item_detail_public(request, item_id):
     data['brand_name'] = settings_obj.brand_name
     data['display_name'] = settings_obj.display_name
     data['payment_accounts'] = settings_obj.payment_accounts or []
+    data['landing_texts'] = settings_obj.landing_texts or {}
     data['winners'] = [
         w.to_dict()
         for w in item.winners.select_related('lottery_item').order_by('-announced_at', '-id')[:30]
@@ -2597,6 +2623,7 @@ def lottery_announce_item_winner(request):
     if notify_users:
         try:
             from telegram_bot.notifications import send_notification_sync
+            from telegram_bot.receipt_messages import winner_announcement_text
             seen = set()
             for purchase in pool:
                 if not (purchase.user and purchase.user.telegram_id):
@@ -2605,17 +2632,12 @@ def lottery_announce_item_winner(request):
                 if tid in seen:
                     continue
                 seen.add(tid)
-                text = (
-                    '🏆 Winner announced!\n\n'
-                    f'Lottery: {lottery_label}\n'
-                    f'Name: {name}\n'
-                    f'Phone: {phone}\n'
-                    f'Winning ticket: #{str(number).zfill(3)}\n'
-                    f'Prize: {prize_name}'
+                send_notification_sync(
+                    tid,
+                    winner_announcement_text(
+                        purchase.user, lottery_label, name, phone, number, prize_name, message,
+                    ),
                 )
-                if message:
-                    text += f'\n\n{message}'
-                send_notification_sync(tid, text)
                 notified += 1
         except Exception:
             pass
@@ -2754,12 +2776,12 @@ def _submit_screenshot_purchase(request):
     if user.telegram_id:
         try:
             from telegram_bot.notifications import send_notification_sync
+            from telegram_bot.receipt_messages import receipt_received_text
             nums = ', '.join(str(n).zfill(3) for n in numbers)
-            lines = ['📥 Receipt received. Waiting for admin approval.', f'Lottery: {item_name or "—"}']
-            if round_name:
-                lines.append(f'Round: {round_name}')
-            lines.append(f'Tickets: {nums}')
-            send_notification_sync(user.telegram_id, '\n'.join(lines))
+            send_notification_sync(
+                user.telegram_id,
+                receipt_received_text(user, nums, item_name=item_name, round_name=round_name),
+            )
         except Exception:
             pass
     return JsonResponse({

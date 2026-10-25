@@ -83,6 +83,39 @@
       </section>
 
       <section>
+        <details open>
+          <summary>Landing page text (optional overrides)</summary>
+          <p class="hint">Leave a field blank to use the selected language's default. Lottery-item prize titles override these labels when an item has prizes.</p>
+          <h3 class="subhead">Page labels</h3>
+          <div class="landing-text-grid">
+            <label>Lotteries heading <input v-model="form.landing_texts.lotteries" type="text" placeholder="Lotteries" /></label>
+            <label>Available suffix <input v-model="form.landing_texts.available" type="text" placeholder="listed" /></label>
+            <label>Ticket price label <input v-model="form.landing_texts.ticketPrice" type="text" placeholder="Ticket price" /></label>
+            <label>Buy button label <input v-model="form.landing_texts.buyTicket" type="text" placeholder="Buy Ticket" /></label>
+          </div>
+          <h3 class="subhead">Prize labels</h3>
+          <div class="landing-text-grid">
+            <label>1st prize title <input v-model="form.landing_texts.prize1Title" type="text" placeholder="1st Prize" /></label>
+            <label>1st place tag <input v-model="form.landing_texts.prize1Place" type="text" placeholder="First" /></label>
+            <label>2nd prize title <input v-model="form.landing_texts.prize2Title" type="text" placeholder="2nd Prize" /></label>
+            <label>2nd place tag <input v-model="form.landing_texts.prize2Place" type="text" placeholder="Second" /></label>
+            <label>3rd prize title <input v-model="form.landing_texts.prize3Title" type="text" placeholder="3rd Prize" /></label>
+            <label>3rd place tag <input v-model="form.landing_texts.prize3Place" type="text" placeholder="Third" /></label>
+          </div>
+          <h3 class="subhead">Countdown &amp; progress</h3>
+          <div class="landing-text-grid">
+            <label>Time left label <input v-model="form.landing_texts.timeLeft" type="text" placeholder="Time Left" /></label>
+            <label>Days <input v-model="form.landing_texts.days" type="text" placeholder="Days" /></label>
+            <label>Hours <input v-model="form.landing_texts.hours" type="text" placeholder="Hours" /></label>
+            <label>Minutes <input v-model="form.landing_texts.minutes" type="text" placeholder="Mins" /></label>
+            <label>Seconds <input v-model="form.landing_texts.seconds" type="text" placeholder="Secs" /></label>
+            <label>Sold label <input v-model="form.landing_texts.sold" type="text" placeholder="sold" /></label>
+            <label>Tickets remaining label <input v-model="form.landing_texts.remainingTickets" type="text" placeholder="tickets remaining" /></label>
+          </div>
+        </details>
+      </section>
+
+      <section>
         <h2>Telegram bot text</h2>
         <label>Bot short description (About line)
           <input v-model="form.bot_short_description" type="text" maxlength="120" placeholder="Short name shown on Telegram" />
@@ -649,6 +682,25 @@ export default {
         hero_title: '',
         bot_short_description: '',
         bot_description: '',
+        landing_texts: {
+          lotteries: '',
+          available: '',
+          ticketPrice: '',
+          buyTicket: '',
+          prize1Title: '',
+          prize2Title: '',
+          prize3Title: '',
+          prize1Place: '',
+          prize2Place: '',
+          prize3Place: '',
+          timeLeft: '',
+          days: '',
+          hours: '',
+          minutes: '',
+          seconds: '',
+          sold: '',
+          remainingTickets: '',
+        },
         prize_1st: 100000,
         prize_2nd: 50000,
         prize_3rd: 25000,
@@ -918,6 +970,7 @@ export default {
         hero_title: data.hero_title || '',
         bot_short_description: data.bot_short_description || '',
         bot_description: data.bot_description || '',
+        landing_texts: { ...(data.landing_texts || {}) },
         prize_1st: data.prize_1st ?? 100000,
         prize_2nd: data.prize_2nd ?? 50000,
         prize_3rd: data.prize_3rd ?? 25000,
@@ -1073,6 +1126,7 @@ export default {
           hero_title: this.form.hero_title,
           bot_short_description: this.form.bot_short_description || '',
           bot_description: this.form.bot_description || '',
+          landing_texts: { ...this.form.landing_texts },
           prize_1st: this.form.prize_1st,
           prize_2nd: this.form.prize_2nd,
           prize_3rd: this.form.prize_3rd,
@@ -1426,6 +1480,8 @@ input[type='text'], input[type='url'], input[type='number'], input[type='passwor
 }
 .area { resize: vertical; }
 .timer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.landing-text-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+summary { cursor: pointer; color: #f5a623; font-weight: 700; }
 @media (min-width: 640px) { .timer-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .mode-row { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.5rem; }
 .mode-option {

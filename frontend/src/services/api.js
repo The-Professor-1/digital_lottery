@@ -342,7 +342,7 @@ export async function deleteLotteryWinnerAdmin(id) {
 
 export async function getPushVapidKey() {
   const response = await api.get('/admin-dashboard/push/vapid-key/')
-  return response.data
+  return response.data?.public_key || ''
 }
 
 export async function pushSubscribe(subscription) {

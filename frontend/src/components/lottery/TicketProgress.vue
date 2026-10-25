@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="flex items-center justify-between text-xs mb-1.5">
-      <span class="text-white/70">{{ soldCount.toLocaleString() }} {{ t.sold }}</span>
+      <span class="text-white/70">{{ soldCount.toLocaleString() }} {{ landingText('sold', t.sold) }}</span>
       <span class="text-forest font-semibold">{{ percent }}% {{ t.filled }}</span>
     </div>
     <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
@@ -11,7 +11,7 @@
       />
     </div>
     <p v-if="showRemaining" class="text-[11px] text-white/45 mt-1.5">
-      {{ remaining.toLocaleString() }} {{ t.remainingTickets }}
+      {{ remaining.toLocaleString() }} {{ landingText('remainingTickets', t.remainingTickets) }}
     </p>
   </div>
 </template>
@@ -19,6 +19,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from '../../composables/useI18n'
+import { landingText } from '../../stores/lottery'
 
 const props = defineProps({
   soldCount: { type: Number, required: true },

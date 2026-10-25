@@ -2,7 +2,7 @@
   <div class="rounded-2xl bg-gradient-to-b from-forest-dim to-forest-deep border border-forest/30 p-3">
     <div v-if="showLabel" class="flex items-center gap-1.5 text-sm text-white/90 mb-2">
       <Flame :size="14" class="text-gold" />
-      <span>{{ t.remainingTime }}</span>
+      <span>{{ landingText('timeLeft', t.remainingTime) }}</span>
     </div>
     <div class="flex items-center justify-between gap-1">
       <div v-for="(unit, i) in units" :key="unit.key" class="contents">
@@ -25,6 +25,7 @@ import { computed } from 'vue'
 import { Flame } from 'lucide-vue-next'
 import { useCountdown } from '../../composables/useCountdown'
 import { useI18n } from '../../composables/useI18n'
+import { landingText } from '../../stores/lottery'
 
 const props = defineProps({
   endsAt: { type: Number, required: true },
@@ -35,9 +36,9 @@ const { t } = useI18n()
 const { days, hours, minutes, seconds } = useCountdown(() => props.endsAt)
 
 const units = computed(() => [
-  { key: 'd', value: days.value, label: t.value.days },
-  { key: 'h', value: hours.value, label: t.value.hours },
-  { key: 'm', value: minutes.value, label: t.value.minutes },
-  { key: 's', value: seconds.value, label: t.value.seconds },
+  { key: 'd', value: days.value, label: landingText('days', t.value.days) },
+  { key: 'h', value: hours.value, label: landingText('hours', t.value.hours) },
+  { key: 'm', value: minutes.value, label: landingText('minutes', t.value.minutes) },
+  { key: 's', value: seconds.value, label: landingText('seconds', t.value.seconds) },
 ])
 </script>

@@ -50,8 +50,14 @@ export const store = reactive({
   items: [],
   winners: [],
   activeItemId: null,
+  landingTexts: {},
   landingLoaded: false,
 })
+
+export function landingText(key, fallback = '') {
+  const value = store.landingTexts?.[key]
+  return typeof value === 'string' && value.trim() ? value : fallback
+}
 
 export function isTaken(n) {
   return store.takenNumbers.has(Number(n))
@@ -59,6 +65,9 @@ export function isTaken(n) {
 
 export function applyPublicSettings(data) {
   if (!data) return
+  if (data.landing_texts && typeof data.landing_texts === 'object') {
+    store.landingTexts = { ...data.landing_texts }
+  }
   if (data.brand_name) {
     store.brandName = data.brand_name
     if (typeof document !== 'undefined' && data.brand_name) {
@@ -138,6 +147,9 @@ export function applyPublicSettings(data) {
 export function applyItemToRaffle(item) {
   if (!item) return
   store.activeItemId = item.id
+  if (item.landing_texts && typeof item.landing_texts === 'object') {
+    store.landingTexts = { ...item.landing_texts }
+  }
   const prizes = Array.isArray(item.prizes) ? item.prizes : []
   store.raffle = {
     ...store.raffle,
@@ -191,6 +203,9 @@ export async function loadLanding() {
     const data = await getLotteryItems()
     store.items = Array.isArray(data.items) ? data.items : []
     store.winners = (data.winners || []).slice(0, 30)
+    if (data.landing_texts && typeof data.landing_texts === 'object') {
+      store.landingTexts = { ...data.landing_texts }
+    }
     if (data.brand_name) store.brandName = data.brand_name
     if (Array.isArray(data.payment_accounts) && data.payment_accounts.length) {
       store.banks = data.payment_accounts.map((a, i) => ({

@@ -18,8 +18,15 @@ export function isPushSupported() {
 }
 
 function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  if (!base64String || typeof base64String !== 'string') {
+    throw new Error('Push public key is missing')
+  }
+  const normalized = base64String.trim().replace(/-/g, '+').replace(/_/g, '/')
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4)
+  const base64 = normalized + padding
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+    throw new Error('Push public key is not valid base64')
+  }
   const raw = atob(base64)
   const output = new Uint8Array(raw.length)
   for (let i = 0; i < raw.length; i++) {
@@ -36,7 +43,7 @@ export async function initPush() {
   }
   pushState.supported = true
   try {
-    await navigator.serviceWorker.register('/sw.js')
+    await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
   } catch (error) {
     return pushState
   }

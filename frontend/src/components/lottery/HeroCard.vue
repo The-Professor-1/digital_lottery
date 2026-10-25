@@ -51,7 +51,7 @@
             <span>{{ raffle.participants }}</span>
           </div>
           <button type="button" class="btn-gold flex-1 py-3 text-sm" @click="$emit('buy')">
-            {{ t.buyTicket }}
+            {{ landingText('buyTicket', t.buyTicket) }}
           </button>
         </div>
       </div>
@@ -68,7 +68,7 @@ import WinnerReveal from './WinnerReveal.vue'
 import PrizeList from './PrizeList.vue'
 import { useCountdown } from '../../composables/useCountdown'
 import { useI18n } from '../../composables/useI18n'
-import { store } from '../../stores/lottery'
+import { store, landingText } from '../../stores/lottery'
 
 const props = defineProps({
   raffle: { type: Object, required: true },

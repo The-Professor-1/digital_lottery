@@ -5,9 +5,9 @@
       <div class="flex items-end justify-between gap-3">
         <div>
           <p class="text-gold text-xs font-semibold tracking-[0.18em] uppercase">{{ store.brandName }}</p>
-          <h1 class="text-2xl font-extrabold text-white mt-1">{{ t.lotteries }}</h1>
+          <h1 class="text-2xl font-extrabold text-white mt-1">{{ landingText('lotteries', t.lotteries) }}</h1>
         </div>
-        <span class="text-xs text-white/45">{{ store.items.length }} {{ t.available }}</span>
+        <span class="text-xs text-white/45">{{ store.items.length }} {{ landingText('available', t.available) }}</span>
       </div>
 
       <article
@@ -34,7 +34,7 @@
                 </p>
               </div>
               <div class="text-right shrink-0">
-                <p class="text-[10px] text-white/40">{{ t.ticketPrice }}</p>
+                <p class="text-[10px] text-white/40">{{ landingText('ticketPrice', t.ticketPrice) }}</p>
                 <p class="text-gold font-bold">{{ formatBirr(item.ticket_price, t.birr) }}</p>
               </div>
             </div>
@@ -75,7 +75,7 @@ import PrizeList from '../../components/lottery/PrizeList.vue'
 import TicketProgress from '../../components/lottery/TicketProgress.vue'
 import { useI18n } from '../../composables/useI18n'
 import { formatBirr } from '../../data/mock'
-import { store, loadLanding } from '../../stores/lottery'
+import { store, loadLanding, landingText } from '../../stores/lottery'
 
 const { t } = useI18n()
 const router = useRouter()

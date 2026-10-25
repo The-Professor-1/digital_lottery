@@ -1024,6 +1024,11 @@ class LotterySettings(models.Model):
         default='',
         help_text='Telegram bot short description / About line',
     )
+    landing_texts = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Admin overrides for landing-page labels; blank values use language defaults',
+    )
     ticket_price = models.PositiveIntegerField(default=3000)
     total_tickets = models.PositiveIntegerField(default=3500)
     sold_count = models.PositiveIntegerField(default=0)
@@ -1189,6 +1194,7 @@ class LotterySettings(models.Model):
             'display_name': self.display_name or self.brand_name or 'Digital Lottery',
             'bot_description': self.bot_description or '',
             'bot_short_description': self.bot_short_description or '',
+            'landing_texts': self.landing_texts or {},
             'ticket_price': self.ticket_price,
             'total_tickets': self.total_tickets,
             'sold_count': sold,

@@ -49,6 +49,7 @@ self.addEventListener('pushsubscriptionchange', (event) => {
     (async () => {
       try {
         const publicKey = await (await fetch('/api/admin-dashboard/push/vapid-key/')).json()
+        if (!publicKey || !publicKey.public_key) return
         const sub = await self.registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey.public_key),
@@ -57,7 +58,7 @@ self.addEventListener('pushsubscriptionchange', (event) => {
         await fetch('/api/admin-dashboard/push/subscribe/', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ endpoint, keys }),
+          body: JSON.stringify({ subscription: { endpoint, keys } }),
         })
       } catch (e) {
         /* best-effort only */
@@ -67,8 +68,15 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 })
 
 function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  if (!base64String || typeof base64String !== 'string') {
+    throw new Error('Push public key is missing')
+  }
+  const normalized = base64String.trim().replace(/-/g, '+').replace(/_/g, '/')
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4)
+  const base64 = normalized + padding
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+    throw new Error('Push public key is not valid base64')
+  }
   const raw = atob(base64)
   const output = new Uint8Array(raw.length)
   for (let i = 0; i < raw.length; i++) {

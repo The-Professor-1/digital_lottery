@@ -61,7 +61,7 @@
       <div class="prizes-head">
         <div>
           <h4 class="subhead">Prizes</h4>
-          <p class="hint">Add any number of prizes. Each can be text, an amount, an image, or a mix.</p>
+          <p class="hint">Add any number of prizes. Each can be text, an amount, an image, or a mix. The Place and Title are shown directly on the landing page.</p>
         </div>
         <button type="button" class="btn ghost" @click="addPrize">+ Add prize</button>
       </div>
