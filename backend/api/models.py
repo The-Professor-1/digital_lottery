@@ -1309,7 +1309,10 @@ class LotteryItem(models.Model):
 
     def save(self, *args, **kwargs):
         reset_timer = kwargs.pop('reset_timer', False)
-        if not self.uses_date_deadline():
+        clear_timer = kwargs.pop('clear_timer', False)
+        if clear_timer:
+            self.ends_at = None
+        elif not self.uses_date_deadline():
             self.ends_at = None
         elif reset_timer or not self.ends_at:
             self.ends_at = self.compute_ends_at()

@@ -5,6 +5,7 @@ import re
 from datetime import timedelta
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Sum, Q
 from django.http import JsonResponse
 from django.utils import timezone
@@ -1445,6 +1446,138 @@ def _parse_ticket_numbers(raw, total_tickets):
     return nums, None
 
 
+def _to_ticket_number(value):
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _digits_only(value):
+    return ''.join(c for c in str(value or '') if c.isdigit())
+
+
+def _purchase_holder(purchase):
+    """Resolve the phone/name/source stored with a purchase."""
+    user = purchase.user if purchase.user_id else None
+    phone = _digits_only(purchase.phone or (user.phone_number if user else ''))
+    name = (purchase.full_name or (user.first_name if user else '') or '').strip()
+    if user and user.telegram_id:
+        source = 'telegram'
+    elif (purchase.payment_provider or '').strip().lower() == 'admin':
+        source = 'walkin'
+    elif user:
+        source = 'guest'
+    else:
+        source = 'walkin'
+    return {
+        'phone': phone,
+        'name': name,
+        'source': source,
+        'purchase_id': purchase.id,
+        'user_id': user.id if user else None,
+        'telegram_id': user.telegram_id if user else None,
+    }
+
+
+def _number_status_rows(item, numbers):
+    """Return status + holder details for ticket numbers in one lottery scope."""
+    wanted = sorted({n for n in (_to_ticket_number(raw) for raw in numbers or []) if n})
+    rows = {
+        n: {
+            'number': n,
+            'status': 'free',
+            'phone': '',
+            'name': '',
+            'source': '',
+            'eligible': False,
+            'purchase_id': None,
+            'held_id': None,
+            'user_id': None,
+            'telegram_id': None,
+        }
+        for n in wanted
+    }
+    if not wanted:
+        return {
+            'numbers': [], 'taken': [], 'free': [],
+            'all_free': True, 'all_taken': False,
+        }
+
+    def _apply(number, **values):
+        if number in rows:
+            rows[number].update(values)
+
+    # Lowest priority: admin-blocked numbers (only used by the global lottery).
+    blocked = []
+    if item is None:
+        blocked = LotterySettings.get_settings().admin_blocked_numbers or []
+    for raw in blocked:
+        number = _to_ticket_number(raw)
+        if number in rows:
+            _apply(number, status='blocked', source='admin', eligible=False)
+
+    purchases_qs = LotteryPurchase.objects.filter(
+        status__in=['pending', 'verified'], historical=False,
+    ).select_related('user')
+    if item is not None:
+        purchases_qs = purchases_qs.filter(lottery_item=item)
+    else:
+        purchases_qs = purchases_qs.filter(lottery_item__isnull=True)
+    purchases = list(purchases_qs.order_by('verified_at', 'id'))
+
+    # Pending tickets are visible for searching, but cannot be announced.
+    for purchase in purchases:
+        if purchase.status != 'pending':
+            continue
+        holder = _purchase_holder(purchase)
+        for raw in purchase.numbers or []:
+            number = _to_ticket_number(raw)
+            if number in rows and rows[number]['status'] in ('free', 'blocked'):
+                _apply(number, status='pending', eligible=False, **holder)
+
+    # Admin-held walk-in tickets count as sold and are eligible to win.
+    held_qs = LotteryHeldNumber.objects.all()
+    if item is not None:
+        held_qs = held_qs.filter(lottery_item=item)
+    else:
+        held_qs = held_qs.filter(lottery_item__isnull=True)
+    for held in held_qs.order_by('id'):
+        if held.number not in rows:
+            continue
+        _apply(
+            held.number,
+            status='held',
+            phone=_digits_only(held.phone),
+            name=(held.name or '').strip(),
+            source='walkin',
+            eligible=True,
+            held_id=held.id,
+        )
+
+    # Verified purchases have the final say.
+    for purchase in purchases:
+        if purchase.status != 'verified':
+            continue
+        holder = _purchase_holder(purchase)
+        for raw in purchase.numbers or []:
+            number = _to_ticket_number(raw)
+            if number in rows:
+                _apply(number, status='verified', eligible=True, **holder)
+
+    ordered = [rows[n] for n in wanted]
+    taken = [row['number'] for row in ordered if row['status'] != 'free']
+    free = [row['number'] for row in ordered if row['status'] == 'free']
+    return {
+        'numbers': ordered,
+        'taken': taken,
+        'free': free,
+        'all_free': not taken,
+        'all_taken': not free,
+    }
+
+
 @csrf_exempt
 @require_http_methods(['POST'])
 def lottery_admin_hold_ticket(request):
@@ -1478,10 +1611,12 @@ def lottery_admin_hold_ticket(request):
     conflict = sorted(n for n in numbers if n in taken)
     if conflict:
         conflict_str = ', '.join(str(n).zfill(3) for n in conflict)
+        free = [n for n in numbers if n not in taken]
         return JsonResponse({
-            'error': f'These numbers are already taken: {conflict_str}',
+            'error': f'These numbers are already taken: {conflict_str}. Nothing was held.',
             'error_code': 'numbers_taken',
             'taken': conflict,
+            'free': free,
         }, status=409)
 
     from .models import User
@@ -2509,6 +2644,28 @@ def lottery_held_numbers_admin(request):
         if item is None:
             return JsonResponse({'error': 'Lottery not found'}, status=404)
 
+    def _requested_numbers(raw):
+        if isinstance(raw, str):
+            raw = [x for x in re.split(r'[^0-9]+', raw) if x]
+        if not isinstance(raw, list):
+            raw = []
+        nums = []
+        for value in raw:
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                continue
+            if number >= 1:
+                nums.append(number)
+        return sorted(set(nums))
+
+    if action == 'check':
+        numbers = _requested_numbers(body.get('numbers'))
+        if not numbers:
+            return JsonResponse({'error': 'Enter at least one ticket number'}, status=400)
+        status = _number_status_rows(item, numbers)
+        return JsonResponse({'success': status['all_free'], **status})
+
     if action == 'delete':
         held_id = body.get('id')
         LotteryHeldNumber.objects.filter(id=held_id).delete()
@@ -2548,17 +2705,49 @@ def lottery_held_numbers_admin(request):
         return True
 
     if action == 'bulk':
-        numbers = body.get('numbers') or []
-        if isinstance(numbers, str):
-            numbers = [x for x in re.split(r'[^0-9]+', numbers) if x]
-        added = 0
-        skipped = []
-        for n in numbers:
-            if _add_one(n):
-                added += 1
+        numbers = _requested_numbers(body.get('numbers'))
+        if not numbers:
+            return JsonResponse({'error': 'Enter at least one ticket number'}, status=400)
+
+        with transaction.atomic():
+            # Serialize concurrent holds for the same lottery so two admins
+            # cannot both pass the availability check for the same number.
+            if item is not None:
+                LotteryItem.objects.select_for_update().get(pk=item.pk)
             else:
-                skipped.append(n)
-        return JsonResponse({'success': True, 'added': added, 'skipped': skipped})
+                LotterySettings.objects.select_for_update().get(
+                    pk=LotterySettings.get_settings().pk
+                )
+            status = _number_status_rows(item, numbers)
+            taken = status['taken']
+            if taken:
+                return JsonResponse({
+                    'error': (
+                        'Nothing was held. These numbers are already taken: '
+                        + ', '.join(str(n).zfill(3) for n in taken)
+                    ),
+                    'error_code': 'numbers_taken',
+                    'taken': taken,
+                    'free': status['free'],
+                    'numbers': status['numbers'],
+                    'added': 0,
+                }, status=409)
+            LotteryHeldNumber.objects.bulk_create([
+                LotteryHeldNumber(
+                    lottery_item=item,
+                    number=n,
+                    phone=phone,
+                    name=name,
+                    note=note,
+                )
+                for n in numbers
+            ])
+        return JsonResponse({
+            'success': True,
+            'added': len(numbers),
+            'taken': [],
+            'free': numbers,
+        })
 
     if _add_one(body.get('number')):
         return JsonResponse({'success': True})
@@ -2636,6 +2825,67 @@ def lottery_clear_history_admin(request):
 
 
 @csrf_exempt
+@require_http_methods(['POST'])
+def lottery_winner_lookup(request):
+    """Resolve a ticket number to its verified buyer or admin-held walk-in holder."""
+    if not _is_admin(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    body = _json_body(request)
+    item_id = body.get('lottery_item_id') or body.get('item_id')
+    item = None
+    if item_id:
+        try:
+            item = LotteryItem.objects.filter(id=int(item_id)).first()
+        except (TypeError, ValueError):
+            item = None
+        if item is None:
+            return JsonResponse({'error': 'Lottery not found'}, status=404)
+    raw_number = body.get('winning_ticket') or body.get('ticket_number') or body.get('number')
+    number = _to_ticket_number(raw_number)
+    if number is None:
+        return JsonResponse({'error': 'Enter a valid winning ticket number'}, status=400)
+
+    total = int((item.total_tickets if item is not None else LotterySettings.get_settings().total_tickets) or 0)
+    if total and number > total:
+        return JsonResponse({
+            'error': f'Ticket number is out of range (1–{total})',
+            'error_code': 'invalid_numbers',
+        }, status=400)
+
+    row = (_number_status_rows(item, [number]).get('numbers') or [{}])[0]
+    if row.get('status') in ('verified', 'held') and row.get('phone'):
+        return JsonResponse({
+            'found': True,
+            'source': row.get('source') or 'walkin',
+            'name': row.get('name') or '',
+            'phone': row.get('phone') or '',
+            'telegram_id': row.get('telegram_id'),
+            'ticket_number': str(number).zfill(3),
+            'status': row.get('status'),
+            'eligible': True,
+        })
+
+    message = 'No registered or held ticket found. Enter the walk-in winner name and phone.'
+    if row.get('status') == 'pending':
+        message = 'This ticket is still pending payment verification and cannot be announced.'
+    elif row.get('status') == 'blocked':
+        message = 'This ticket number is blocked by the admin.'
+    elif row.get('status') in ('verified', 'held') and not row.get('phone'):
+        message = 'This ticket has no phone on record. Enter the winner phone and name.'
+
+    return JsonResponse({
+        'found': False,
+        'source': row.get('source') or '',
+        'name': row.get('name') or '',
+        'phone': row.get('phone') or '',
+        'ticket_number': str(number).zfill(3),
+        'status': row.get('status') or 'free',
+        'eligible': False,
+        'message': message,
+    })
+
+
+@csrf_exempt
 @require_http_methods(['GET', 'POST'])
 def lottery_winners_admin(request):
     if not _is_admin(request):
@@ -2708,17 +2958,22 @@ def _close_item_round(item, lottery_label, winners, message, now):
 
     if item is not None:
         LotteryHeldNumber.objects.filter(lottery_item=item).delete()
-        item.winner_1st = None
-        item.winner_2nd = None
-        item.winner_3rd = None
-        item.winner_announced_at = None
-        item.draw_completed = False
-        item.winners_notified = False
-        item.next_round_at = None
-        # Close out this lottery item. The landing page stays empty until the
-        # admin adds a new item/round.
-        item.is_active = False
-        item.save(clear_timer=True)
+        # Use queryset.update so the item's custom save() never receives an
+        # unsupported keyword. This hides the round immediately and clears its
+        # deadline/winners without starting another round.
+        LotteryItem.objects.filter(pk=item.pk).update(
+            is_active=False,
+            draw_completed=False,
+            winner_1st=None,
+            winner_2nd=None,
+            winner_3rd=None,
+            winner_announced_at=None,
+            winners_notified=False,
+            next_round_at=None,
+            ends_at=None,
+            updated_at=timezone.now(),
+        )
+        item.refresh_from_db()
     else:
         LotteryHeldNumber.objects.filter(lottery_item__isnull=True).delete()
         settings_obj = LotterySettings.get_settings()
@@ -2775,65 +3030,8 @@ def lottery_announce_item_winner(request):
 
     prizes = item.normalized_prizes() if item is not None else []
 
-    pool = LotteryPurchase.objects.filter(status='verified', historical=False).select_related('user', 'lottery_item')
-    if item is not None:
-        pool = pool.filter(lottery_item=item)
-    else:
-        pool = pool.filter(lottery_item__isnull=True)
-    pool = list(pool.order_by('-verified_at', '-id')[:500])
-
     def _digits(value):
         return ''.join(c for c in str(value or '') if c.isdigit())
-
-    def _phone_matches(purchase, phone):
-        wanted = _digits(phone)
-        if not wanted:
-            return False
-        values = [purchase.phone or '']
-        if purchase.user_id and purchase.user:
-            values.append(purchase.user.phone_number or '')
-        wanted_last9 = wanted[-9:] if len(wanted) >= 9 else wanted
-        for raw in values:
-            saved = _digits(raw)
-            if not saved:
-                continue
-            saved_last9 = saved[-9:] if len(saved) >= 9 else saved
-            if wanted == saved or wanted in saved or saved in wanted:
-                return True
-            if wanted_last9 and saved_last9 and wanted_last9 == saved_last9:
-                return True
-        return False
-
-    def _has_number(purchase, number):
-        try:
-            wanted = int(str(number).strip())
-        except (TypeError, ValueError):
-            return False
-        for raw in purchase.numbers or []:
-            try:
-                if int(raw) == wanted:
-                    return True
-            except (TypeError, ValueError):
-                continue
-        return False
-
-    def _find_purchase(phone, number):
-        if phone:
-            by_phone = [p for p in pool if _phone_matches(p, phone)]
-            if number:
-                both = [p for p in by_phone if _has_number(p, number)]
-                if both:
-                    return both[0]
-                by_number = [p for p in pool if _has_number(p, number)]
-                if by_number:
-                    return by_number[0]
-            if by_phone:
-                return by_phone[0]
-        elif number:
-            by_number = [p for p in pool if _has_number(p, number)]
-            if by_number:
-                return by_number[0]
-        return None
 
     from .models import User
     def _find_user(phone):
@@ -2854,6 +3052,33 @@ def lottery_announce_item_winner(request):
         engaged_qs = engaged_qs.filter(lottery_item__isnull=True)
     engaged = list(engaged_qs.order_by('-created_at')[:1000])
 
+    # The ticket number is the single source of truth. Resolve each holder
+    # from verified purchases / admin-held walk-in tickets before announcing.
+    requested_numbers = []
+    for index, entry in enumerate(winner_entries):
+        number = _to_ticket_number(entry.get('winning_ticket') or entry.get('number'))
+        if number is None:
+            return JsonResponse({
+                'error': f'Winner {index + 1}: enter the winning ticket number',
+                'error_code': 'missing_ticket',
+                'winner_index': index,
+            }, status=400)
+        requested_numbers.append(number)
+
+    duplicate_numbers = sorted({
+        number for number in requested_numbers if requested_numbers.count(number) > 1
+    })
+    if duplicate_numbers:
+        return JsonResponse({
+            'error': 'The same winning ticket was entered twice: '
+                     + ', '.join(str(n).zfill(3) for n in duplicate_numbers),
+            'error_code': 'duplicate_tickets',
+            'duplicates': duplicate_numbers,
+        }, status=400)
+
+    lookup = _number_status_rows(item, requested_numbers)
+    status_by_number = {row['number']: row for row in lookup['numbers']}
+
     prepared = []
     for index, entry in enumerate(winner_entries):
         prize = prizes[index] if index < len(prizes) else None
@@ -2871,63 +3096,68 @@ def lottery_announce_item_winner(request):
             prize_display = f'{prize_display} — {prize_amount:,} Birr'
         prize_place = str((prize.get('place') if prize else '') or (index + 1)).strip()
 
-        phone = _digits(entry.get('phone'))
-        number = str(entry.get('winning_ticket') or '').strip()
-        if not phone and not number:
+        number = requested_numbers[index]
+        row = status_by_number.get(number) or {}
+        status = row.get('status') or 'free'
+        number_label = str(number).zfill(3)
+
+        if status == 'pending':
             return JsonResponse({
-                'error': f'Winner {index + 1}: enter the winner phone or winning ticket',
+                'error': (
+                    f'Winner {index + 1}: ticket #{number_label} is still pending payment '
+                    'verification. Verify the payment first.'
+                ),
+                'error_code': 'ticket_pending',
+                'winner_index': index,
+                'ticket_number': number_label,
+            }, status=400)
+        if status == 'blocked':
+            return JsonResponse({
+                'error': f'Winner {index + 1}: ticket #{number_label} is blocked by the admin.',
+                'error_code': 'ticket_blocked',
+                'winner_index': index,
+                'ticket_number': number_label,
             }, status=400)
 
-        purchase = _find_purchase(phone, number)
-        if purchase is None:
-            if not number:
+        # Found tickets always use the database phone/name. The admin cannot
+        # overwrite them with a different phone by mistake.
+        phone = _digits_only(row.get('phone'))
+        name = str(row.get('name') or '').strip()
+        user = None
+        if row.get('user_id'):
+            user = User.objects.filter(id=row['user_id']).first()
+
+        if not phone:
+            # Manual fallback for a walk-in ticket not stored in the database.
+            phone = _digits(entry.get('phone'))
+            name = name or str(entry.get('name') or '').strip()
+            if not phone:
                 return JsonResponse({
                     'error': (
-                        f'Winner {index + 1}: no verified ticket found for this phone. '
-                        'Enter the winning ticket number for this walk-in winner.'
+                        f'Winner {index + 1}: ticket #{number_label} was not found in the '
+                        'database. Enter the walk-in winner phone and name.'
                     ),
+                    'error_code': 'winner_not_found',
+                    'winner_index': index,
+                    'ticket_number': number_label,
                 }, status=400)
-            walkin_user = _find_user(phone)
-            walkin_name = str(entry.get('name') or '').strip() or (
-                walkin_user.first_name if walkin_user else ''
-            ) or 'Walk-in winner'
-            prepared.append({
-                'purchase': None,
-                'name': walkin_name,
-                'phone': phone,
-                'number': number,
-                'prize_display': prize_display,
-                'place_label': prize_place,
-                'user': walkin_user,
-            })
-            continue
+            user = user or _find_user(phone)
 
-        if not number:
-            raw_numbers = purchase.numbers or []
-            if not raw_numbers:
-                return JsonResponse({
-                    'error': f'Winner {index + 1}: this buyer has no ticket numbers',
-                }, status=400)
-            try:
-                number = f'{int(raw_numbers[0]):03d}'
-            except (TypeError, ValueError):
-                number = str(raw_numbers[0])
-        if not phone:
-            phone = _digits(
-                purchase.phone
-                or (purchase.user.phone_number if purchase.user_id and purchase.user else '')
-            )
-        name = str(entry.get('name') or '').strip() or (
-            purchase.full_name or (purchase.user.first_name if purchase.user_id and purchase.user else '')
-        )
+        if not user and phone:
+            # Admin-held walk-in numbers may still belong to a registered user.
+            user = _find_user(phone)
+
+        if not name:
+            name = (user.first_name if user else '') or 'Walk-in winner'
+
         prepared.append({
-            'purchase': purchase,
             'name': name,
             'phone': phone,
-            'number': number,
+            'number': number_label,
             'prize_display': prize_display,
             'place_label': prize_place,
-            'user': purchase.user if purchase.user_id else None,
+            'user': user,
+            'source': row.get('source') or ('walkin' if status == 'free' else ''),
         })
 
     now = timezone.now()
@@ -2960,6 +3190,7 @@ def lottery_announce_item_winner(request):
         {
             'order': index + 1,
             'name': row['name'],
+            'phone': row['phone'],
             'number': row['number'],
             'prize': row['prize_display'],
         }

@@ -122,7 +122,7 @@ function emptyForm() {
     id: '', name: '', description: '', hero_title: '', image_url: '',
     ticket_price: 3000, total_tickets: 3500, sort_order: 0,
     countdown_days: 12, countdown_hours: 10, countdown_minutes: 24, countdown_seconds: 45,
-    draw_mode: 'date', is_active: true, automatic_announcement: true, reset_timer: false,
+    draw_mode: 'manual', is_active: true, automatic_announcement: true, reset_timer: false,
     prizes: [defaultPrize(0)],
   }
 }

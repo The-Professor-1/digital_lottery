@@ -66,8 +66,7 @@
                     <User :size="13" class="text-gold" />
                   </div>
                   <div class="min-w-0 flex-1">
-                    <p class="text-white font-bold text-sm truncate">{{ winner.name || t.winner }}</p>
-                    <p v-if="winner.phone" class="text-xs text-white/50 mt-0.5">{{ winner.phone }}</p>
+                    <p class="text-white font-bold text-sm truncate">{{ winner.phone || t.winner }}</p>
                   </div>
                 </div>
 

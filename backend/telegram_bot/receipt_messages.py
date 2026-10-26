@@ -112,8 +112,10 @@ def _winner_lines(winners):
         order = winner.get('order') or index
         prize = winner.get('prize') or 'Prize'
         number = _number(winner.get('number'))
-        name = winner.get('name') or ''
-        line = f'{order}. {prize} — #{number} — {name}'.rstrip(' —')
+        # Winners are identified by phone number, never by name, so a wrong
+        # name/phone pairing cannot create a false announcement.
+        phone = winner.get('phone') or '—'
+        line = f'{order}. {prize} — #{number} — {phone}'.rstrip(' —')
         lines.append(line)
     return lines
 

@@ -2,7 +2,7 @@
   <div class="space-y-4">
     <div>
       <h2 class="section-title">Winner announcement</h2>
-      <p class="hint">Choose a lottery item. One winner form is shown for each prize. Enter each winner's phone; if the winner is a walk-in not found in the database, enter their winning ticket number too.</p>
+      <p class="hint">Choose a lottery item, then enter the winning ticket number for each prize. The system looks up the holder's phone and name from verified buyers, guest buyers, and admin-held walk-in tickets. Enter the walk-in phone and name only when the number is not found.</p>
     </div>
 
     <label>Lottery item
@@ -22,17 +22,39 @@
             </div>
             <span v-if="winner.amount" class="prize-amount">{{ formatMoney(winner.amount) }} Birr</span>
           </div>
-          <div class="grid-2">
+          <label>Winning ticket
+            <input
+              v-model="winner.winning_ticket"
+              class="admin-input"
+              inputmode="numeric"
+              placeholder="Enter the winning ticket number"
+              @input="resetWinnerLookup(winner)"
+              @blur="lookupWinner(index)"
+            />
+          </label>
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn ghost small" :disabled="winner.lookuping" @click="lookupWinner(index)">
+              {{ winner.lookuping ? 'Searching…' : 'Find holder' }}
+            </button>
+            <span v-if="winner.lookupSource" class="hint">Source: {{ winner.lookupSource }}</span>
+          </div>
+          <p v-if="winner.lookupState === 'found'" class="ok">
+            Holder found: {{ winner.phone || '—' }}<span v-if="winner.name"> · {{ winner.name }}</span>
+          </p>
+          <p v-else-if="winner.lookupBlocked" class="error">
+            {{ winner.lookupMessage || 'This ticket cannot be announced.' }}
+          </p>
+          <p v-else-if="winner.lookupState === 'not_found'" class="hint">
+            {{ winner.lookupMessage || "No registered or held ticket found. Enter the walk-in winner's name and phone." }}
+          </p>
+          <div v-if="winner.lookupState === 'not_found' && !winner.lookupBlocked" class="grid-2">
             <label>Winner phone
               <input v-model="winner.phone" class="admin-input" inputmode="tel" placeholder="09…" />
             </label>
-            <label>Winner name (optional)
-              <input v-model="winner.name" class="admin-input" placeholder="Auto from phone" />
+            <label>Winner name
+              <input v-model="winner.name" class="admin-input" placeholder="Walk-in winner name" />
             </label>
           </div>
-          <label>Winning ticket (optional — auto from phone)
-            <input v-model="winner.winning_ticket" class="admin-input" inputmode="numeric" placeholder="Auto from buyer's tickets" />
-          </label>
         </article>
       </div>
 
@@ -99,7 +121,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  getLotteryItemsAdmin, announceItemWinner, getLotteryWinnersAdmin, deleteLotteryWinnerAdmin,
+  getLotteryItemsAdmin, announceItemWinner, getLotteryWinnersAdmin, deleteLotteryWinnerAdmin, lookupWinnerTicket,
 } from '../services/api'
 
 const items = ref([])
@@ -144,6 +166,11 @@ function buildWinnerForms(item) {
       phone: '',
       name: '',
       winning_ticket: '',
+      lookupState: null,
+      lookupSource: '',
+      lookupBlocked: false,
+      lookupMessage: '',
+      lookuping: false,
     }]
   }
   return prizes.map((prize, index) => ({
@@ -153,7 +180,65 @@ function buildWinnerForms(item) {
     phone: '',
     name: '',
     winning_ticket: '',
+    lookupState: null,
+    lookupSource: '',
+    lookupBlocked: false,
+    lookupMessage: '',
+    lookuping: false,
   }))
+}
+
+function resetWinnerLookup(winner) {
+  winner.lookupState = null
+  winner.lookupSource = ''
+  winner.lookupBlocked = false
+  winner.lookupMessage = ''
+  winner.phone = ''
+  winner.name = ''
+}
+
+async function lookupWinner(index) {
+  const winner = winnerForms.value[index]
+  if (!winner) return
+  const ticket = String(winner.winning_ticket || '').trim()
+  if (!ticket) {
+    resetWinnerLookup(winner)
+    return
+  }
+  winner.lookuping = true
+  error.value = ''
+  try {
+    const res = await lookupWinnerTicket({
+      lottery_item_id: itemId.value,
+      ticket_number: ticket,
+    })
+    // Ignore a late response if the admin changed the ticket while searching.
+    if (String(winner.winning_ticket || '').trim() !== ticket) return
+    if (res.found && res.phone) {
+      winner.lookupState = 'found'
+      winner.lookupBlocked = false
+      winner.lookupMessage = ''
+      winner.phone = res.phone || ''
+      winner.name = res.name || ''
+      winner.lookupSource = res.source || ''
+    } else {
+      winner.lookupState = 'not_found'
+      winner.lookupBlocked = res.status === 'pending' || res.status === 'blocked'
+      winner.lookupMessage = res.message || ''
+      winner.lookupSource = res.source || ''
+      winner.phone = res.phone || ''
+      winner.name = res.name || ''
+    }
+  } catch (e) {
+    if (String(winner.winning_ticket || '').trim() !== ticket) return
+    winner.lookupState = 'not_found'
+    winner.lookupSource = ''
+    winner.lookupBlocked = false
+    winner.lookupMessage = ''
+    error.value = e.response?.data?.error || 'Could not look up ticket holder'
+  } finally {
+    winner.lookuping = false
+  }
 }
 
 function onItemChange() {
@@ -198,10 +283,31 @@ async function announce() {
     error.value = 'This lottery has no prizes to announce'
     return
   }
-  const missing = winnerForms.value.findIndex((w) => !String(w.phone || '').trim())
-  if (missing >= 0) {
-    error.value = `Enter the winner phone for ${winnerForms.value[missing].place || `prize ${missing + 1}`}`
-    return
+  for (let index = 0; index < winnerForms.value.length; index += 1) {
+    const form = winnerForms.value[index]
+    if (!String(form.winning_ticket || '').trim()) {
+      error.value = `Enter the winning ticket for ${form.place || `prize ${index + 1}`}`
+      return
+    }
+    if (!form.lookupState) await lookupWinner(index)
+    if (form.lookupBlocked) {
+      error.value = `Cannot announce ${form.place || `prize ${index + 1}`}: ${form.lookupMessage || 'ticket is not eligible'}`
+      return
+    }
+  }
+
+  const seenTickets = new Set()
+  for (const form of winnerForms.value) {
+    const normalized = String(Number(form.winning_ticket)).trim()
+    if (seenTickets.has(normalized)) {
+      error.value = 'Each prize must have a different winning ticket.'
+      return
+    }
+    seenTickets.add(normalized)
+    if (form.lookupState === 'not_found' && (!String(form.phone || '').trim() || !String(form.name || '').trim())) {
+      error.value = `Enter the walk-in winner name and phone for ${form.place || 'this prize'}`
+      return
+    }
   }
   if (!confirm('Save these winners, close this round, archive its receipts, and hide this lottery until you create a new item?')) {
     return
@@ -232,6 +338,11 @@ async function announce() {
       phone: '',
       name: '',
       winning_ticket: '',
+      lookupState: null,
+      lookupSource: '',
+      lookupBlocked: false,
+      lookupMessage: '',
+      lookuping: false,
     }))
     await loadWinners()
   } catch (e) {

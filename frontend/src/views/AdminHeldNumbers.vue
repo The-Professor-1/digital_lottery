@@ -17,9 +17,49 @@
       <p class="hint">One number is enough for a single ticket. Multiple numbers can be comma- or space-separated.</p>
       <label>Phone <input v-model="bulk.phone" class="admin-input" inputmode="tel" placeholder="09…" /></label>
       <label>Name <input v-model="bulk.name" class="admin-input" placeholder="Optional name" /></label>
-      <label>Ticket numbers <textarea v-model="bulk.numbers" rows="3" class="admin-input" placeholder="e.g. 12, 45, 90 or one number like 12" /></label>
+      <label>Ticket numbers <textarea v-model="bulk.numbers" rows="3" class="admin-input" placeholder="e.g. 12, 45, 90 or one number like 12" @input="checkResult = null" /></label>
       <label>Note <input v-model="bulk.note" class="admin-input" placeholder="Optional note" /></label>
-      <button type="submit" class="btn primary" :disabled="busy">{{ busy ? 'Saving…' : 'Hold ticket(s)' }}</button>
+      <p class="hint">All-or-none: if any selected number is already taken, none will be held.</p>
+      <div v-if="checkResult" class="check-result">
+        <p v-if="checkResult.all_free" class="ok">All selected numbers are free.</p>
+        <p v-else class="error">
+          {{ (checkResult.taken || []).length }} of {{ (checkResult.numbers || checkResult.taken || []).length }}
+          selected number(s) are already taken. Nothing will be held until you remove them.
+        </p>
+        <div v-if="checkResult.numbers && checkResult.numbers.length" class="check-rows">
+          <span
+            v-for="row in checkResult.numbers"
+            :key="row.number"
+            class="check-chip"
+            :class="row.status === 'free' ? 'free' : 'taken'"
+          >
+            #{{ pad(row.number) }} · {{ statusLabel(row.status) }}
+            <template v-if="row.phone"> · {{ row.phone }}</template>
+            <template v-else-if="row.name"> · {{ row.name }}</template>
+          </span>
+        </div>
+        <button
+          v-if="checkResult.taken && checkResult.taken.length && checkResult.free && checkResult.free.length"
+          type="button"
+          class="btn ghost small self-start"
+          @click="useFreeNumbers"
+        >
+          Use only the free numbers ({{ checkResult.free.length }})
+        </button>
+      </div>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="btn ghost"
+          :disabled="checking || busy || !bulk.numbers.trim()"
+          @click="checkNumbers"
+        >
+          {{ checking ? 'Checking…' : 'Check availability' }}
+        </button>
+        <button type="submit" class="btn primary" :disabled="busy || checking">
+          {{ busy ? 'Saving…' : 'Hold ticket(s)' }}
+        </button>
+      </div>
     </form>
 
     <p v-if="error" class="error">{{ error }}</p>
@@ -83,7 +123,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  getLotteryItemsAdmin, getHeldNumbersAdmin, bulkHeldNumbersAdmin,
+  getLotteryItemsAdmin, getHeldNumbersAdmin, bulkHeldNumbersAdmin, checkHeldNumbersAdmin,
   deleteHeldNumberAdmin, getLotteryPurchasesAdmin,
 } from '../services/api'
 
@@ -95,6 +135,8 @@ const busy = ref(false)
 const error = ref('')
 const message = ref('')
 const bulk = reactive({ numbers: '', phone: '', name: '', note: '' })
+const checking = ref(false)
+const checkResult = ref(null)
 
 const groups = computed(() => {
   const byPhone = new Map()
@@ -124,7 +166,23 @@ const groups = computed(() => {
 })
 
 function pad(n) {
+  if (n === null || n === undefined || n === '') return '—'
   return String(n).padStart(3, '0')
+}
+
+function statusLabel(status) {
+  if (status === 'verified') return 'sold'
+  if (status === 'pending') return 'pending payment'
+  if (status === 'held') return 'held'
+  if (status === 'blocked') return 'blocked'
+  return 'free'
+}
+
+function useFreeNumbers() {
+  if (!checkResult.value?.free?.length) return
+  bulk.numbers = checkResult.value.free.join(', ')
+  checkResult.value = null
+  message.value = 'Form now contains only the free numbers. Press Hold ticket(s) to continue.'
 }
 
 async function loadItems() {
@@ -139,6 +197,7 @@ async function loadItems() {
 
 async function reload() {
   error.value = ''
+  checkResult.value = null
   if (!itemId.value) {
     held.value = []
     soldRows.value = []
@@ -166,6 +225,25 @@ async function loadSold() {
   }
 }
 
+async function checkNumbers() {
+  if (!bulk.numbers.trim()) return
+  checking.value = true
+  error.value = ''
+  message.value = ''
+  checkResult.value = null
+  try {
+    const res = await checkHeldNumbersAdmin({
+      lottery_item_id: itemId.value || null,
+      numbers: bulk.numbers,
+    })
+    checkResult.value = res
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Could not check numbers'
+  } finally {
+    checking.value = false
+  }
+}
+
 async function addBulk() {
   if (!bulk.numbers.trim()) return
   busy.value = true
@@ -185,9 +263,19 @@ async function addBulk() {
     message.value = 'Added ' + (res.added || 0) + ' ticket(s) for ' + (bulk.phone || 'this person') + '.' + skipped
     bulk.numbers = ''
     bulk.note = ''
+    checkResult.value = null
     await reload()
   } catch (e) {
-    error.value = e.response?.data?.error || 'Could not hold numbers'
+    const data = e.response?.data || {}
+    if (Array.isArray(data.taken) || Array.isArray(data.free)) {
+      checkResult.value = {
+        taken: data.taken || [],
+        free: data.free || [],
+        numbers: data.numbers || [],
+        all_free: false,
+      }
+    }
+    error.value = data.error || 'Could not hold numbers'
   } finally {
     busy.value = false
   }
@@ -242,5 +330,10 @@ th { color: #9ca3af; font-weight: 600; }
 .muted { color: #9ca3af; }
 .error { color: #fecaca; font-size: 0.85rem; margin: 0; }
 .ok { color: #86efac; font-size: 0.85rem; margin: 0; }
+.check-result { display: flex; flex-direction: column; gap: 0.35rem; }
+.check-rows { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.check-chip { font-size: 0.72rem; font-weight: 700; padding: 0.25rem 0.45rem; border-radius: 6px; }
+.check-chip.free { background: #064e3b; color: #6ee7b7; }
+.check-chip.taken { background: #4c1d1d; color: #fecaca; }
 @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
 </style>

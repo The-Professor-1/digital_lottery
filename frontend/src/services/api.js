@@ -311,6 +311,11 @@ export async function addHeldNumberAdmin(payload) {
   return response.data
 }
 
+export async function checkHeldNumbersAdmin(payload) {
+  const response = await api.post('/admin-dashboard/lottery-held-numbers/', { action: 'check', ...payload })
+  return response.data
+}
+
 export async function bulkHeldNumbersAdmin(payload) {
   const response = await api.post('/admin-dashboard/lottery-held-numbers/', { action: 'bulk', ...payload })
   return response.data
@@ -327,6 +332,11 @@ export async function deleteHeldNumberAdmin(id, lottery_item_id = null) {
 
 export async function getLotteryWinnersAdmin(params = {}) {
   const response = await api.get('/admin-dashboard/lottery-winners/', { params })
+  return response.data
+}
+
+export async function lookupWinnerTicket(payload) {
+  const response = await api.post('/admin-dashboard/lottery-winner-lookup/', payload)
   return response.data
 }
 
